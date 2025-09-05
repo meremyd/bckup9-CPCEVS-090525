@@ -1,9 +1,31 @@
-"use client"
-
 import { jwtDecode } from "jwt-decode"
-import { useRouter } from "next/router"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
+
+export const fetchWithAuth = async (endpoint, options = {}) => {
+  const token = getToken()
+  const headers = {
+    "Content-Type": "application/json",
+    "x-auth-token": token,
+    ...options.headers,
+  }
+
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    ...options,
+    headers,
+  })
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      logout()
+      return
+    }
+    const errorData = await response.json()
+    throw new Error(errorData.message || "API request failed")
+  }
+
+  return response.json()
+}
 
 /**
  * Login user with username and password.
@@ -24,20 +46,23 @@ export async function login(username, password) {
 
   const data = await response.json()
   localStorage.setItem("token", data.token)
+  if (data.user) {
+    localStorage.setItem("user", JSON.stringify(data.user))
+  }
 
-  const user = getUserFromToken()
+  const user = getUserFromToken() || data.user
 
-  const router = useRouter()
+  // Redirect based on user type
   if (user && user.userType) {
     switch (user.userType) {
       case "admin":
-        router.push("/admin/dashboard")
+        window.location.href = "/admin/dashboard"
         break
       case "election_committee":
-        router.push("/ecommittee/dashboard")
+        window.location.href = "/ecommittee/dashboard"
         break
       case "sao":
-        router.push("/sao/dashboard")
+        window.location.href = "/sao/dashboard"
         break
       default:
         console.error("Unknown user type:", user.userType)
@@ -71,22 +96,18 @@ export function getToken() {
 export function getUserFromToken() {
   const token = getToken()
   if (!token) return null
-
   try {
     const decoded = jwtDecode(token)
-
     if (decoded.exp && decoded.exp < Date.now() / 1000) {
-      console.log("[v0] Token expired, removing from storage")
       localStorage.removeItem("token")
-      localStorage.removeItem("user")
+      localStorage.removeItem("user") // Also remove user data when token expires
       return null
     }
-
     return decoded
   } catch (error) {
     console.error("Invalid token:", error)
     localStorage.removeItem("token")
-    localStorage.removeItem("user")
+    localStorage.removeItem("user") // Also remove user data when token is invalid
     return null
   }
 }
@@ -95,7 +116,23 @@ export function getUserFromToken() {
  * Check if user is authenticated (has valid token).
  */
 export function isAuthenticated() {
-  return getUserFromToken() !== null
+  const tokenUser = getUserFromToken()
+  const storedUser = getStoredUser()
+  return tokenUser !== null || storedUser !== null
+}
+
+/**
+ * Get stored user data from localStorage
+ */
+export function getStoredUser() {
+  try {
+    const userData = localStorage.getItem("user")
+    return userData ? JSON.parse(userData) : null
+  } catch (error) {
+    console.error("Error parsing stored user:", error)
+    localStorage.removeItem("user")
+    return null
+  }
 }
 
 /**
@@ -104,17 +141,8 @@ export function isAuthenticated() {
 export function hasRole(requiredRole) {
   let user = getUserFromToken()
 
-  // If token doesn't contain userType, try getting from localStorage
   if (!user || !user.userType) {
-    const storedUser = localStorage.getItem("user")
-    if (storedUser) {
-      try {
-        user = JSON.parse(storedUser)
-      } catch (error) {
-        console.error("Error parsing stored user:", error)
-        return false
-      }
-    }
+    user = getStoredUser()
   }
 
   return user && user.userType === requiredRole

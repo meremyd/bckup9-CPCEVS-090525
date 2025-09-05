@@ -294,6 +294,80 @@ class VoterController {
       next(error)
     }
   }
+
+  // Get registered voters only (voters with passwords)
+  static async getRegisteredVoters(req, res, next) {
+    try {
+      const { degree, page = 1, limit = 50, search } = req.query
+
+      // Build filter for registered voters only
+      const filter = { password: { $ne: null } }
+      if (degree) filter.degreeId = degree
+      if (search) {
+        filter.$or = [
+          { firstName: { $regex: search, $options: "i" } },
+          { lastName: { $regex: search, $options: "i" } },
+          { schoolId: { $regex: search, $options: "i" } },
+        ]
+      }
+
+      // Pagination
+      const skip = (page - 1) * limit
+
+      const voters = await Voter.find(filter)
+        .populate("degreeId")
+        .sort({ schoolId: 1 })
+        .skip(skip)
+        .limit(Number.parseInt(limit))
+        .select("-password -faceEncoding -profilePicture")
+
+      const total = await Voter.countDocuments(filter)
+
+      // Log the access
+      await AuditLog.create({
+        action: "SYSTEM_ACCESS",
+        username: req.user?.username || "system",
+        details: `Registered voters list accessed - ${voters.length} voters returned`,
+        ipAddress: req.ip,
+        userAgent: req.get("User-Agent"),
+      })
+
+      res.json(voters) // Return just the array for frontend compatibility
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Deactivate voter (remove password to make them unregistered)
+  static async deactivateVoter(req, res, next) {
+    try {
+      const { id } = req.params
+
+      const voter = await Voter.findById(id)
+      if (!voter) {
+        const error = new Error("Voter not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      // Remove password to deactivate registration
+      voter.password = null
+      await voter.save()
+
+      // Log the deactivation
+      await AuditLog.create({
+        action: "UPDATE_VOTER",
+        username: req.user?.username || "system",
+        details: `Voter deactivated - ${voter.firstName} ${voter.lastName} (${voter.schoolId})`,
+        ipAddress: req.ip,
+        userAgent: req.get("User-Agent"),
+      })
+
+      res.json({ message: "Voter deactivated successfully" })
+    } catch (error) {
+      next(error)
+    }
+  }
 }
 
 module.exports = VoterController

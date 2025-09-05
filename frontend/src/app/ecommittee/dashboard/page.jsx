@@ -44,8 +44,50 @@ export default function ElectionCommitteeDashboard() {
   }
 
   useEffect(() => {
-    const token = localStorage.getItem("token")
-    const userData = localStorage.getItem("user")
+    const checkAuthAndLoadData = async () => {
+      try {
+        const token = localStorage.getItem("token")
+        const userData = localStorage.getItem("user")
+
+        console.log("[v0] Checking auth - token exists:", !!token, "user data exists:", !!userData)
+
+        if (!token) {
+          console.log("[v0] No token found, redirecting to login")
+          router.push("/adminlogin")
+          return
+        }
+
+        let parsedUser = null
+        if (userData) {
+          try {
+            parsedUser = JSON.parse(userData)
+            console.log("[v0] Parsed user:", parsedUser)
+          } catch (parseError) {
+            console.error("[v0] Error parsing user data:", parseError)
+            localStorage.removeItem("user")
+            localStorage.removeItem("token")
+            router.push("/adminlogin")
+            return
+          }
+        }
+
+        if (!parsedUser || parsedUser.userType !== "election_committee") {
+          console.log("[v0] Invalid user type:", parsedUser?.userType, "- redirecting to login")
+          localStorage.removeItem("user")
+          localStorage.removeItem("token")
+          router.push("/adminlogin")
+          return
+        }
+
+        setUser(parsedUser)
+
+        await Promise.all([fetchDashboardData(token), fetchElections(token)])
+      } catch (error) {
+        console.error("[v0] Auth check error:", error)
+        setError("Authentication error occurred")
+        router.push("/adminlogin")
+      }
+    }
 
     // Load SweetAlert2 CDN
     if (typeof window !== "undefined" && !window.Swal) {
@@ -54,28 +96,7 @@ export default function ElectionCommitteeDashboard() {
       document.head.appendChild(script)
     }
 
-    if (!token || !userData) {
-      router.push("/adminlogin")
-      return
-    }
-
-    try {
-      const parsedUser = JSON.parse(userData)
-      setUser(parsedUser)
-
-      const userType = parsedUser.userType
-      if (userType !== "election_committee") {
-        console.log("User type:", userType, "- redirecting to login")
-        router.push("/adminlogin")
-        return
-      }
-
-      fetchDashboardData(token)
-      fetchElections(token)
-    } catch (parseError) {
-      console.error("Error parsing user data:", parseError)
-      router.push("/adminlogin")
-    }
+    checkAuthAndLoadData()
   }, [router])
 
   const fetchDashboardData = async (token) => {
@@ -83,6 +104,7 @@ export default function ElectionCommitteeDashboard() {
       const response = await fetch("http://localhost:5000/api/dashboard/committee/dashboard", {
         headers: {
           Authorization: `Bearer ${token}`,
+          "x-auth-token": token, // Added both auth methods for compatibility
           "Content-Type": "application/json",
         },
       })
@@ -90,7 +112,9 @@ export default function ElectionCommitteeDashboard() {
       if (response.ok) {
         const data = await response.json()
         setDashboardData(data)
+        console.log("[v0] Dashboard data loaded successfully")
       } else if (response.status === 401 || response.status === 403) {
+        console.log("[v0] Authentication failed, clearing storage and redirecting")
         localStorage.removeItem("token")
         localStorage.removeItem("user")
         router.push("/adminlogin")
@@ -99,7 +123,7 @@ export default function ElectionCommitteeDashboard() {
         setError(errorData.message || "Failed to fetch dashboard data")
       }
     } catch (error) {
-      console.error("Dashboard error:", error)
+      console.error("[v0] Dashboard error:", error)
       setError("Network error - please check if the server is running")
     } finally {
       setLoading(false)
@@ -111,6 +135,7 @@ export default function ElectionCommitteeDashboard() {
       const response = await fetch("http://localhost:5000/api/elections", {
         headers: {
           Authorization: `Bearer ${token}`,
+          "x-auth-token": token, // Added both auth methods for compatibility
           "Content-Type": "application/json",
         },
       })
@@ -118,9 +143,15 @@ export default function ElectionCommitteeDashboard() {
       if (response.ok) {
         const data = await response.json()
         setElections(data)
+        console.log("[v0] Elections data loaded successfully")
+      } else if (response.status === 401 || response.status === 403) {
+        console.log("[v0] Authentication failed while fetching elections")
+        localStorage.removeItem("token")
+        localStorage.removeItem("user")
+        router.push("/adminlogin")
       }
     } catch (error) {
-      console.error("Fetch elections error:", error)
+      console.error("[v0] Fetch elections error:", error)
     }
   }
 
@@ -156,6 +187,7 @@ export default function ElectionCommitteeDashboard() {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
+          "x-auth-token": token, // Added both auth methods for compatibility
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -335,7 +367,7 @@ export default function ElectionCommitteeDashboard() {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                    d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
                   />
                 </svg>
                 Voter Turnout

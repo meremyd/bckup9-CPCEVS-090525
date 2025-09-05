@@ -34,11 +34,13 @@ export default function AdminLogin() {
       const data = await response.json()
 
       if (response.ok) {
-        // Store token and user data
+        // Store token and user data properly
         localStorage.setItem("token", data.token)
         localStorage.setItem("user", JSON.stringify(data.user))
 
         console.log("[v0] Login successful, user type:", data.user.userType)
+
+        await new Promise((resolve) => setTimeout(resolve, 100))
 
         switch (data.user.userType) {
           case "admin":

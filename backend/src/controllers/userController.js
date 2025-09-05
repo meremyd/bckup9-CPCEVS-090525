@@ -6,33 +6,37 @@ class UserController {
   // Get all users
   static async getAllUsers(req, res, next) {
     try {
-      const { userType, isActive, page = 1, limit = 10 } = req.query
+      const { userType, isActive, page = 1, limit = 50, search } = req.query
 
       // Build filter
       const filter = {}
       if (userType) filter.userType = userType
       if (isActive !== undefined) filter.isActive = isActive === "true"
+      if (search) {
+        filter.$or = [{ username: { $regex: search, $options: "i" } }, { userType: { $regex: search, $options: "i" } }]
+      }
 
       // Pagination
       const skip = (page - 1) * limit
 
       const users = await User.find(filter)
-        .select("-passwordHash")
+        .select("-passwordHash") // Exclude password hash
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number.parseInt(limit))
 
       const total = await User.countDocuments(filter)
 
-      res.json({
-        users,
-        pagination: {
-          current: Number.parseInt(page),
-          total: Math.ceil(total / limit),
-          count: users.length,
-          totalUsers: total,
-        },
+      // Log the access
+      await AuditLog.create({
+        action: "SYSTEM_ACCESS",
+        username: req.user?.username || "system",
+        details: `Users list accessed - ${users.length} users returned`,
+        ipAddress: req.ip,
+        userAgent: req.get("User-Agent"),
       })
+
+      res.json(users) // Return just the array for frontend compatibility
     } catch (error) {
       next(error)
     }

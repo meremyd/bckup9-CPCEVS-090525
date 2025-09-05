@@ -2,7 +2,12 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/a
 
 export const getAuthHeaders = () => {
   const token = localStorage.getItem("token")
-  return token ? { "x-auth-token": token } : {}
+  return token
+    ? {
+        "x-auth-token": token,
+        Authorization: `Bearer ${token}`, // Added Bearer token for compatibility
+      }
+    : {}
 }
 
 export const fetchWithAuth = async (endpoint, options = {}) => {
