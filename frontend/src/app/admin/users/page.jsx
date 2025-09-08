@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Swal from 'sweetalert2'
+import { usersAPI } from '@/lib/api/users'
 
 export default function UsersPage() {
   const [users, setUsers] = useState([])
@@ -19,29 +21,53 @@ export default function UsersPage() {
     isActive: true,
   })
 
+  // SweetAlert function
+  const showAlert = (type, title, text) => {
+    Swal.fire({
+      icon: type,
+      title: title,
+      text: text,
+      confirmButtonColor: "#3B82F6",
+    })
+  }
+
+  const showConfirm = (title, text, confirmText = "Yes, delete it!") => {
+    return Swal.fire({
+      title: title,
+      text: text,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#EF4444",
+      cancelButtonColor: "#6B7280",
+      confirmButtonText: confirmText,
+    }).then((result) => result.isConfirmed)
+  }
+
   useEffect(() => {
     fetchUsers()
   }, [])
 
   const fetchUsers = async () => {
     try {
-      const token = localStorage.getItem("token")
-      const response = await fetch("http://localhost:5000/api/users", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
+      setLoading(true)
+      const data = await usersAPI.getAll()
+      // Handle both array and object responses
+      if (Array.isArray(data)) {
         setUsers(data)
+      } else if (data.users && Array.isArray(data.users)) {
+        setUsers(data.users)
+      } else if (data.data && Array.isArray(data.data)) {
+        setUsers(data.data)
       } else {
-        setError("Failed to fetch users")
+        console.error("Unexpected data format:", data)
+        setUsers([])
       }
+      setError("")
     } catch (error) {
       console.error("Fetch users error:", error)
-      setError("Network error")
+      const errorMessage = error.response?.data?.message || error.message || "Failed to fetch users"
+      setError(errorMessage)
+      showAlert("error", "Error!", `Failed to fetch users: ${errorMessage}`)
     } finally {
       setLoading(false)
     }
@@ -67,64 +93,38 @@ export default function UsersPage() {
   const handleAddUser = async (e) => {
     e.preventDefault()
     try {
-      const token = localStorage.getItem("token")
-      const response = await fetch("http://localhost:5000/api/users", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
-      })
-
-      if (response.ok) {
-        const newUser = await response.json()
-        setUsers([...users, newUser])
-        setShowAddModal(false)
-        resetForm()
-        alert("User added successfully")
-      } else {
-        const errorData = await response.json()
-        alert(errorData.message || "Failed to add user")
-      }
+      const result = await usersAPI.create(formData)
+      const newUser = result.user || result.data || result
+      setUsers([...users, newUser])
+      setShowAddModal(false)
+      resetForm()
+      showAlert("success", "Success!", "User added successfully")
     } catch (error) {
       console.error("Add user error:", error)
-      alert("Network error")
+      const errorMessage = error.response?.data?.message || error.message || "Failed to add user"
+      showAlert("error", "Error!", errorMessage)
     }
   }
 
   const handleEditUser = async (e) => {
     e.preventDefault()
     try {
-      const token = localStorage.getItem("token")
       const updateData = { ...formData }
       if (!updateData.password) {
         delete updateData.password // Don't update password if empty
       }
 
-      const response = await fetch(`http://localhost:5000/api/users/${editingUser._id}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(updateData),
-      })
-
-      if (response.ok) {
-        const updatedUser = await response.json()
-        setUsers(users.map((user) => (user._id === editingUser._id ? updatedUser : user)))
-        setShowEditModal(false)
-        setEditingUser(null)
-        resetForm()
-        alert("User updated successfully")
-      } else {
-        const errorData = await response.json()
-        alert(errorData.message || "Failed to update user")
-      }
+      const result = await usersAPI.update(editingUser._id, updateData)
+      const updatedUser = result.user || result.data || result
+      setUsers(users.map((user) => (user._id === editingUser._id ? updatedUser : user)))
+      setShowEditModal(false)
+      setEditingUser(null)
+      resetForm()
+      showAlert("success", "Success!", "User updated successfully")
     } catch (error) {
       console.error("Update user error:", error)
-      alert("Network error")
+      const errorMessage = error.response?.data?.message || error.message || "Failed to update user"
+      showAlert("error", "Error!", errorMessage)
     }
   }
 
@@ -140,37 +140,26 @@ export default function UsersPage() {
   }
 
   const handleDelete = async (userId) => {
-    if (!confirm("Are you sure you want to delete this user?")) {
-      return
-    }
+    const confirmed = await showConfirm("Are you sure?", "You won't be able to revert this!", "Yes, delete it!")
+    
+    if (!confirmed) return
 
     try {
-      const token = localStorage.getItem("token")
-      const response = await fetch(`http://localhost:5000/api/users/${userId}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      })
-
-      if (response.ok) {
-        setUsers(users.filter((user) => user._id !== userId))
-        alert("User deleted successfully")
-      } else {
-        alert("Failed to delete user")
-      }
+      await usersAPI.delete(userId)
+      setUsers(users.filter((user) => user._id !== userId))
+      showAlert("success", "Deleted!", "User has been deleted successfully")
     } catch (error) {
       console.error("Delete user error:", error)
-      alert("Network error")
+      const errorMessage = error.response?.data?.message || error.message || "Failed to delete user"
+      showAlert("error", "Error!", errorMessage)
     }
   }
 
-  const filteredUsers = users.filter(
+  const filteredUsers = Array.isArray(users) ? users.filter(
     (user) =>
-      user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.userType.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+      (user.username || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (user.userType || "").toLowerCase().includes(searchTerm.toLowerCase()),
+  ) : []
 
   const getUserTypeColor = (userType) => {
     switch (userType) {
@@ -199,7 +188,15 @@ export default function UsersPage() {
   if (error) {
     return (
       <div className="text-center py-8">
-        <p className="text-red-600">{error}</p>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 max-w-md mx-auto">
+          <p className="text-red-600 mb-4">{error}</p>
+          <button
+            onClick={fetchUsers}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
       </div>
     )
   }
@@ -273,7 +270,7 @@ export default function UsersPage() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{user.username}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${getUserTypeColor(user.userType)}`}>
-                      {user.userType.replace("_", " ").toUpperCase()}
+                      {(user.userType || "").replace("_", " ").toUpperCase()}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -306,6 +303,12 @@ export default function UsersPage() {
               ))}
             </tbody>
           </table>
+
+          {filteredUsers.length === 0 && !loading && (
+            <div className="text-center py-8">
+              <p className="text-gray-500">No users found matching your search criteria.</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -340,7 +343,6 @@ export default function UsersPage() {
                   <option value="admin">Admin</option>
                   <option value="election_committee">Election Committee</option>
                   <option value="sao">SAO</option>
-                  <option value="voter">Voter</option>
                 </select>
               </div>
               <div>
@@ -417,7 +419,6 @@ export default function UsersPage() {
                   <option value="admin">Admin</option>
                   <option value="election_committee">Election Committee</option>
                   <option value="sao">SAO</option>
-                  <option value="voter">Voter</option>
                 </select>
               </div>
               <div>

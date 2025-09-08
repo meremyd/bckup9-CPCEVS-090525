@@ -19,28 +19,37 @@ class AuthController {
       // Find user by username
       const user = await User.findOne({ username, isActive: true })
       if (!user) {
-        await AuditLog.create({
-          action: "LOGIN",
-          username: username || "unknown",
-          details: "Failed login attempt - user not found",
-          ipAddress: req.ip,
-          userAgent: req.get("User-Agent"),
-        })
+        // Only log if database is connected
+        try {
+          await AuditLog.create({
+            action: "LOGIN",
+            username: username || "unknown",
+            details: "Failed login attempt - user not found",
+            ipAddress: req.ip,
+            userAgent: req.get("User-Agent"),
+          })
+        } catch (logError) {
+          console.error("Failed to log audit entry:", logError.message)
+        }
         const error = new Error("Invalid credentials")
         error.statusCode = 401
         return next(error)
       }
 
-      // Check password
+      // Check password using the model method
       const isValidPassword = await user.comparePassword(password)
       if (!isValidPassword) {
-        await AuditLog.create({
-          action: "LOGIN",
-          username: user.username,
-          details: "Failed login attempt - invalid password",
-          ipAddress: req.ip,
-          userAgent: req.get("User-Agent"),
-        })
+        try {
+          await AuditLog.create({
+            action: "LOGIN",
+            username: user.username,
+            details: "Failed login attempt - invalid password",
+            ipAddress: req.ip,
+            userAgent: req.get("User-Agent"),
+          })
+        } catch (logError) {
+          console.error("Failed to log audit entry:", logError.message)
+        }
         const error = new Error("Invalid credentials")
         error.statusCode = 401
         return next(error)
@@ -58,13 +67,17 @@ class AuthController {
       )
 
       // Log successful login
-      await AuditLog.create({
-        action: "LOGIN",
-        username: user.username,
-        details: `Successful login - ${user.userType}`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      try {
+        await AuditLog.create({
+          action: "LOGIN",
+          username: user.username,
+          details: `Successful login - ${user.userType}`,
+          ipAddress: req.ip,
+          userAgent: req.get("User-Agent"),
+        })
+      } catch (logError) {
+        console.error("Failed to log audit entry:", logError.message)
+      }
 
       res.json({
         message: "Login successful",
@@ -80,7 +93,7 @@ class AuthController {
     }
   }
 
-  // Voter Login
+  // Voter Login - Fixed schoolId type consistency
   static async voterLogin(req, res, next) {
     try {
       const { userId, password } = req.body
@@ -91,12 +104,20 @@ class AuthController {
         return next(error)
       }
 
-      // Find voter by school ID
-      const voter = await Voter.findOne({ schoolId: userId }).populate("degreeId")
+      // Convert userId to Number for consistent querying
+      const schoolId = Number(userId)
+      if (isNaN(schoolId)) {
+        const error = new Error("Invalid School ID format")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Find voter by school ID (now consistent Number type)
+      const voter = await Voter.findOne({ schoolId }).populate("degreeId")
       if (!voter) {
         await AuditLog.create({
           action: "LOGIN",
-          username: userId,
+          username: userId.toString(),
           details: "Failed voter login - voter not found",
           ipAddress: req.ip,
           userAgent: req.get("User-Agent"),
@@ -113,8 +134,8 @@ class AuthController {
         return next(error)
       }
 
-      // Check password
-      const isValidPassword = await bcrypt.compare(password, voter.password)
+      // Check password using the model method
+      const isValidPassword = await voter.comparePassword(password)
       if (!isValidPassword) {
         await AuditLog.create({
           action: "LOGIN",
@@ -165,7 +186,7 @@ class AuthController {
     }
   }
 
-  // Pre-registration Step 1 - Verify voter exists
+  // Pre-registration Step 1 - Fixed schoolId type consistency
   static async preRegisterStep1(req, res, next) {
     try {
       const { schoolId } = req.body
@@ -176,8 +197,16 @@ class AuthController {
         return next(error)
       }
 
-      // Find voter by school ID
-      const voter = await Voter.findOne({ schoolId }).populate("degreeId")
+      // Convert schoolId to Number for consistent querying
+      const schoolIdNumber = Number(schoolId)
+      if (isNaN(schoolIdNumber)) {
+        const error = new Error("Invalid School ID format")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Find voter by school ID (now consistent Number type)
+      const voter = await Voter.findOne({ schoolId: schoolIdNumber }).populate("degreeId")
       if (!voter) {
         const error = new Error("Student not found in voter database")
         error.statusCode = 404
@@ -216,7 +245,7 @@ class AuthController {
     }
   }
 
-  // Pre-registration Step 2 - Set password and complete registration
+  // Pre-registration Step 2 - Simplified password handling
   static async preRegisterStep2(req, res, next) {
     try {
       const { voterId, password, confirmPassword, firstName, middleName, lastName, schoolId, photoCompleted } = req.body
@@ -261,14 +290,9 @@ class AuthController {
         return next(error)
       }
 
-      // Hash password
-      const saltRounds = 12
-      const hashedPassword = await bcrypt.hash(password, saltRounds)
-
-      // Update voter with password
-      await Voter.findByIdAndUpdate(voterId, {
-        password: hashedPassword,
-      })
+      // Update voter with password (pre-save hook will handle hashing and registration status)
+      voter.password = password;
+      await voter.save();
 
       // Log successful registration
       await AuditLog.create({

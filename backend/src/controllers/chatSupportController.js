@@ -1,23 +1,33 @@
 const ChatSupport = require("../models/ChatSupport")
+const Degree = require("../models/Degree")
+const Voter = require("../models/Voter")
 const AuditLog = require("../models/AuditLog")
 
 class ChatSupportController {
   // Submit chat support request
   static async submitRequest(req, res, next) {
     try {
-      const { idNumber, fullName, course, birthday, email, message } = req.body
+      const { schoolId, fullName, degreeId, birthday, email, message } = req.body
 
       // Validation
-      if (!idNumber || !fullName || !course || !birthday || !email || !message) {
+      if (!schoolId || !fullName || !degreeId || !birthday || !email || !message) {
         const error = new Error("All fields are required")
         error.statusCode = 400
         return next(error)
       }
 
-      // Validate course
-      const validCourses = ["BSIT", "BSED", "BEED", "BSHM"]
-      if (!validCourses.includes(course)) {
-        const error = new Error("Invalid course selection")
+      // Validate schoolId is a number
+      const schoolIdNumber = Number(schoolId)
+      if (isNaN(schoolIdNumber)) {
+        const error = new Error("Invalid school ID format")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Validate degreeId exists in database
+      const degree = await Degree.findById(degreeId)
+      if (!degree) {
+        const error = new Error("Invalid degree selection")
         error.statusCode = 400
         return next(error)
       }
@@ -30,11 +40,15 @@ class ChatSupportController {
         return next(error)
       }
 
+      // Check if voter exists with this schoolId (optional validation)
+      const voter = await Voter.findOne({ schoolId: schoolIdNumber })
+      
       // Create chat support request
       const chatSupport = new ChatSupport({
-        idNumber,
+        schoolId: schoolIdNumber,
+        voterId: voter ? voter._id : null, // Link to voter if exists
         fullName,
-        course,
+        degreeId,
         birthday: new Date(birthday),
         email,
         message,
@@ -46,7 +60,7 @@ class ChatSupportController {
       // Log the support request
       await AuditLog.create({
         action: "SYSTEM_ACCESS",
-        username: idNumber,
+        username: schoolIdNumber.toString(),
         details: `Chat support request submitted - ${fullName}`,
         ipAddress: req.ip,
         userAgent: req.get("User-Agent"),
@@ -64,17 +78,22 @@ class ChatSupportController {
   // Get all chat support requests (for admin)
   static async getAllRequests(req, res, next) {
     try {
-      const { status, course, page = 1, limit = 10 } = req.query
+      const { status, degreeId, page = 1, limit = 50 } = req.query
 
       // Build filter
       const filter = {}
       if (status) filter.status = status
-      if (course) filter.course = course
+      if (degreeId) filter.degreeId = degreeId
 
       // Pagination
       const skip = (page - 1) * limit
 
-      const requests = await ChatSupport.find(filter).sort({ submittedAt: -1 }).skip(skip).limit(Number.parseInt(limit))
+      const requests = await ChatSupport.find(filter)
+        .populate("degreeId", "degreeCode degreeName")
+        .populate("voterId", "firstName middleName lastName email") // Populate voter info if linked
+        .sort({ submittedAt: -1 })
+        .skip(skip)
+        .limit(Number.parseInt(limit))
 
       const total = await ChatSupport.countDocuments(filter)
 
@@ -98,6 +117,9 @@ class ChatSupportController {
       const { id } = req.params
 
       const request = await ChatSupport.findById(id)
+        .populate("degreeId", "degreeCode degreeName")
+        .populate("voterId", "firstName middleName lastName email schoolId")
+      
       if (!request) {
         const error = new Error("Support request not found")
         error.statusCode = 404
@@ -134,6 +156,9 @@ class ChatSupportController {
       }
 
       const request = await ChatSupport.findByIdAndUpdate(id, updateData, { new: true })
+        .populate("degreeId", "degreeCode degreeName")
+        .populate("voterId", "firstName middleName lastName email schoolId")
+      
       if (!request) {
         const error = new Error("Support request not found")
         error.statusCode = 404
@@ -170,13 +195,55 @@ class ChatSupportController {
         },
       ])
 
-      const courseStats = await ChatSupport.aggregate([
+      const degreeStats = await ChatSupport.aggregate([
+        {
+          $lookup: {
+            from: "degrees",
+            localField: "degreeId",
+            foreignField: "_id",
+            as: "degree"
+          }
+        },
+        {
+          $unwind: "$degree"
+        },
         {
           $group: {
-            _id: "$course",
+            _id: "$degree.degreeName",
             count: { $sum: 1 },
           },
         },
+      ])
+
+      // Stats by voter registration status
+      const voterStats = await ChatSupport.aggregate([
+        {
+          $lookup: {
+            from: "voters",
+            localField: "schoolId",
+            foreignField: "schoolId",
+            as: "voter"
+          }
+        },
+        {
+          $project: {
+            hasVoterRecord: { $gt: [{ $size: "$voter" }, 0] },
+            isRegistered: { $cond: [
+              { $gt: [{ $size: "$voter" }, 0] },
+              { $ne: [{ $arrayElemAt: ["$voter.password", 0] }, null] },
+              false
+            ]}
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalRequests: { $sum: 1 },
+            fromVoters: { $sum: { $cond: ["$hasVoterRecord", 1, 0] } },
+            fromRegisteredVoters: { $sum: { $cond: ["$isRegistered", 1, 0] } },
+            fromNonVoters: { $sum: { $cond: ["$hasVoterRecord", 0, 1] } }
+          }
+        }
       ])
 
       const total = await ChatSupport.countDocuments()
@@ -184,7 +251,13 @@ class ChatSupportController {
       res.json({
         total,
         byStatus: stats,
-        byCourse: courseStats,
+        byDegree: degreeStats,
+        voterStats: voterStats[0] || {
+          totalRequests: 0,
+          fromVoters: 0,
+          fromRegisteredVoters: 0,
+          fromNonVoters: 0
+        }
       })
     } catch (error) {
       next(error)

@@ -1,6 +1,7 @@
 "use client"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { dashboardAPI, electionsAPI } from '@/lib/api/dashboard'
 
 export default function SAODashboard() {
   const [dashboardData, setDashboardData] = useState(null)
@@ -51,30 +52,17 @@ export default function SAODashboard() {
 
   const fetchDashboardData = async (token) => {
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}/dashboard/sao/dashboard`,
-        {
-          headers: {
-            "x-auth-token": token,
-            "Content-Type": "application/json",
-          },
-        },
-      )
-
-      if (response.ok) {
-        const data = await response.json()
-        setDashboardData(data)
-      } else if (response.status === 401 || response.status === 403) {
+      const data = await dashboardAPI.getSAODashboard()
+      setDashboardData(data)
+    } catch (error) {
+      console.error("Dashboard error:", error)
+      if (error.response?.status === 401 || error.response?.status === 403) {
         localStorage.removeItem("token")
         localStorage.removeItem("user")
         router.push("/adminlogin")
       } else {
-        const errorData = await response.json()
-        setError(errorData.message || "Failed to fetch dashboard data")
+        setError(error.message || "Network error - please check if the server is running")
       }
-    } catch (error) {
-      console.error("Dashboard error:", error)
-      setError("Network error - please check if the server is running")
     } finally {
       setLoading(false)
     }
@@ -82,17 +70,8 @@ export default function SAODashboard() {
 
   const fetchElections = async (token) => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}/elections`, {
-        headers: {
-          "x-auth-token": token,
-          "Content-Type": "application/json",
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setElections(data)
-      }
+      const data = await electionsAPI.getAll()
+      setElections(data.elections || data)
     } catch (error) {
       console.error("Fetch elections error:", error)
     }

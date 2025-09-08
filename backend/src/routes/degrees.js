@@ -1,40 +1,20 @@
-const express = require("express")
-const Degree = require("../models/Degree")
-const router = express.Router()
+const express = require("express");
+const DegreeController = require("../controllers/degreeController");
+const router = express.Router();
 
-// Get all degrees
-router.get("/", async (req, res, next) => {
-  try {
-    const degrees = await Degree.find().sort({ degreeCode: 1 })
-    res.json(degrees)
-  } catch (error) {
-    next(error)
-  }
-})
+// Specific routes MUST come before parameterized routes
+router.get("/statistics/overview", DegreeController.getDegreeStatistics);
+router.get("/departments/all", DegreeController.getDepartments);
+router.get("/search", DegreeController.searchDegrees);
+router.post("/bulk", DegreeController.bulkCreateDegrees);
 
-// Create new degree
-router.post("/", async (req, res, next) => {
-  try {
-    const { degreeCode, degreeName, department } = req.body
+// General CRUD routes
+router.get("/", DegreeController.getAllDegrees);
+router.post("/", DegreeController.createDegree);
 
-    const existingDegree = await Degree.findOne({ degreeCode })
-    if (existingDegree) {
-      const error = new Error("Degree code already exists")
-      error.statusCode = 400
-      return next(error)
-    }
+// Parameterized routes should come last
+router.get("/:id", DegreeController.getDegree);
+router.put("/:id", DegreeController.updateDegree);
+router.delete("/:id", DegreeController.deleteDegree);
 
-    const degree = new Degree({
-      degreeCode,
-      degreeName,
-      department,
-    })
-
-    await degree.save()
-    res.status(201).json(degree)
-  } catch (error) {
-    next(error)
-  }
-})
-
-module.exports = router
+module.exports = router;

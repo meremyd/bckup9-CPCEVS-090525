@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import Link from "next/link"
 
-import { getUserFromToken, logout } from "../../logics/auth" // Corrected import
+import { getUserFromToken, logout } from "../../lib/auth"
 
 export default function AdminLayout({ children }) {
   const [user, setUser] = useState(null)
@@ -16,7 +16,8 @@ export default function AdminLayout({ children }) {
   const isDashboard = pathname === "/admin/dashboard"
 
   useEffect(() => {
-    const checkAuth = async () => { // Added async function to handle potential async operations if getUserFromToken becomes async
+    const checkAuth = async () => {
+      // Added async function to handle potential async operations if getUserFromToken becomes async
       try {
         const userData = getUserFromToken() // Corrected function call
 
@@ -29,7 +30,7 @@ export default function AdminLayout({ children }) {
         setUser(userData)
 
         if (userData.userType !== "admin") {
-           console.warn("Unauthorized access: User is not an admin. Redirecting.")
+          console.warn("Unauthorized access: User is not an admin. Redirecting.")
           logout() // Log out unauthorized user
           router.push("/adminlogin")
           return

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { logout } from "../../../lib/auth"
+import { dashboardAPI } from '@/lib/api/dashboard'
 
 export default function AdminDashboard() {
   const [dashboardData, setDashboardData] = useState(null)
@@ -45,33 +46,18 @@ export default function AdminDashboard() {
 
   const fetchDashboardData = async (token) => {
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}/dashboard/admin/dashboard`,
-        {
-          headers: {
-            "x-auth-token": token,
-            "Content-Type": "application/json",
-          },
-        },
-      )
-
-      console.log("[v0] Dashboard API response status:", response.status)
-
-      if (response.ok) {
-        const data = await response.json()
-        console.log("[v0] Dashboard data received:", data)
-        setDashboardData(data)
-      } else if (response.status === 401 || response.status === 403) {
+      const data = await dashboardAPI.getAdminDashboard()
+      console.log("[v0] Dashboard data received:", data)
+      setDashboardData(data)
+    } catch (error) {
+      console.error("Dashboard error:", error)
+      if (error.response?.status === 401 || error.response?.status === 403) {
         console.warn("Session expired or unauthorized. Logging out.")
         logout()
         router.push("/adminlogin")
       } else {
-        const errorData = await response.json()
-        setError(errorData.message || "Failed to fetch dashboard data")
+        setError(error.message || "Network error - please check if the server is running")
       }
-    } catch (error) {
-      console.error("Dashboard error:", error)
-      setError("Network error - please check if the server is running")
     } finally {
       setLoading(false)
     }

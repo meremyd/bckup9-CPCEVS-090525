@@ -2,11 +2,6 @@ const mongoose = require("mongoose")
 
 const positionSchema = new mongoose.Schema(
   {
-    positionId: {
-      type: String,
-      required: true,
-      unique: true,
-    },
     electionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Election",
@@ -15,6 +10,7 @@ const positionSchema = new mongoose.Schema(
     positionName: {
       type: String,
       required: true,
+      trim: true,
     },
     positionOrder: {
       type: Number,
@@ -23,11 +19,24 @@ const positionSchema = new mongoose.Schema(
     maxVotes: {
       type: Number,
       default: 1,
+      min: 1,
+    },
+    description: {
+      type: String,
+      default: null,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
     },
   },
   {
     timestamps: true,
   },
 )
+
+// Compound index to ensure unique position per election
+positionSchema.index({ electionId: 1, positionName: 1 }, { unique: true })
+positionSchema.index({ electionId: 1, positionOrder: 1 })
 
 module.exports = mongoose.model("Position", positionSchema)

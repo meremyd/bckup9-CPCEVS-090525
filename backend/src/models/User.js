@@ -5,7 +5,7 @@ const userSchema = new mongoose.Schema(
   {
     userType: {
       type: String,
-      enum: ["admin", "election_committee", "sao", "voter"],
+      enum: ["admin", "election_committee", "sao"], // Removed "voter"
       required: true,
     },
     username: {
@@ -23,33 +23,69 @@ const userSchema = new mongoose.Schema(
       default: true,
     },
   },
-  { timestamps: true },
+  { 
+    timestamps: true,
+    collection: 'users'
+  }
 )
+
+// Simplified password handling - only hash when password is modified and not already hashed
+userSchema.pre('save', async function(next) {
+  // Only hash the password if it has been modified (or is new)
+  if (!this.isModified('passwordHash')) {
+    return next();
+  }
+  
+  try {
+    // Check if passwordHash is already a bcrypt hash (more secure check)
+    if (this.passwordHash && this.passwordHash.match(/^\$2[aby]\$\d{1,2}\$.{53}$/)) {
+      return next();
+    }
+    
+    const salt = await bcrypt.genSalt(12);
+    this.passwordHash = await bcrypt.hash(this.passwordHash, salt);
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 // Password comparison method
 userSchema.methods.comparePassword = async function (password) {
   try {
-    console.log("🔐 Comparing password for user:", this.username)
-    console.log("🔐 Input password:", password)
-    console.log("🔐 Stored hash exists:", !!this.passwordHash)
-    console.log("🔐 Hash length:", this.passwordHash ? this.passwordHash.length : 0)
-
     if (!this.passwordHash) {
       console.log("❌ No password hash stored for user")
       return false
     }
-
-    const result = await bcrypt.compare(password, this.passwordHash)
-    console.log("🔐 Comparison result:", result)
-
-    return result
+    return await bcrypt.compare(password, this.passwordHash)
   } catch (error) {
     console.error("❌ Password comparison error:", error)
     return false
   }
 }
 
-// REMOVE the pre-save middleware that was causing issues
-// We'll hash passwords manually in the scripts
+// Static method to create user with password
+userSchema.statics.createWithPassword = async function(userData) {
+  const { password, ...otherData } = userData;
+  
+  if (!password) {
+    throw new Error('Password is required');
+  }
+  
+  // Create user with passwordHash field
+  const user = new this({
+    ...otherData,
+    passwordHash: password // Will be hashed by pre-save hook
+  });
+  
+  await user.save();
+  return user;
+}
+
+// Method to update password
+userSchema.methods.updatePassword = async function(newPassword) {
+  this.passwordHash = newPassword; // Will be hashed by pre-save hook
+  await this.save();
+}
 
 module.exports = mongoose.model("User", userSchema)

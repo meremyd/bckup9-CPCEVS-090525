@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { dashboardAPI, electionsAPI } from '@/lib/api/dashboard'
 
 export default function ElectionCommitteeDashboard() {
   const [dashboardData, setDashboardData] = useState(null)
@@ -101,30 +102,19 @@ export default function ElectionCommitteeDashboard() {
 
   const fetchDashboardData = async (token) => {
     try {
-      const response = await fetch("http://localhost:5000/api/dashboard/committee/dashboard", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "x-auth-token": token, // Added both auth methods for compatibility
-          "Content-Type": "application/json",
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setDashboardData(data)
-        console.log("[v0] Dashboard data loaded successfully")
-      } else if (response.status === 401 || response.status === 403) {
+      const data = await dashboardAPI.getCommitteeDashboard()
+      setDashboardData(data)
+      console.log("[v0] Dashboard data loaded successfully")
+    } catch (error) {
+      console.error("[v0] Dashboard error:", error)
+      if (error.response?.status === 401 || error.response?.status === 403) {
         console.log("[v0] Authentication failed, clearing storage and redirecting")
         localStorage.removeItem("token")
         localStorage.removeItem("user")
         router.push("/adminlogin")
       } else {
-        const errorData = await response.json()
-        setError(errorData.message || "Failed to fetch dashboard data")
+        setError(error.message || "Network error - please check if the server is running")
       }
-    } catch (error) {
-      console.error("[v0] Dashboard error:", error)
-      setError("Network error - please check if the server is running")
     } finally {
       setLoading(false)
     }
@@ -132,26 +122,17 @@ export default function ElectionCommitteeDashboard() {
 
   const fetchElections = async (token) => {
     try {
-      const response = await fetch("http://localhost:5000/api/elections", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "x-auth-token": token, // Added both auth methods for compatibility
-          "Content-Type": "application/json",
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setElections(data)
-        console.log("[v0] Elections data loaded successfully")
-      } else if (response.status === 401 || response.status === 403) {
+      const data = await electionsAPI.getAll()
+      setElections(data.elections || data)
+      console.log("[v0] Elections data loaded successfully")
+    } catch (error) {
+      console.error("[v0] Fetch elections error:", error)
+      if (error.response?.status === 401 || error.response?.status === 403) {
         console.log("[v0] Authentication failed while fetching elections")
         localStorage.removeItem("token")
         localStorage.removeItem("user")
         router.push("/adminlogin")
       }
-    } catch (error) {
-      console.error("[v0] Fetch elections error:", error)
     }
   }
 
@@ -182,43 +163,27 @@ export default function ElectionCommitteeDashboard() {
   const handleAddElection = async (e) => {
     e.preventDefault()
     try {
-      const token = localStorage.getItem("token")
-      const response = await fetch("http://localhost:5000/api/elections", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "x-auth-token": token, // Added both auth methods for compatibility
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...electionForm,
-          createdBy: user.id,
-        }),
+      const newElection = await electionsAPI.create({
+        ...electionForm,
+        createdBy: user.id,
       })
-
-      if (response.ok) {
-        const newElection = await response.json()
-        setElections([...elections, newElection])
-        setShowAddElection(false)
-        setElectionForm({
-          electionId: "",
-          electionYear: new Date().getFullYear(),
-          title: "",
-          electionType: "ssg",
-          department: "",
-          status: "upcoming",
-          electionDate: "",
-          ballotOpenTime: "",
-          ballotCloseTime: "",
-        })
-        showAlert("success", "Success!", "Election created successfully!")
-      } else {
-        const errorData = await response.json()
-        showAlert("error", "Error!", errorData.message || "Failed to create election")
-      }
+      setElections([...elections, newElection])
+      setShowAddElection(false)
+      setElectionForm({
+        electionId: "",
+        electionYear: new Date().getFullYear(),
+        title: "",
+        electionType: "ssg",
+        department: "",
+        status: "upcoming",
+        electionDate: "",
+        ballotOpenTime: "",
+        ballotCloseTime: "",
+      })
+      showAlert("success", "Success!", "Election created successfully!")
     } catch (error) {
       console.error("Add election error:", error)
-      showAlert("error", "Network Error!", "Please check your connection")
+      showAlert("error", "Error!", error.message || "Failed to create election")
     }
   }
 

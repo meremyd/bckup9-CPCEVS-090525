@@ -1,5 +1,6 @@
 "use client"
 import { useState } from "react"
+import { chatSupportAPI } from '@/lib/api/chatSupport'
 
 export default function ChatSupportBtn() {
   const [open, setOpen] = useState(false)
@@ -23,29 +24,20 @@ export default function ChatSupportBtn() {
     setLoading(true)
 
     try {
-      const response = await fetch("http://localhost:5000/api/chat-support", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(form),
+      await chatSupportAPI.submit(form)
+      setSuccess(true)
+      setForm({
+        idNumber: "",
+        fullName: "",
+        course: "",
+        birthday: "",
+        email: "",
+        message: "",
       })
-
-      if (response.ok) {
-        setSuccess(true)
-        setForm({
-          idNumber: "",
-          fullName: "",
-          course: "",
-          birthday: "",
-          email: "",
-          message: "",
-        })
-        setTimeout(() => {
-          setOpen(false)
-          setSuccess(false)
-        }, 2000)
-      }
+      setTimeout(() => {
+        setOpen(false)
+        setSuccess(false)
+      }, 2000)
     } catch (error) {
       console.error("Chat support error:", error)
     } finally {

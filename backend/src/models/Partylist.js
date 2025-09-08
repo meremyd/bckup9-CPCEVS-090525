@@ -30,4 +30,7 @@ const partylistSchema = new mongoose.Schema(
   },
 )
 
+// Compound index to ensure unique partylist per election
+partylistSchema.index({ electionId: 1, partylistName: 1 }, { unique: true })
+
 module.exports = mongoose.model("Partylist", partylistSchema)

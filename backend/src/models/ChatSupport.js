@@ -2,21 +2,25 @@ const mongoose = require("mongoose")
 
 const chatSupportSchema = new mongoose.Schema(
   {
-    idNumber: {
-      type: String,
+    schoolId: {
+      type: Number, // Changed from String to Number to match Voter model
       required: true,
       trim: true,
+    },
+    voterId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Voter",
+      default: null, // Optional reference to Voter document
     },
     fullName: {
       type: String,
       required: true,
       trim: true,
     },
-    course: {
-      type: String,
+    degreeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Degree",
       required: true,
-      enum: ["BSIT", "BSED", "BEED", "BSHM"],
-      trim: true,
     },
     birthday: {
       type: Date,
@@ -63,7 +67,23 @@ const chatSupportSchema = new mongoose.Schema(
 
 // Index for efficient queries
 chatSupportSchema.index({ status: 1, submittedAt: -1 })
-chatSupportSchema.index({ idNumber: 1 })
-chatSupportSchema.index({ course: 1 })
+chatSupportSchema.index({ schoolId: 1 })
+chatSupportSchema.index({ degreeId: 1 })
+
+// Pre-save hook to auto-populate voterId if not provided
+chatSupportSchema.pre('save', async function(next) {
+  if (!this.voterId && this.schoolId) {
+    try {
+      const Voter = mongoose.model('Voter')
+      const voter = await Voter.findOne({ schoolId: this.schoolId })
+      if (voter) {
+        this.voterId = voter._id
+      }
+    } catch (error) {
+      console.log('Could not auto-populate voterId:', error.message)
+    }
+  }
+  next()
+})
 
 module.exports = mongoose.model("ChatSupport", chatSupportSchema)

@@ -3,6 +3,7 @@ import LeftSide from "../../components/LeftSide"
 import { useRouter } from "next/navigation"
 import { useState, useEffect, useRef } from "react"
 import ChatSupportBtn from "../../components/ChatSupportBtn"
+import { authAPI } from '@/lib/api/auth'
 
 export default function PreRegisterStep2() {
   const router = useRouter()
@@ -227,34 +228,22 @@ export default function PreRegisterStep2() {
     setError("")
 
     try {
-      const response = await fetch("http://localhost:5000/api/auth/pre-register-step2", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          voterId: voterInfo.id,
-          password: form.password,
-          confirmPassword: form.confirmPassword,
-          firstName: voterInfo.firstName,
-          middleName: voterInfo.middleName,
-          lastName: voterInfo.lastName,
-          schoolId: voterInfo.schoolId,
-          photoCompleted: faceRecognitionComplete,
-        }),
+      const data = await authAPI.preRegisterStep2({
+        voterId: voterInfo.id,
+        password: form.password,
+        confirmPassword: form.confirmPassword,
+        firstName: voterInfo.firstName,
+        middleName: voterInfo.middleName,
+        lastName: voterInfo.lastName,
+        schoolId: voterInfo.schoolId,
+        photoCompleted: faceRecognitionComplete,
       })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        localStorage.removeItem("preRegisterVoter")
-        alert("Registration completed successfully! You can now login.")
-        router.push("/voterlogin")
-      } else {
-        setError(data.message || "Registration failed")
-      }
+      
+      localStorage.removeItem("preRegisterVoter")
+      alert("Registration completed successfully! You can now login.")
+      router.push("/voterlogin")
     } catch (error) {
-      setError("Network error. Please try again.")
+      setError(error.message || "Registration failed")
     } finally {
       setLoading(false)
     }

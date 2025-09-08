@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { votersAPI } from '@/lib/api/voters'
 
 export default function ElectionCommitteeVotersPage() {
   const [voters, setVoters] = useState([])
@@ -20,23 +21,11 @@ export default function ElectionCommitteeVotersPage() {
 
   const fetchVoters = async () => {
     try {
-      const token = localStorage.getItem("token")
-      const response = await fetch("http://localhost:5000/api/voters", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setVoters(data)
-      } else {
-        setError("Failed to fetch voters")
-      }
+      const data = await votersAPI.getAll()
+      setVoters(data)
     } catch (error) {
       console.error("Fetch voters error:", error)
-      setError("Network error")
+      setError(error.message || "Network error")
     }
   }
 

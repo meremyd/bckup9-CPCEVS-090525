@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import { useState } from "react"
 import ChatSupportBtn from "../../components/ChatSupportBtn"
 import Swal from "sweetalert2"
+import { votersAPI, authAPI } from '@/lib/api/voters'
 
 export default function PreRegister() {
   const router = useRouter()
@@ -46,42 +47,35 @@ export default function PreRegister() {
 
       if (value.length >= 4) {
         try {
-          const response = await fetch(`http://localhost:5000/api/voters/lookup/${value}`)
-          const data = await response.json()
-
-          if (response.ok) {
-            setForm((prev) => ({
-              ...prev,
-              firstName: data.firstName || "",
-              middleName: data.middleName || "",
-              lastName: data.lastName || "",
-            }))
-            setVoterData(data)
-            setVoterFound(true)
-            setError("")
-          } else {
-            setForm((prev) => ({
-              ...prev,
-              firstName: "",
-              middleName: "",
-              lastName: "",
-            }))
-            setVoterFound(false)
-            setVoterData(null)
-            if (value.length >= 8) {
-              // Only show error for complete IDs
-              Swal.fire({
-                icon: "error",
-                title: "Student Not Found",
-                text: data.message || "Student ID not found in voter database",
-                confirmButtonColor: "#2563eb",
-              })
-            }
-          }
+          const data = await votersAPI.lookupBySchoolId(value)
+          setForm((prev) => ({
+            ...prev,
+            firstName: data.firstName || "",
+            middleName: data.middleName || "",
+            lastName: data.lastName || "",
+          }))
+          setVoterData(data)
+          setVoterFound(true)
+          setError("")
         } catch (error) {
           console.error("Lookup error:", error)
+          setForm((prev) => ({
+            ...prev,
+            firstName: "",
+            middleName: "",
+            lastName: "",
+          }))
           setVoterFound(false)
           setVoterData(null)
+          if (value.length >= 8) {
+            // Only show error for complete IDs
+            Swal.fire({
+              icon: "error",
+              title: "Student Not Found",
+              text: error.message || "Student ID not found in voter database",
+              confirmButtonColor: "#2563eb",
+            })
+          }
         }
       }
     }
@@ -126,35 +120,16 @@ export default function PreRegister() {
     setError("")
 
     try {
-      const response = await fetch("http://localhost:5000/api/auth/pre-register-step1", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ schoolId: form.schoolId }),
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        // Store voter info for step 2
-        localStorage.setItem("preRegisterVoter", JSON.stringify(data.voter))
-        router.push("/pre-register-step2")
-      } else {
-        setError(data.message || "Registration failed")
-        Swal.fire({
-          icon: "error",
-          title: "Registration Error",
-          text: data.message || "Registration failed. Please try again.",
-          confirmButtonColor: "#2563eb",
-        })
-      }
+      const data = await authAPI.preRegisterStep1({ schoolId: form.schoolId })
+      // Store voter info for step 2
+      localStorage.setItem("preRegisterVoter", JSON.stringify(data.voter))
+      router.push("/pre-register-step2")
     } catch (error) {
-      setError("Network error. Please try again.")
+      setError(error.message || "Registration failed")
       Swal.fire({
         icon: "error",
-        title: "Network Error",
-        text: "Please check your connection and try again.",
+        title: "Registration Error",
+        text: error.message || "Registration failed. Please try again.",
         confirmButtonColor: "#2563eb",
       })
     } finally {

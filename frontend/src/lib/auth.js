@@ -1,160 +1,120 @@
+// frontend/src/lib/auth.js
 import { jwtDecode } from "jwt-decode"
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
-
-export const fetchWithAuth = async (endpoint, options = {}) => {
-  const token = getToken()
-  const headers = {
-    "Content-Type": "application/json",
-    "x-auth-token": token,
-    ...options.headers,
-  }
-
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  })
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      logout()
-      return
-    }
-    const errorData = await response.json()
-    throw new Error(errorData.message || "API request failed")
-  }
-
-  return response.json()
-}
+import { authAPI } from "./api/auth"
 
 /**
- * Login user with username and password.
- * Saves JWT token to localStorage on success.
- * Returns user info decoded from token.
+ * Admin/staff login
  */
 export async function login(username, password) {
-  const response = await fetch(`${API_BASE_URL}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  })
+  try {
+    const data = await authAPI.login({ username, password })
+    const { token, user } = data
 
-  if (!response.ok) {
-    const errorData = await response.json()
-    throw new Error(errorData.message || "Login failed")
-  }
+    localStorage.setItem("token", token)
+    if (user) localStorage.setItem("user", JSON.stringify(user))
 
-  const data = await response.json()
-  localStorage.setItem("token", data.token)
-  if (data.user) {
-    localStorage.setItem("user", JSON.stringify(data.user))
-  }
+    const decodedUser = getUserFromToken() || user
 
-  const user = getUserFromToken() || data.user
-
-  // Redirect based on user type
-  if (user && user.userType) {
-    switch (user.userType) {
-      case "admin":
-        window.location.href = "/admin/dashboard"
-        break
-      case "election_committee":
-        window.location.href = "/ecommittee/dashboard"
-        break
-      case "sao":
-        window.location.href = "/sao/dashboard"
-        break
-      default:
-        console.error("Unknown user type:", user.userType)
-        throw new Error("Invalid user type")
+    // Redirect based on role
+    if (decodedUser?.userType) {
+      switch (decodedUser.userType) {
+        case "admin":
+          window.location.href = "/admin/dashboard"
+          break
+        case "election_committee":
+          window.location.href = "/ecommittee/dashboard"
+          break
+        case "sao":
+          window.location.href = "/sao/dashboard"
+          break
+        default:
+          throw new Error("Invalid user type")
+      }
     }
-  }
 
-  return user
+    return decodedUser
+  } catch (error) {
+    const errorMessage = error.response?.data?.message || error.message || "Login failed"
+    throw new Error(errorMessage)
+  }
 }
 
 /**
- * Remove JWT token from localStorage to logout user.
+ * Voter login
+ */
+export async function voterLogin(schoolId, password) {
+  try {
+    const data = await authAPI.voterLogin({ schoolId, password })
+    const { token, voter } = data
+
+    localStorage.setItem("voterToken", token)
+    if (voter) localStorage.setItem("voter", JSON.stringify(voter))
+
+    return { token, voter }
+  } catch (error) {
+    const errorMessage = error.response?.data?.message || error.message || "Voter login failed"
+    throw new Error(errorMessage)
+  }
+}
+
+/**
+ * Logout (admin/user + voter)
  */
 export function logout() {
   localStorage.removeItem("token")
   localStorage.removeItem("user")
-  window.location.href = "/adminlogin"
+  router.push("/adminlogin")
+}
+
+export function voterLogout() {
+  localStorage.removeItem("voterToken")
+  localStorage.removeItem("voter")
+  router.push("/voterlogin")
 }
 
 /**
- * Get JWT token from localStorage.
+ * Token + user helpers
  */
 export function getToken() {
   return localStorage.getItem("token")
 }
 
-/**
- * Decode and return user info from JWT token.
- * Returns null if no token or invalid token.
- */
+export function getVoterToken() {
+  return localStorage.getItem("voterToken")
+}
+
 export function getUserFromToken() {
   const token = getToken()
   if (!token) return null
+
   try {
     const decoded = jwtDecode(token)
     if (decoded.exp && decoded.exp < Date.now() / 1000) {
-      localStorage.removeItem("token")
-      localStorage.removeItem("user") // Also remove user data when token expires
+      logout()
       return null
     }
     return decoded
   } catch (error) {
     console.error("Invalid token:", error)
-    localStorage.removeItem("token")
-    localStorage.removeItem("user") // Also remove user data when token is invalid
+    logout()
     return null
   }
 }
 
-/**
- * Check if user is authenticated (has valid token).
- */
-export function isAuthenticated() {
-  const tokenUser = getUserFromToken()
-  const storedUser = getStoredUser()
-  return tokenUser !== null || storedUser !== null
-}
+export function getVoterFromToken() {
+  const token = getVoterToken()
+  if (!token) return null
 
-/**
- * Get stored user data from localStorage
- */
-export function getStoredUser() {
   try {
-    const userData = localStorage.getItem("user")
-    return userData ? JSON.parse(userData) : null
+    const decoded = jwtDecode(token)
+    if (decoded.exp && decoded.exp < Date.now() / 1000) {
+      voterLogout()
+      return null
+    }
+    return decoded
   } catch (error) {
-    console.error("Error parsing stored user:", error)
-    localStorage.removeItem("user")
+    console.error("Invalid voter token:", error)
+    voterLogout()
     return null
   }
-}
-
-/**
- * Check if user has specific role/userType
- */
-export function hasRole(requiredRole) {
-  let user = getUserFromToken()
-
-  if (!user || !user.userType) {
-    user = getStoredUser()
-  }
-
-  return user && user.userType === requiredRole
-}
-
-/**
- * Redirect to login if not authenticated
- */
-export function requireAuth() {
-  if (!isAuthenticated()) {
-    window.location.href = "/adminlogin"
-    return false
-  }
-  return true
 }

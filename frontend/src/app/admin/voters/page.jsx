@@ -1,6 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Swal from 'sweetalert2'
+import { votersAPI } from '@/lib/api/voters'
+import { degreesAPI } from '@/lib/api/degrees'
 
 export default function VotersPage() {
   const [voters, setVoters] = useState([])
@@ -14,6 +17,28 @@ export default function VotersPage() {
   const [selectedDegree, setSelectedDegree] = useState("")
   const [degreeStats, setDegreeStats] = useState({})
 
+  // SweetAlert function
+  const showAlert = (type, title, text) => {
+    Swal.fire({
+      icon: type,
+      title: title,
+      text: text,
+      confirmButtonColor: "#3B82F6",
+    })
+  }
+
+  const showConfirm = (title, text, confirmText = "Yes, delete it!") => {
+    return Swal.fire({
+      title: title,
+      text: text,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#EF4444",
+      cancelButtonColor: "#6B7280",
+      confirmButtonText: confirmText,
+    }).then((result) => result.isConfirmed)
+  }
+
   // Form state
   const [formData, setFormData] = useState({
     schoolId: "",
@@ -22,41 +47,8 @@ export default function VotersPage() {
     lastName: "",
     birthdate: "",
     degreeId: "",
+    email: "",
   })
-
-  // SweetAlert function
-  const showAlert = (type, title, text) => {
-    if (typeof window !== "undefined" && window.Swal) {
-      window.Swal.fire({
-        icon: type,
-        title: title,
-        text: text,
-        confirmButtonColor: "#3B82F6",
-      })
-    } else {
-      alert(`${title}: ${text}`)
-    }
-  }
-
-  const showConfirm = (title, text, confirmText = "Yes, delete it!") => {
-    return new Promise((resolve) => {
-      if (typeof window !== "undefined" && window.Swal) {
-        window.Swal.fire({
-          title: title,
-          text: text,
-          icon: "warning",
-          showCancelButton: true,
-          confirmButtonColor: "#EF4444",
-          cancelButtonColor: "#6B7280",
-          confirmButtonText: confirmText,
-        }).then((result) => {
-          resolve(result.isConfirmed)
-        })
-      } else {
-        resolve(confirm(`${title}\n${text}`))
-      }
-    })
-  }
 
   useEffect(() => {
     fetchVoters()
@@ -76,24 +68,20 @@ export default function VotersPage() {
 
   const fetchVoters = async () => {
     try {
-      const token = localStorage.getItem("token")
-      const response = await fetch("http://localhost:5000/api/voters", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        console.log("Fetched voters:", data) // Debug log
+      const data = await votersAPI.getAll()
+      console.log("Fetched voters:", data) // Debug log
+      // Handle both array and object responses
+      if (Array.isArray(data)) {
         setVoters(data)
+      } else if (data.voters && Array.isArray(data.voters)) {
+        setVoters(data.voters)
       } else {
-        setError("Failed to fetch voters")
+        console.error("Unexpected data format:", data)
+        setVoters([])
       }
     } catch (error) {
       console.error("Fetch voters error:", error)
-      setError("Network error")
+      setError(error.message || "Network error")
     } finally {
       setLoading(false)
     }
@@ -101,26 +89,32 @@ export default function VotersPage() {
 
   const fetchDegrees = async () => {
     try {
-      const token = localStorage.getItem("token")
-      const response = await fetch("http://localhost:5000/api/degrees", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        console.log("Fetched degrees:", data) // Debug log
+      const data = await degreesAPI.getAll()
+      console.log("Fetched degrees:", data) // Debug log
+      // Handle both array and object responses
+      if (Array.isArray(data)) {
         setDegrees(data)
+      } else if (data.degrees && Array.isArray(data.degrees)) {
+        setDegrees(data.degrees)
+      } else {
+        console.error("Unexpected degrees data format:", data)
+        setDegrees([])
       }
     } catch (error) {
       console.error("Fetch degrees error:", error)
+      setDegrees([])
     }
   }
 
   const calculateDegreeStats = () => {
     const stats = {}
+
+    // Ensure voters is an array before processing
+    if (!Array.isArray(voters)) {
+      console.error("Voters is not an array:", voters)
+      setDegreeStats({})
+      return
+    }
 
     // Debug: Log all voters and their degree info
     console.log("Calculating stats for voters:", voters.length)
@@ -203,6 +197,7 @@ export default function VotersPage() {
       lastName: "",
       birthdate: "",
       degreeId: "",
+      email: "",
     })
   }
 
@@ -217,59 +212,29 @@ export default function VotersPage() {
   const handleAddVoter = async (e) => {
     e.preventDefault()
     try {
-      const token = localStorage.getItem("token")
-      const response = await fetch("http://localhost:5000/api/voters", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
-      })
-
-      if (response.ok) {
-        const newVoter = await response.json()
-        setVoters([...voters, newVoter])
-        setShowAddModal(false)
-        resetForm()
-        showAlert("success", "Success!", "Voter added successfully")
-      } else {
-        const errorData = await response.json()
-        showAlert("error", "Error!", errorData.message || "Failed to add voter")
-      }
+      const newVoter = await votersAPI.create(formData)
+      setVoters([...voters, newVoter])
+      setShowAddModal(false)
+      resetForm()
+      showAlert("success", "Success!", "Voter added successfully")
     } catch (error) {
       console.error("Add voter error:", error)
-      showAlert("error", "Network Error!", "Please check your connection")
+      showAlert("error", "Error!", error.message || "Failed to add voter")
     }
   }
 
   const handleEditVoter = async (e) => {
     e.preventDefault()
     try {
-      const token = localStorage.getItem("token")
-      const response = await fetch(`http://localhost:5000/api/voters/${editingVoter._id}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
-      })
-
-      if (response.ok) {
-        const updatedVoter = await response.json()
-        setVoters(voters.map((voter) => (voter._id === editingVoter._id ? updatedVoter : voter)))
-        setShowEditModal(false)
-        setEditingVoter(null)
-        resetForm()
-        showAlert("success", "Success!", "Voter updated successfully")
-      } else {
-        const errorData = await response.json()
-        showAlert("error", "Error!", errorData.message || "Failed to update voter")
-      }
+      const updatedVoter = await votersAPI.update(editingVoter._id, formData)
+      setVoters(voters.map((voter) => (voter._id === editingVoter._id ? updatedVoter : voter)))
+      setShowEditModal(false)
+      setEditingVoter(null)
+      resetForm()
+      showAlert("success", "Success!", "Voter updated successfully")
     } catch (error) {
       console.error("Update voter error:", error)
-      showAlert("error", "Network Error!", "Please check your connection")
+      showAlert("error", "Error!", error.message || "Failed to update voter")
     }
   }
 
@@ -282,34 +247,23 @@ export default function VotersPage() {
       lastName: voter.lastName,
       birthdate: voter.birthdate ? voter.birthdate.split("T")[0] : "",
       degreeId: voter.degreeId?._id || "",
+      email: voter.email || "",
     })
     setShowEditModal(true)
   }
 
   const handleDelete = async (voterId) => {
     const confirmed = await showConfirm("Are you sure?", "You won't be able to revert this!", "Yes, delete it!")
-
+    
     if (!confirmed) return
 
     try {
-      const token = localStorage.getItem("token")
-      const response = await fetch(`http://localhost:5000/api/voters/${voterId}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      })
-
-      if (response.ok) {
-        setVoters(voters.filter((voter) => voter._id !== voterId))
-        showAlert("success", "Deleted!", "Voter has been deleted successfully")
-      } else {
-        showAlert("error", "Error!", "Failed to delete voter")
-      }
+      await votersAPI.delete(voterId)
+      setVoters(voters.filter((voter) => voter._id !== voterId))
+      showAlert("success", "Deleted!", "Voter has been deleted successfully")
     } catch (error) {
       console.error("Delete voter error:", error)
-      showAlert("error", "Network Error!", "Please check your connection")
+      showAlert("error", "Error!", error.message || "Failed to delete voter")
     }
   }
 
@@ -322,12 +276,13 @@ export default function VotersPage() {
     setSearchTerm("")
   }
 
-  const filteredVoters = voters.filter((voter) => {
+  const filteredVoters = Array.isArray(voters) ? voters.filter((voter) => {
     const matchesSearch =
-      voter.schoolId.toString().includes(searchTerm) ||
-      `${voter.firstName} ${voter.middleName} ${voter.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      voter.degreeId?.degreeName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      voter.degreeId?.department?.toLowerCase().includes(searchTerm.toLowerCase())
+      (voter.schoolId || "").toString().includes(searchTerm) ||
+      `${voter.firstName || ""} ${voter.middleName || ""} ${voter.lastName || ""}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (voter.degreeId?.degreeName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (voter.degreeId?.department || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (voter.email || "").toLowerCase().includes(searchTerm.toLowerCase())
 
     let matchesDegree = true
     if (selectedDegree) {
@@ -353,7 +308,7 @@ export default function VotersPage() {
     }
 
     return matchesSearch && matchesDegree
-  })
+  }) : []
 
   const getDegreeCardColor = (degreeKey) => {
     const colors = {
@@ -442,7 +397,7 @@ export default function VotersPage() {
             <div className="relative">
               <input
                 type="text"
-                placeholder="Search voters by ID, name, degree, or department..."
+                placeholder="Search voters by ID, name, degree, department, or email..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -496,6 +451,9 @@ export default function VotersPage() {
                   Last Name
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Email
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Birthdate
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -505,7 +463,7 @@ export default function VotersPage() {
                   Department
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  User ID
+                  Registration Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Created At
@@ -527,6 +485,7 @@ export default function VotersPage() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{voter.firstName}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{voter.middleName || "-"}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{voter.lastName}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{voter.email || "-"}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {voter.birthdate ? new Date(voter.birthdate).toLocaleDateString() : "-"}
                   </td>
@@ -537,7 +496,7 @@ export default function VotersPage() {
                     {voter.degreeId?.department || "N/A"}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {voter.userId ? (
+                    {voter.isRegistered ? (
                       <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                         Registered
                       </span>
@@ -587,6 +546,18 @@ export default function VotersPage() {
                   required
                   className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                   placeholder="Enter school ID"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Email</label>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  required
+                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Enter email address"
                 />
               </div>
               <div>
@@ -688,6 +659,17 @@ export default function VotersPage() {
                   type="number"
                   name="schoolId"
                   value={formData.schoolId}
+                  onChange={handleInputChange}
+                  required
+                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Email</label>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
                   onChange={handleInputChange}
                   required
                   className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"

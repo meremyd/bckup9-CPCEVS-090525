@@ -1,6 +1,5 @@
 const User = require("../models/User")
 const AuditLog = require("../models/AuditLog")
-const bcrypt = require("bcryptjs")
 
 class UserController {
   // Get all users
@@ -13,14 +12,17 @@ class UserController {
       if (userType) filter.userType = userType
       if (isActive !== undefined) filter.isActive = isActive === "true"
       if (search) {
-        filter.$or = [{ username: { $regex: search, $options: "i" } }, { userType: { $regex: search, $options: "i" } }]
+        filter.$or = [
+          { username: { $regex: search, $options: "i" } },
+          { userType: { $regex: search, $options: "i" } }
+        ]
       }
 
       // Pagination
       const skip = (page - 1) * limit
 
       const users = await User.find(filter)
-        .select("-passwordHash") // Exclude password hash
+        .select("-passwordHash")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number.parseInt(limit))
@@ -63,7 +65,7 @@ class UserController {
   // Create new user
   static async createUser(req, res, next) {
     try {
-      const { username, password, userType } = req.body
+      const { username, password, userType, isActive = true } = req.body
 
       // Validation
       if (!username || !password || !userType) {
@@ -72,7 +74,8 @@ class UserController {
         return next(error)
       }
 
-      const validUserTypes = ["admin", "election_committee", "sao", "voter"]
+      // FIXED: Removed "voter" from valid user types
+      const validUserTypes = ["admin", "election_committee", "sao"]
       if (!validUserTypes.includes(userType)) {
         const error = new Error("Invalid user type")
         error.statusCode = 400
@@ -93,28 +96,26 @@ class UserController {
         return next(error)
       }
 
-      // Hash password
-      const saltRounds = 12
-      const passwordHash = await bcrypt.hash(password, saltRounds)
-
-      // Create user
-      const user = new User({
+      // Create user using the static method
+      const user = await User.createWithPassword({
         username,
-        passwordHash,
+        password,
         userType,
-        isActive: true,
+        isActive,
       })
-
-      await user.save()
 
       // Log the creation
-      await AuditLog.create({
-        action: "CREATE_USER",
-        username: req.user?.username || "system",
-        details: `User created - ${username} (${userType})`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      try {
+        await AuditLog.create({
+          action: "CREATE_USER",
+          username: req.user?.username || "system",
+          details: `User created - ${username} (${userType})`,
+          ipAddress: req.ip,
+          userAgent: req.get("User-Agent"),
+        })
+      } catch (logError) {
+        console.error("Failed to log audit entry:", logError.message)
+      }
 
       const userResponse = await User.findById(user._id).select("-passwordHash")
 
@@ -140,9 +141,7 @@ class UserController {
         return next(error)
       }
 
-      // Build update data
-      const updateData = {}
-
+      // Update username if provided
       if (username && username !== user.username) {
         // Check if new username already exists
         const existingUser = await User.findOne({ username, _id: { $ne: id } })
@@ -151,43 +150,48 @@ class UserController {
           error.statusCode = 400
           return next(error)
         }
-        updateData.username = username
+        user.username = username
       }
 
+      // Update password if provided
       if (password) {
         if (password.length < 6) {
           const error = new Error("Password must be at least 6 characters long")
           error.statusCode = 400
           return next(error)
         }
-        const saltRounds = 12
-        updateData.passwordHash = await bcrypt.hash(password, saltRounds)
+        await user.updatePassword(password)
       }
 
+      // Update userType if provided
       if (userType) {
-        const validUserTypes = ["admin", "election_committee", "sao", "voter"]
+        // FIXED: Removed "voter" from valid user types
+        const validUserTypes = ["admin", "election_committee", "sao"]
         if (!validUserTypes.includes(userType)) {
           const error = new Error("Invalid user type")
           error.statusCode = 400
           return next(error)
         }
-        updateData.userType = userType
+        user.userType = userType
       }
 
+      // Update isActive if provided
       if (isActive !== undefined) {
-        updateData.isActive = isActive
+        user.isActive = isActive
       }
 
-      const updatedUser = await User.findByIdAndUpdate(id, updateData, { new: true }).select("-passwordHash")
+      await user.save()
 
       // Log the update
       await AuditLog.create({
         action: "UPDATE_USER",
         username: req.user?.username || "system",
-        details: `User updated - ${updatedUser.username} (${updatedUser.userType})`,
+        details: `User updated - ${user.username} (${user.userType})`,
         ipAddress: req.ip,
         userAgent: req.get("User-Agent"),
       })
+
+      const updatedUser = await User.findById(id).select("-passwordHash")
 
       res.json({
         message: "User updated successfully",

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import Image from "next/image"
 import ChatSupportBtn from "../../components/ChatSupportBtn"
 import { useState } from "react"
+import { authAPI } from '@/lib/api/auth'
 
 export default function VoterLogin() {
   const router = useRouter()
@@ -26,30 +27,18 @@ export default function VoterLogin() {
     setError("")
 
     try {
-      const response = await fetch("http://localhost:5000/api/auth/voter-login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId: form.userId,
-          password: form.password,
-        }),
+      const data = await authAPI.voterLogin({
+        userId: form.userId,
+        password: form.password,
       })
+      
+      // Store user data in localStorage
+      localStorage.setItem("user", JSON.stringify(data.user))
+      localStorage.setItem("token", data.token)
 
-      const data = await response.json()
-
-      if (response.ok) {
-        // Store user data in localStorage
-        localStorage.setItem("user", JSON.stringify(data.user))
-        localStorage.setItem("token", data.token)
-
-        router.push(data.redirectTo || "/voter/dashboard")
-      } else {
-        setError(data.message || "Login failed")
-      }
+      router.push(data.redirectTo || "/voter/dashboard")
     } catch (error) {
-      setError("Network error. Please try again.")
+      setError(error.message || "Login failed")
     } finally {
       setIsLoading(false)
     }

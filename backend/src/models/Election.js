@@ -46,10 +46,22 @@ const electionSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    totalVotes: {
+      type: Number,
+      default: 0,
+    },
+    voterTurnout: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,
   },
 )
+
+// Indexes for better query performance
+electionSchema.index({ electionType: 1, status: 1 })
+electionSchema.index({ electionDate: 1 })
 
 module.exports = mongoose.model("Election", electionSchema)

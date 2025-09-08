@@ -2,6 +2,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
+import { authAPI } from '../../lib/api/auth'
 
 export default function AdminLogin() {
   const router = useRouter()
@@ -20,47 +21,35 @@ export default function AdminLogin() {
     setError("")
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}/auth/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          username: form.username,
-          password: form.password,
-        }),
+      const data = await authAPI.login({
+        username: form.username,
+        password: form.password,
       })
+      
+      // Store token and user data properly
+      localStorage.setItem("token", data.token)
+      localStorage.setItem("user", JSON.stringify(data.user))
 
-      const data = await response.json()
+      console.log("[v0] Login successful, user type:", data.user.userType)
 
-      if (response.ok) {
-        // Store token and user data properly
-        localStorage.setItem("token", data.token)
-        localStorage.setItem("user", JSON.stringify(data.user))
+      await new Promise((resolve) => setTimeout(resolve, 100))
 
-        console.log("[v0] Login successful, user type:", data.user.userType)
-
-        await new Promise((resolve) => setTimeout(resolve, 100))
-
-        switch (data.user.userType) {
-          case "admin":
-            router.push("/admin/dashboard")
-            break
-          case "election_committee":
-            router.push("/ecommittee/dashboard")
-            break
-          case "sao":
-            router.push("/sao/dashboard")
-            break
-          default:
-            router.push("/admin/dashboard")
-        }
-      } else {
-        setError(data.message || "Login failed")
+      switch (data.user.userType) {
+        case "admin":
+          router.push("/admin/dashboard")
+          break
+        case "election_committee":
+          router.push("/ecommittee/dashboard")
+          break
+        case "sao":
+          router.push("/sao/dashboard")
+          break
+        default:
+          router.push("/admin/dashboard")
       }
     } catch (error) {
       console.error("Login error:", error)
-      setError("Network error. Please check if the server is running.")
+      setError(error.message || "Login failed")
     } finally {
       setLoading(false)
     }

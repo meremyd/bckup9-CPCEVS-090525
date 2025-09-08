@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Swal from 'sweetalert2'
+import { votersAPI } from '@/lib/api/voters'
 
 export default function RegisteredVotersPage() {
   const [voters, setVoters] = useState([])
@@ -12,6 +14,28 @@ export default function RegisteredVotersPage() {
   const [editingVoter, setEditingVoter] = useState(null)
   const [showEditModal, setShowEditModal] = useState(false)
 
+  // SweetAlert function
+  const showAlert = (type, title, text) => {
+    Swal.fire({
+      icon: type,
+      title: title,
+      text: text,
+      confirmButtonColor: "#10B981",
+    })
+  }
+
+  const showConfirm = (title, text, confirmText = "Yes, deactivate!") => {
+    return Swal.fire({
+      title: title,
+      text: text,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#EF4444",
+      cancelButtonColor: "#6B7280",
+      confirmButtonText: confirmText,
+    }).then((result) => result.isConfirmed)
+  }
+
   useEffect(() => {
     fetchRegisteredVoters()
   }, [])
@@ -22,24 +46,19 @@ export default function RegisteredVotersPage() {
 
   const fetchRegisteredVoters = async () => {
     try {
-      const token = localStorage.getItem("token")
-      // Updated API endpoint to use new voter controller
-      const response = await fetch("http://localhost:5000/api/voters/registered", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
+      const data = await votersAPI.getRegistered()
+      // Handle both array and object responses
+      if (Array.isArray(data)) {
         setVoters(data)
+      } else if (data.voters && Array.isArray(data.voters)) {
+        setVoters(data.voters)
       } else {
-        setError("Failed to fetch registered voters")
+        console.error("Unexpected data format:", data)
+        setVoters([])
       }
     } catch (error) {
       console.error("Fetch registered voters error:", error)
-      setError("Network error")
+      setError(error.message || "Network error")
     } finally {
       setLoading(false)
     }
@@ -47,6 +66,13 @@ export default function RegisteredVotersPage() {
 
   const calculateDegreeStats = () => {
     const stats = {}
+
+    // Ensure voters is an array before processing
+    if (!Array.isArray(voters)) {
+      console.error("Voters is not an array:", voters)
+      setDegreeStats({})
+      return
+    }
 
     // Debug: Log all voters and their degree info
     console.log("Calculating stats for registered voters:", voters.length)
@@ -131,30 +157,17 @@ export default function RegisteredVotersPage() {
   }
 
   const handleDeactivate = async (voterId) => {
-    if (!confirm("Are you sure you want to deactivate this voter?")) {
-      return
-    }
+    const confirmed = await showConfirm("Are you sure?", "This voter will be deactivated and won't be able to vote.", "Yes, deactivate!")
+    
+    if (!confirmed) return
 
     try {
-      const token = localStorage.getItem("token")
-      // Updated API endpoint to use new voter controller
-      const response = await fetch(`http://localhost:5000/api/voters/${voterId}/deactivate`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      })
-
-      if (response.ok) {
-        fetchRegisteredVoters()
-        alert("Voter deactivated successfully")
-      } else {
-        alert("Failed to deactivate voter")
-      }
+      await votersAPI.deactivate(voterId)
+      fetchRegisteredVoters()
+      showAlert("success", "Deactivated!", "Voter has been deactivated successfully")
     } catch (error) {
       console.error("Deactivate voter error:", error)
-      alert("Network error")
+      showAlert("error", "Error!", error.message || "Failed to deactivate voter")
     }
   }
 
@@ -163,12 +176,12 @@ export default function RegisteredVotersPage() {
     setShowEditModal(true)
   }
 
-  const filteredVoters = voters.filter((voter) => {
+  const filteredVoters = Array.isArray(voters) ? voters.filter((voter) => {
     const matchesSearch =
-      voter.schoolId.toString().includes(searchTerm) ||
-      `${voter.firstName} ${voter.middleName} ${voter.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      voter.degreeId?.degreeName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      voter.degreeId?.department?.toLowerCase().includes(searchTerm.toLowerCase())
+      (voter.schoolId || "").toString().includes(searchTerm) ||
+      `${voter.firstName || ""} ${voter.middleName || ""} ${voter.lastName || ""}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (voter.degreeId?.degreeName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (voter.degreeId?.department || "").toLowerCase().includes(searchTerm.toLowerCase())
 
     let matchesDegree = true
     if (selectedDegree) {
@@ -194,7 +207,7 @@ export default function RegisteredVotersPage() {
     }
 
     return matchesSearch && matchesDegree
-  })
+  }) : []
 
   const getDegreeCardColor = (degreeKey) => {
     const colors = {

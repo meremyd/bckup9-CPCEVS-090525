@@ -1,6 +1,8 @@
 "use client"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import Swal from "sweetalert2"
+import { dashboardAPI, votersAPI } from '@/lib/api/dashboard'
 
 export default function VoterDashboard() {
   const router = useRouter()
