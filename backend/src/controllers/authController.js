@@ -19,10 +19,10 @@ class AuthController {
       // Find user by username
       const user = await User.findOne({ username, isActive: true })
       if (!user) {
-        // Only log if database is connected
+        // Log failed login attempt - user not found
         try {
           await AuditLog.create({
-            action: "LOGIN",
+            action: "UNAUTHORIZED_ACCESS_ATTEMPT",
             username: username || "unknown",
             details: "Failed login attempt - user not found",
             ipAddress: req.ip,
@@ -39,10 +39,12 @@ class AuthController {
       // Check password using the model method
       const isValidPassword = await user.comparePassword(password)
       if (!isValidPassword) {
+        // Log failed login attempt - invalid password
         try {
           await AuditLog.create({
-            action: "LOGIN",
+            action: "UNAUTHORIZED_ACCESS_ATTEMPT",
             username: user.username,
+            userId: user._id,
             details: "Failed login attempt - invalid password",
             ipAddress: req.ip,
             userAgent: req.get("User-Agent"),
@@ -71,6 +73,7 @@ class AuthController {
         await AuditLog.create({
           action: "LOGIN",
           username: user.username,
+          userId: user._id,
           details: `Successful login - ${user.userType}`,
           ipAddress: req.ip,
           userAgent: req.get("User-Agent"),
@@ -116,8 +119,9 @@ class AuthController {
       const voter = await Voter.findOne({ schoolId }).populate("degreeId")
       if (!voter) {
         await AuditLog.create({
-          action: "LOGIN",
+          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
           username: userId.toString(),
+          schoolId: schoolId,
           details: "Failed voter login - voter not found",
           ipAddress: req.ip,
           userAgent: req.get("User-Agent"),
@@ -129,6 +133,15 @@ class AuthController {
 
       // Check if voter has a password set
       if (!voter.password) {
+        await AuditLog.create({
+          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
+          username: voter.schoolId.toString(),
+          voterId: voter._id,
+          schoolId: voter.schoolId,
+          details: "Failed voter login - account not activated",
+          ipAddress: req.ip,
+          userAgent: req.get("User-Agent"),
+        })
         const error = new Error("Account not activated. Please complete pre-registration first.")
         error.statusCode = 401
         return next(error)
@@ -138,8 +151,10 @@ class AuthController {
       const isValidPassword = await voter.comparePassword(password)
       if (!isValidPassword) {
         await AuditLog.create({
-          action: "LOGIN",
+          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
           username: voter.schoolId.toString(),
+          voterId: voter._id,
+          schoolId: voter.schoolId,
           details: "Failed voter login - invalid password",
           ipAddress: req.ip,
           userAgent: req.get("User-Agent"),
@@ -164,6 +179,8 @@ class AuthController {
       await AuditLog.create({
         action: "LOGIN",
         username: voter.schoolId.toString(),
+        voterId: voter._id,
+        schoolId: voter.schoolId,
         details: `Successful voter login - ${voter.firstName} ${voter.lastName}`,
         ipAddress: req.ip,
         userAgent: req.get("User-Agent"),
@@ -208,6 +225,15 @@ class AuthController {
       // Find voter by school ID (now consistent Number type)
       const voter = await Voter.findOne({ schoolId: schoolIdNumber }).populate("degreeId")
       if (!voter) {
+        // Log failed pre-registration attempt
+        await AuditLog.create({
+          action: "VOTER_REGISTRATION",
+          username: schoolId.toString(),
+          schoolId: schoolIdNumber,
+          details: "Pre-registration step 1 failed - student not found in database",
+          ipAddress: req.ip,
+          userAgent: req.get("User-Agent"),
+        })
         const error = new Error("Student not found in voter database")
         error.statusCode = 404
         return next(error)
@@ -215,15 +241,26 @@ class AuthController {
 
       // Check if voter already has a password (already registered)
       if (voter.password) {
+        await AuditLog.create({
+          action: "VOTER_REGISTRATION",
+          username: voter.schoolId.toString(),
+          voterId: voter._id,
+          schoolId: voter.schoolId,
+          details: "Pre-registration step 1 failed - account already registered",
+          ipAddress: req.ip,
+          userAgent: req.get("User-Agent"),
+        })
         const error = new Error("This account is already registered. Please use the login page.")
         error.statusCode = 400
         return next(error)
       }
 
-      // Log pre-registration attempt
+      // Log successful pre-registration step 1
       await AuditLog.create({
         action: "VOTER_REGISTRATION",
         username: voter.schoolId.toString(),
+        voterId: voter._id,
+        schoolId: voter.schoolId,
         details: `Pre-registration step 1 completed - ${voter.firstName} ${voter.lastName}`,
         ipAddress: req.ip,
         userAgent: req.get("User-Agent"),
@@ -285,6 +322,15 @@ class AuthController {
 
       // Check if already registered
       if (voter.password) {
+        await AuditLog.create({
+          action: "VOTER_REGISTRATION",
+          username: voter.schoolId.toString(),
+          voterId: voter._id,
+          schoolId: voter.schoolId,
+          details: "Pre-registration step 2 failed - account already registered",
+          ipAddress: req.ip,
+          userAgent: req.get("User-Agent"),
+        })
         const error = new Error("This account is already registered")
         error.statusCode = 400
         return next(error)
@@ -294,11 +340,13 @@ class AuthController {
       voter.password = password;
       await voter.save();
 
-      // Log successful registration
+      // Log successful registration completion
       await AuditLog.create({
         action: "VOTER_REGISTRATION",
         username: voter.schoolId.toString(),
-        details: `Pre-registration completed - ${voter.firstName} ${voter.lastName}`,
+        voterId: voter._id,
+        schoolId: voter.schoolId,
+        details: `Pre-registration completed successfully - ${voter.firstName} ${voter.lastName}`,
         ipAddress: req.ip,
         userAgent: req.get("User-Agent"),
       })
@@ -320,12 +368,15 @@ class AuthController {
   // Logout
   static async logout(req, res, next) {
     try {
-      const { username, userType } = req.user || {}
+      const { username, userType, voterId, schoolId } = req.user || {}
 
-      // Log logout
+      // Log logout with proper user identification
       await AuditLog.create({
         action: "LOGOUT",
-        username: username || "unknown",
+        username: username || schoolId?.toString() || "unknown",
+        userId: req.user?.userId || null,
+        voterId: voterId || null,
+        schoolId: schoolId || null,
         details: `User logged out - ${userType || "unknown"}`,
         ipAddress: req.ip,
         userAgent: req.get("User-Agent"),

@@ -25,7 +25,7 @@ const globalLimiter = rateLimit({
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 10,
   handler: (req, res) => {
     res.status(429).json({
       message: "Too many login attempts, please wait 15 minutes before retrying."
@@ -122,6 +122,15 @@ try {
 }
 
 try {
+  console.log("Loading candidates routes...")
+  app.use("/api/candidates", authMiddleware, authorizeRoles("admin", "election_committee"), committeeLimiter, require("./src/routes/candidate"))
+  console.log("✅ Candidates routes loaded")
+} catch (error) {
+  console.error("❌ Error loading candidates routes:", error.message)
+  process.exit(1)
+}
+
+try {
   console.log("Loading degrees routes...")
   app.use("/api/degrees", authMiddleware, authorizeRoles("admin", "election_committee"), committeeLimiter, require("./src/routes/degrees"))
   console.log("✅ Degrees routes loaded")
@@ -148,6 +157,14 @@ try {
   process.exit(1)
 }
 
+try {
+  console.log("Loading ballots routes...")
+  app.use("/api/ballots", authMiddleware, require("./src/routes/ballot"))
+  console.log("âœ… Ballots routes loaded")
+} catch (error) {
+  console.error("âŒ Error loading ballots routes:", error.message)
+  process.exit(1)
+}
 
 try {
   console.log("Loading chat-support routes...")
@@ -192,7 +209,9 @@ app.listen(PORT, () => {
   console.log(`   - GET  http://localhost:${PORT}/api/degrees (Protected - Admin/Committee)`)
   console.log(`   - GET  http://localhost:${PORT}/api/elections (Protected - Admin/Committee)`)
   console.log(`   - GET  http://localhost:${PORT}/api/voting/active-elections (Protected - Voters)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/candidates (Protected - Admin/Committee)`)
   console.log(`   - POST http://localhost:${PORT}/api/voting/cast-vote (Protected - Voters)`)
+  console.log(`   - POST http://localhost:${PORT}/api/ballot (Public)`)
   console.log(`   - GET  http://localhost:${PORT}/api/audit-logs (Protected - Admin)`)
   console.log(`   - POST http://localhost:${PORT}/api/chat-support (Public)`)
   console.log(`   - GET  http://localhost:${PORT}/api/chat-support (Protected - Admin)`)

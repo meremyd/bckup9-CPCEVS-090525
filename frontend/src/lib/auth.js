@@ -63,13 +63,15 @@ export async function voterLogin(schoolId, password) {
 export function logout() {
   localStorage.removeItem("token")
   localStorage.removeItem("user")
-  router.push("/adminlogin")
+  window.location.href = "/adminlogin"
+  // router.push("/adminlogin")
 }
 
 export function voterLogout() {
   localStorage.removeItem("voterToken")
   localStorage.removeItem("voter")
-  router.push("/voterlogin")
+   window.location.href = "/voterlogin"
+  // router.push("/voterlogin")
 }
 
 /**

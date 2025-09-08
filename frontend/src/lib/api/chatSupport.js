@@ -25,9 +25,27 @@ export const chatSupportAPI = {
     return response.data
   },
   
+  // Delete support request (admin only)
+  delete: async (id) => {
+    const response = await api.delete(`/chat-support/${id}`)
+    return response.data
+  },
+  
   // Get support statistics (admin only)
   getStatistics: async () => {
     const response = await api.get('/chat-support/stats/summary')
+    return response.data
+  },
+  
+  // Bulk update support requests status (admin only)
+  bulkUpdateStatus: async (data) => {
+    const response = await api.post('/chat-support/bulk-update', data)
+    return response.data
+  },
+  
+  // Export support requests (admin only)
+  export: async (params = {}) => {
+    const response = await api.get('/chat-support/export', { params })
     return response.data
   }
 }

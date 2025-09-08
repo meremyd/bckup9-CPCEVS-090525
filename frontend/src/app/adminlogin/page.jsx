@@ -32,7 +32,7 @@ export default function AdminLogin() {
 
       console.log("[v0] Login successful, user type:", data.user.userType)
 
-      await new Promise((resolve) => setTimeout(resolve, 100))
+      await new Promise((resolve) => setTimeout(resolve, 78000))
 
       switch (data.user.userType) {
         case "admin":

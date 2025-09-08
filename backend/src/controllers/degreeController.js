@@ -1,4 +1,3 @@
-
 const mongoose = require("mongoose")
 const Degree = require("../models/Degree")
 const Voter = require("../models/Voter")
@@ -40,14 +39,13 @@ class DegreeController {
         displayName: degree.major ? `${degree.degreeName} - ${degree.major}` : degree.degreeName
       }))
       
-      // Log the access
-      await AuditLog.create({
-        action: "SYSTEM_ACCESS",
-        username: req.user?.username || "system",
-        details: `Degrees list accessed - ${degrees.length} degrees returned`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the access using proper static method
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Degrees list accessed - ${degrees.length} degrees returned`,
+        req
+      )
       
       res.json({
         degrees: transformedDegrees,
@@ -166,14 +164,13 @@ class DegreeController {
 
       await degree.save()
 
-      // Log the creation
-      await AuditLog.create({
-        action: "CREATE_DEGREE",
-        username: req.user?.username || "system",
-        details: `Degree created - ${trimmedDegreeCode}${trimmedMajor ? ` (${trimmedMajor})` : ""} - ${trimmedDegreeName}`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the creation using proper action and method
+      await AuditLog.logUserAction(
+        "CREATE_DEGREE",
+        req.user,
+        `Degree created - ${trimmedDegreeCode}${trimmedMajor ? ` (${trimmedMajor})` : ""} - ${trimmedDegreeName}`,
+        req
+      )
 
       // Return degree with displayName
       const degreeObject = degree.toObject()
@@ -216,6 +213,13 @@ class DegreeController {
 
       // Check if degree has associated voters
       const voterCount = await Voter.countDocuments({ degreeId: id })
+      
+      // Store original values for logging
+      const originalData = {
+        degreeCode: degree.degreeCode,
+        degreeName: degree.degreeName,
+        major: degree.major
+      }
       
       // Prepare update fields with validation
       const updateFields = {}
@@ -276,14 +280,13 @@ class DegreeController {
       Object.assign(degree, updateFields)
       await degree.save()
 
-      // Log the update
-      await AuditLog.create({
-        action: "UPDATE_DEGREE",
-        username: req.user?.username || "system",
-        details: `Degree updated - ${degree.degreeCode}${degree.major ? ` (${degree.major})` : ""} - ${degree.degreeName}${voterCount > 0 ? ` (${voterCount} voters affected)` : ""}`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the update using proper action and method
+      await AuditLog.logUserAction(
+        "UPDATE_DEGREE",
+        req.user,
+        `Degree updated from "${originalData.degreeCode}${originalData.major ? ` (${originalData.major})` : ""}" to "${degree.degreeCode}${degree.major ? ` (${degree.major})` : ""}" - ${degree.degreeName}${voterCount > 0 ? ` (${voterCount} voters affected)` : ""}`,
+        req
+      )
 
       // Return updated degree with displayName
       const degreeObject = degree.toObject()
@@ -332,28 +335,33 @@ class DegreeController {
         return next(error)
       }
 
+      // Store degree info for logging before deletion
+      const degreeInfo = {
+        degreeCode: degree.degreeCode,
+        degreeName: degree.degreeName,
+        major: degree.major
+      }
+
       // Delete the degree
       await Degree.findByIdAndDelete(id)
 
       // If force delete and voters exist, log warning about orphaned records
       if (voterCount > 0 && force === 'true') {
-        await AuditLog.create({
-          action: "SYSTEM_ACCESS",
-          username: req.user?.username || "system",
-          details: `Force delete degree - ${voterCount} voter records now have invalid degreeId references`,
-          ipAddress: req.ip,
-          userAgent: req.get("User-Agent"),
-        })
+        await AuditLog.logUserAction(
+          "SYSTEM_ACCESS",
+          req.user,
+          `Force delete degree - ${voterCount} voter records now have invalid degreeId references`,
+          req
+        )
       }
 
-      // Log the deletion
-      await AuditLog.create({
-        action: "DELETE_DEGREE",
-        username: req.user?.username || "system",
-        details: `Degree deleted - ${degree.degreeCode}${degree.major ? ` (${degree.major})` : ""} - ${degree.degreeName}${voterCount > 0 ? ` (${voterCount} voters were associated)` : ""}`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the deletion using proper action and method
+      await AuditLog.logUserAction(
+        "DELETE_DEGREE",
+        req.user,
+        `Degree deleted - ${degreeInfo.degreeCode}${degreeInfo.major ? ` (${degreeInfo.major})` : ""} - ${degreeInfo.degreeName}${voterCount > 0 ? ` (${voterCount} voters were associated)` : ""}`,
+        req
+      )
 
       res.json({ 
         message: "Degree deleted successfully",
@@ -472,6 +480,14 @@ class DegreeController {
 
       const orphanedCount = orphanedVoters.length > 0 ? orphanedVoters[0].orphanedCount : 0
 
+      // Log statistics access
+      await AuditLog.logUserAction(
+        "DATA_EXPORT",
+        req.user,
+        "Retrieved degree statistics",
+        req
+      )
+
       res.json({
         overview: {
           totalDegrees: total,
@@ -580,14 +596,13 @@ class DegreeController {
         displayName: degree.major ? `${degree.degreeName} - ${degree.major}` : degree.degreeName
       }))
 
-      // Log the bulk creation
-      await AuditLog.create({
-        action: "SYSTEM_ACCESS",
-        username: req.user?.username || "system",
-        details: `Bulk created ${createdDegrees.length} degrees`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the bulk creation using proper action and method
+      await AuditLog.logUserAction(
+        "CREATE_DEGREE",
+        req.user,
+        `Bulk created ${createdDegrees.length} degrees`,
+        req
+      )
 
       res.status(201).json({
         message: `Successfully created ${createdDegrees.length} degrees`,

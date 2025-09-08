@@ -31,9 +31,15 @@ export const candidatesAPI = {
     return response.data
   },
   
-  // Get candidates by election
+  // Upload campaign picture
+  uploadCampaignPicture: async (id, imageData) => {
+    const response = await api.put(`/candidates/${id}/campaign-picture`, imageData)
+    return response.data
+  },
+  
+  // Get candidates by election - Fixed endpoint to match backend
   getByElection: async (electionId, params = {}) => {
-    const response = await api.get(`/elections/${electionId}/candidates`, { params })
+    const response = await api.get(`/candidates/election/${electionId}`, { params })
     return response.data
   }
 }
