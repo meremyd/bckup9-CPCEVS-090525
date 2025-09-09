@@ -57,7 +57,7 @@ mongoose
     process.exit(1)
   })
 
-console.log("📄 Loading routes...")
+console.log("📂 Loading routes...")
 
 /* ---------------- ROUTES ---------------- */
 try {
@@ -165,6 +165,15 @@ try {
 }
 
 try {
+  console.log("Loading election-participation routes...")
+  app.use("/api/election-participation", authMiddleware, voterLimiter, require("./src/routes/electionParticipation"))
+  console.log("✅ Election-participation routes loaded")
+} catch (error) {
+  console.error("❌ Error loading election-participation routes:", error.message)
+  process.exit(1)
+}
+
+try {
   console.log("Loading chat-support routes...")
   app.use("/api/chat-support", chatSupportLimiter, require("./src/routes/chat-support"))
   console.log("✅ Chat-support routes loaded")
@@ -196,7 +205,7 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 5000
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`)
-  console.log(`🔍 Health check: http://localhost:${PORT}/api/health`)
+  console.log(`🏥 Health check: http://localhost:${PORT}/api/health`)
   console.log(`📋 Available routes:`)
   console.log(`   - POST http://localhost:${PORT}/api/auth/login`)
   console.log(`   - POST http://localhost:${PORT}/api/auth/voter-login`)
@@ -218,6 +227,10 @@ app.listen(PORT, () => {
   console.log(`   - GET  http://localhost:${PORT}/api/dashboard/committee (Protected - Committee)`)
   console.log(`   - GET  http://localhost:${PORT}/api/dashboard/sao (Protected - SAO)`)
   console.log(`   - GET  http://localhost:${PORT}/api/dashboard/voter (Protected - Voter)`)
+  console.log(`   - POST http://localhost:${PORT}/api/election-participation/confirm (Protected - Voters)`)
+  console.log(`   - POST http://localhost:${PORT}/api/election-participation/withdraw (Protected - Voters)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/election-participation/election/:id/participants (Protected - Admin)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/election-participation/election/:id/stats (Protected - Admin)`)
 })
 
 module.exports = app

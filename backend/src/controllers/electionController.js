@@ -62,6 +62,484 @@ class ElectionController {
     }
   }
 
+  // Get departmental elections with filtering
+  static async getDepartmentalElections(req, res, next) {
+    try {
+      const { department, status, year, page = 1, limit = 50, search } = req.query
+      
+      // Build filter for departmental elections
+      const filter = { electionType: "departmental" }
+      if (department) filter.department = department
+      if (status) filter.status = status
+      if (year) filter.electionYear = parseInt(year)
+      if (search) {
+        filter.$or = [
+          { title: { $regex: search, $options: 'i' } },
+          { electionId: { $regex: search, $options: 'i' } },
+          { department: { $regex: search, $options: 'i' } }
+        ]
+      }
+
+      // Pagination
+      const skip = (page - 1) * limit
+      const limitNum = Math.min(Number.parseInt(limit), 100)
+
+      const elections = await Election.find(filter)
+        .populate("createdBy", "username")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+
+      const total = await Election.countDocuments(filter)
+      const totalPages = Math.ceil(total / limitNum)
+
+      // Get department statistics
+      const departmentStats = await Election.aggregate([
+        { $match: { electionType: "departmental" } },
+        {
+          $group: {
+            _id: "$department",
+            totalElections: { $sum: 1 },
+            activeElections: { 
+              $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] } 
+            },
+            upcomingElections: { 
+              $sum: { $cond: [{ $eq: ["$status", "upcoming"] }, 1, 0] } 
+            },
+            completedElections: { 
+              $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } 
+            }
+          }
+        },
+        { $sort: { "_id": 1 } }
+      ])
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Departmental elections accessed - ${elections.length} elections returned`,
+        req
+      )
+
+      res.json({
+        elections,
+        departmentStats,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalItems: total,
+          itemsPerPage: limitNum
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Get SSG elections
+  static async getSSGElections(req, res, next) {
+    try {
+      const { status, year, page = 1, limit = 50, search } = req.query
+      
+      // Build filter for SSG elections
+      const filter = { electionType: "ssg" }
+      if (status) filter.status = status
+      if (year) filter.electionYear = parseInt(year)
+      if (search) {
+        filter.$or = [
+          { title: { $regex: search, $options: 'i' } },
+          { electionId: { $regex: search, $options: 'i' } }
+        ]
+      }
+
+      // Pagination
+      const skip = (page - 1) * limit
+      const limitNum = Math.min(Number.parseInt(limit), 100)
+
+      const elections = await Election.find(filter)
+        .populate("createdBy", "username")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+
+      const total = await Election.countDocuments(filter)
+      const totalPages = Math.ceil(total / limitNum)
+
+      // Get SSG election statistics
+      const ssgStats = await Election.aggregate([
+        { $match: { electionType: "ssg" } },
+        {
+          $group: {
+            _id: null,
+            totalElections: { $sum: 1 },
+            activeElections: { 
+              $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] } 
+            },
+            upcomingElections: { 
+              $sum: { $cond: [{ $eq: ["$status", "upcoming"] }, 1, 0] } 
+            },
+            completedElections: { 
+              $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } 
+            }
+          }
+        }
+      ])
+
+      // Get yearly breakdown for SSG elections
+      const yearlyBreakdown = await Election.aggregate([
+        { $match: { electionType: "ssg" } },
+        {
+          $group: {
+            _id: "$electionYear",
+            count: { $sum: 1 },
+            activeCount: { 
+              $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] } 
+            },
+            completedCount: { 
+              $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } 
+            }
+          }
+        },
+        { $sort: { "_id": -1 } }
+      ])
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `SSG elections accessed - ${elections.length} elections returned`,
+        req
+      )
+
+      res.json({
+        elections,
+        ssgStats: ssgStats[0] || {
+          totalElections: 0,
+          activeElections: 0,
+          upcomingElections: 0,
+          completedElections: 0
+        },
+        yearlyBreakdown,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalItems: total,
+          itemsPerPage: limitNum
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Get elections by department (for departmental elections)
+  static async getElectionsByDepartment(req, res, next) {
+    try {
+      const { department } = req.params
+      const { status, year, includeStats = true } = req.query
+
+      if (!department) {
+        const error = new Error("Department parameter is required")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Build filter
+      const filter = { 
+        electionType: "departmental", 
+        department: { $regex: new RegExp(department, 'i') }
+      }
+      if (status) filter.status = status
+      if (year) filter.electionYear = parseInt(year)
+
+      const elections = await Election.find(filter)
+        .populate("createdBy", "username")
+        .sort({ electionDate: -1 })
+
+      let departmentStats = null
+      if (includeStats === 'true') {
+        // Get detailed statistics for this department
+        departmentStats = await Election.aggregate([
+          { $match: filter },
+          {
+            $group: {
+              _id: null,
+              totalElections: { $sum: 1 },
+              activeElections: { 
+                $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] } 
+              },
+              upcomingElections: { 
+                $sum: { $cond: [{ $eq: ["$status", "upcoming"] }, 1, 0] } 
+              },
+              completedElections: { 
+                $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } 
+              },
+              cancelledElections: { 
+                $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] } 
+              }
+            }
+          }
+        ])
+
+        // Get total votes cast in department elections
+        const totalVotes = await Vote.aggregate([
+          {
+            $lookup: {
+              from: "elections",
+              localField: "electionId",
+              foreignField: "_id",
+              as: "election"
+            }
+          },
+          { $unwind: "$election" },
+          { 
+            $match: { 
+              "election.electionType": "departmental",
+              "election.department": { $regex: new RegExp(department, 'i') }
+            } 
+          },
+          {
+            $group: {
+              _id: null,
+              totalVotes: { $sum: 1 }
+            }
+          }
+        ])
+
+        departmentStats = {
+          ...(departmentStats[0] || {
+            totalElections: 0,
+            activeElections: 0,
+            upcomingElections: 0,
+            completedElections: 0,
+            cancelledElections: 0
+          }),
+          totalVotes: totalVotes[0]?.totalVotes || 0
+        }
+      }
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Department elections accessed - ${department} (${elections.length} elections)`,
+        req
+      )
+
+      res.json({
+        department,
+        elections,
+        stats: departmentStats
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Get available departments (from elections)
+  static async getAvailableDepartments(req, res, next) {
+    try {
+      const departments = await Election.distinct("department", { 
+        electionType: "departmental",
+        department: { $ne: null }
+      })
+
+      // Get department statistics
+      const departmentStats = await Election.aggregate([
+        { 
+          $match: { 
+            electionType: "departmental",
+            department: { $ne: null }
+          } 
+        },
+        {
+          $group: {
+            _id: "$department",
+            totalElections: { $sum: 1 },
+            activeElections: { 
+              $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] } 
+            },
+            upcomingElections: { 
+              $sum: { $cond: [{ $eq: ["$status", "upcoming"] }, 1, 0] } 
+            },
+            completedElections: { 
+              $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } 
+            },
+            latestElection: { $max: "$electionDate" }
+          }
+        },
+        { $sort: { "_id": 1 } }
+      ])
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Available departments accessed - ${departments.length} departments found`,
+        req
+      )
+
+      res.json({
+        departments,
+        departmentStats
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Get election comparison between departmental and SSG
+  static async getElectionComparison(req, res, next) {
+    try {
+      const { year } = req.query
+      const currentYear = new Date().getFullYear()
+      const targetYear = year ? parseInt(year) : currentYear
+
+      // Get departmental elections stats
+      const departmentalStats = await Election.aggregate([
+        { 
+          $match: { 
+            electionType: "departmental",
+            electionYear: targetYear
+          } 
+        },
+        {
+          $group: {
+            _id: null,
+            totalElections: { $sum: 1 },
+            activeElections: { 
+              $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] } 
+            },
+            completedElections: { 
+              $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } 
+            },
+            totalVotes: { $sum: "$totalVotes" },
+            avgTurnout: { $avg: "$voterTurnout" }
+          }
+        }
+      ])
+
+      // Get SSG elections stats
+      const ssgStats = await Election.aggregate([
+        { 
+          $match: { 
+            electionType: "ssg",
+            electionYear: targetYear
+          } 
+        },
+        {
+          $group: {
+            _id: null,
+            totalElections: { $sum: 1 },
+            activeElections: { 
+              $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] } 
+            },
+            completedElections: { 
+              $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } 
+            },
+            totalVotes: { $sum: "$totalVotes" },
+            avgTurnout: { $avg: "$voterTurnout" }
+          }
+        }
+      ])
+
+      // Get monthly breakdown
+      const monthlyBreakdown = await Election.aggregate([
+        { 
+          $match: { 
+            electionYear: targetYear
+          } 
+        },
+        {
+          $group: {
+            _id: {
+              month: { $month: "$electionDate" },
+              type: "$electionType"
+            },
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { "_id.month": 1 } }
+      ])
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Election comparison accessed for year ${targetYear}`,
+        req
+      )
+
+      res.json({
+        year: targetYear,
+        departmental: departmentalStats[0] || {
+          totalElections: 0,
+          activeElections: 0,
+          completedElections: 0,
+          totalVotes: 0,
+          avgTurnout: 0
+        },
+        ssg: ssgStats[0] || {
+          totalElections: 0,
+          activeElections: 0,
+          completedElections: 0,
+          totalVotes: 0,
+          avgTurnout: 0
+        },
+        monthlyBreakdown
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Get upcoming elections (both types)
+  static async getUpcomingElections(req, res, next) {
+    try {
+      const { electionType, limit = 10 } = req.query
+      const limitNum = Math.min(Number.parseInt(limit), 50)
+
+      // Build filter for upcoming elections
+      const filter = { 
+        status: "upcoming",
+        electionDate: { $gte: new Date() }
+      }
+      if (electionType && ["departmental", "ssg"].includes(electionType)) {
+        filter.electionType = electionType
+      }
+
+      const upcomingElections = await Election.find(filter)
+        .populate("createdBy", "username")
+        .sort({ electionDate: 1 })
+        .limit(limitNum)
+
+      // Get counts by type
+      const typeCounts = await Election.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: "$electionType",
+            count: { $sum: 1 }
+          }
+        }
+      ])
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Upcoming elections accessed - ${upcomingElections.length} elections found`,
+        req
+      )
+
+      res.json({
+        upcomingElections,
+        summary: {
+          total: upcomingElections.length,
+          departmental: typeCounts.find(t => t._id === "departmental")?.count || 0,
+          ssg: typeCounts.find(t => t._id === "ssg")?.count || 0
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
   // Get single election with full details
   static async getElection(req, res, next) {
     try {

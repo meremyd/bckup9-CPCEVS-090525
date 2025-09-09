@@ -167,6 +167,209 @@ class VoterController {
     }
   }
 
+  // Get officers only
+  static async getOfficers(req, res, next) {
+    try {
+      const { degree, page = 1, limit = 100, search } = req.query
+
+      // Build filter - only officers
+      const filter = { 
+        isClassOfficer: true 
+      }
+      
+      if (degree) filter.degreeId = degree
+      
+      // Search functionality
+      if (search) {
+        const searchNumber = Number(search)
+        const searchConditions = [
+          { firstName: { $regex: search, $options: "i" } },
+          { lastName: { $regex: search, $options: "i" } },
+        ]
+        
+        if (!isNaN(searchNumber)) {
+          searchConditions.push({ schoolId: searchNumber })
+        }
+        
+        filter.$or = searchConditions
+      }
+
+      // Pagination
+      const skip = (page - 1) * limit
+
+      const officers = await Voter.find(filter)
+        .populate("degreeId")
+        .sort({ schoolId: 1 })
+        .skip(skip)
+        .limit(Number.parseInt(limit))
+        .select("-password -faceEncoding -profilePicture")
+
+      const total = await Voter.countDocuments(filter)
+
+      // Log officers access
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        { username: req.user?.username },
+        `Officers list accessed - ${officers.length} officers returned`,
+        req
+      )
+
+      res.json(officers)
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Toggle officer status - Only election committee can update
+  static async toggleOfficerStatus(req, res, next) {
+    try {
+      // Check if user is election_committee
+      if (req.user.userType !== 'election_committee') {
+        await AuditLog.logUserAction(
+          "UNAUTHORIZED_ACCESS_ATTEMPT",
+          { username: req.user?.username },
+          `Unauthorized attempt to toggle officer status - User type: ${req.user.userType}`,
+          req
+        )
+        
+        const error = new Error("Only election committee members can update officer status")
+        error.statusCode = 403
+        return next(error)
+      }
+
+      const { id } = req.params
+
+      const voter = await Voter.findById(id).populate("degreeId")
+      if (!voter) {
+        // Log failed toggle attempt
+        await AuditLog.logUserAction(
+          "SYSTEM_ACCESS",
+          { username: req.user?.username },
+          `Failed to toggle officer status - Voter ID ${id} not found`,
+          req
+        )
+        
+        const error = new Error("Voter not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      const wasOfficer = voter.isClassOfficer
+      
+      // Toggle officer status
+      voter.isClassOfficer = !voter.isClassOfficer
+      await voter.save()
+
+      // Log the toggle action
+      const actionType = voter.isClassOfficer ? "UPDATE_VOTER" : "UPDATE_VOTER"
+      const statusText = voter.isClassOfficer ? "made officer" : "removed as officer"
+      
+      await AuditLog.logVoterAction(
+        actionType,
+        voter,
+        `Officer status updated - ${voter.firstName} ${voter.lastName} (${voter.schoolId}) ${statusText} by ${req.user.username}`,
+        req
+      )
+
+      const updatedVoter = await Voter.findById(id)
+        .populate("degreeId")
+        .select("-password -faceEncoding -profilePicture")
+
+      res.json({
+        message: `Voter ${statusText} successfully`,
+        voter: updatedVoter,
+        previousStatus: wasOfficer,
+        currentStatus: voter.isClassOfficer
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Get voter statistics by degree
+  static async getStatisticsByDegree(req, res, next) {
+    try {
+      // Get statistics grouped by degree
+      const statsByDegree = await Voter.aggregate([
+        {
+          $lookup: {
+            from: "degrees",
+            localField: "degreeId",
+            foreignField: "_id",
+            as: "degree",
+          },
+        },
+        {
+          $unwind: "$degree",
+        },
+        {
+          $group: {
+            _id: {
+              degreeId: "$degree._id",
+              code: "$degree.degreeCode",
+              name: "$degree.degreeName",
+              major: "$degree.major",
+              department: "$degree.department",
+            },
+            total: { $sum: 1 },
+            registered: {
+              $sum: {
+                $cond: ["$isRegistered", 1, 0],
+              },
+            },
+            active: {
+              $sum: {
+                $cond: ["$isActive", 1, 0],
+              },
+            },
+            officers: {
+              $sum: {
+                $cond: ["$isClassOfficer", 1, 0],
+              },
+            },
+          },
+        },
+        {
+          $sort: { "_id.code": 1, "_id.major": 1 },
+        },
+      ])
+
+      // Transform the data for easier frontend consumption
+      const degreeStats = {}
+      statsByDegree.forEach(stat => {
+        const key = stat._id.major ? 
+          `${stat._id.code}-${stat._id.major}` : 
+          stat._id.code
+        
+        degreeStats[key] = {
+          total: stat.total,
+          registered: stat.registered,
+          active: stat.active,
+          officers: stat.officers,
+          degreeInfo: {
+            id: stat._id.degreeId,
+            code: stat._id.code,
+            name: stat._id.name,
+            major: stat._id.major,
+            department: stat._id.department
+          }
+        }
+      })
+
+      // Log statistics access
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        { username: req.user?.username },
+        `Voter statistics by degree accessed - ${Object.keys(degreeStats).length} degrees`,
+        req
+      )
+
+      res.json(degreeStats)
+    } catch (error) {
+      next(error)
+    }
+  }
+
   // Get single voter
   static async getVoter(req, res, next) {
     try {

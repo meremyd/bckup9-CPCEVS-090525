@@ -1,17 +1,13 @@
 const AuditLog = require("../models/AuditLog")
 
 class AuditLogController {
-  // Get all audit logs with filtering and pagination
+  // Get all Audit Logs
   static async getAllAuditLogs(req, res, next) {
     try {
       const { page = 1, limit = 50, action, username, startDate, endDate, userType } = req.query
 
-      // Build filter object
       const filter = {}
-      
-      // Filter by action (must be from enum)
       if (action) {
-        // Validate action is in the enum
         const validActions = [
           "LOGIN",
         "LOGOUT",
@@ -155,7 +151,7 @@ class AuditLogController {
     }
   }
 
-  // Get audit log by ID
+  // Get Audit Log by id
   static async getAuditLog(req, res, next) {
     try {
       const { id } = req.params

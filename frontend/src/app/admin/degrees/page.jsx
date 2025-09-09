@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { degreesAPI } from '@/lib/api/degrees'
 import Swal from 'sweetalert2'
+import { Plus, Edit3, Trash2, X, Loader2,AlertCircle,GraduationCap} from 'lucide-react'
 
 export default function AdminDegrees() {
   const [degrees, setDegrees] = useState([])
@@ -247,14 +248,15 @@ export default function AdminDegrees() {
           onClick={handleAddDegree}
           className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center gap-2"
         >
-          <span>+</span>
+          <Plus className="w-4 h-4" />
           Add Degree
         </button>
       </div>
 
       {/* Error display */}
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md">
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md flex items-start">
+          <AlertCircle className="h-5 w-5 text-red-400 mt-0.5 mr-3 flex-shrink-0" />
           <p className="text-red-600 text-sm">{error}</p>
         </div>
       )}
@@ -263,7 +265,7 @@ export default function AdminDegrees() {
       <div className="bg-white shadow-sm rounded-lg overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center p-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
             <span className="ml-2 text-gray-600">Loading degrees...</span>
           </div>
         ) : (
@@ -292,6 +294,7 @@ export default function AdminDegrees() {
                 {degrees.length === 0 ? (
                   <tr>
                     <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                      <GraduationCap className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                       No degrees available. Click "Add Degree" to create your first degree program.
                     </td>
                   </tr>
@@ -314,14 +317,16 @@ export default function AdminDegrees() {
                         <div className="flex justify-end space-x-2">
                           <button
                             onClick={() => handleEditDegree(degree)}
-                            className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                            className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 flex items-center gap-1"
                           >
+                            <Edit3 className="h-3 w-3" />
                             Edit
                           </button>
                           <button
                             onClick={() => handleDeleteDegree(degree)}
-                            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-red-500 flex items-center gap-1"
                           >
+                            <Trash2 className="h-3 w-3" />
                             Delete
                           </button>
                         </div>
@@ -343,9 +348,9 @@ export default function AdminDegrees() {
               <h3 className="text-lg font-semibold text-gray-900">Add New Degree</h3>
               <button
                 onClick={closeModals}
-                className="text-gray-400 hover:text-gray-600 text-2xl font-bold leading-none"
+                className="text-gray-400 hover:text-gray-600"
               >
-                ×
+                <X className="w-6 h-6" />
               </button>
             </div>
             <div className="p-6">
@@ -434,9 +439,9 @@ export default function AdminDegrees() {
               <h3 className="text-lg font-semibold text-gray-900">Edit Degree</h3>
               <button
                 onClick={closeModals}
-                className="text-gray-400 hover:text-gray-600 text-2xl font-bold leading-none"
+                className="text-gray-400 hover:text-gray-600"
               >
-                ×
+                <X className="w-6 h-6" />
               </button>
             </div>
             <div className="p-6">
@@ -519,3 +524,4 @@ export default function AdminDegrees() {
     </div>
   )
 }
+      

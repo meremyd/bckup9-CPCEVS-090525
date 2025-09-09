@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { ChevronLeft, Search, Plus, Edit, Trash2 } from "lucide-react"
 import Swal from 'sweetalert2'
 import { votersAPI } from '@/lib/api/voters'
 import { degreesAPI } from '@/lib/api/degrees'
@@ -358,9 +359,7 @@ export default function VotersPage() {
             onClick={handleBackToAll}
             className="flex items-center px-4 py-2 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
           >
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
+            <ChevronLeft className="w-4 h-4 mr-2" />
             Back to All Voters
           </button>
         </div>
@@ -402,19 +401,7 @@ export default function VotersPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
-              <svg
-                className="absolute left-3 top-2.5 h-5 w-5 text-gray-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
+              <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
             </div>
           </div>
           <button
@@ -424,9 +411,7 @@ export default function VotersPage() {
             }}
             className="ml-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center transition-colors"
           >
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
+            <Plus className="w-4 h-4 mr-2" />
             Add New Voter
           </button>
         </div>
@@ -512,14 +497,16 @@ export default function VotersPage() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <button
                       onClick={() => handleEdit(voter)}
-                      className="text-green-600 hover:text-green-900 mr-3 px-3 py-1 rounded hover:bg-green-50 transition-colors"
+                      className="text-green-600 hover:text-green-900 mr-3 px-3 py-1 rounded hover:bg-green-50 transition-colors flex items-center"
                     >
+                      <Edit className="w-4 h-4 mr-1" />
                       Edit
                     </button>
                     <button
                       onClick={() => handleDelete(voter._id)}
-                      className="text-red-600 hover:text-red-900 px-3 py-1 rounded hover:bg-red-50 transition-colors"
+                      className="text-red-600 hover:text-red-900 px-3 py-1 rounded hover:bg-red-50 transition-colors flex items-center"
                     >
+                      <Trash2 className="w-4 h-4 mr-1" />
                       Delete
                     </button>
                   </td>

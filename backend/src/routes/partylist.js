@@ -4,9 +4,8 @@ const { authMiddleware, authorizeRoles } = require("../middleware/authMiddleware
 
 const router = express.Router()
 
-// Apply authentication middleware to all routes
 router.use(authMiddleware)
-router.use(authorizeRoles("admin", "election_committee", "sao"))
+router.use(authorizeRoles("election_committee", "sao"))
 router.get("/", PartylistController.getAllPartylists)
 router.get("/election/:electionId", PartylistController.getPartylistsByElection)
 router.get("/:id", PartylistController.getPartylist)
