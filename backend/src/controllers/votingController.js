@@ -4,6 +4,7 @@ const Vote = require("../models/Vote")
 const Candidate = require("../models/Candidate")
 const Position = require("../models/Position")
 const Voter = require("../models/Voter")
+const AuditLog = require("../models/AuditLog")
 const { v4: uuidv4 } = require('uuid')
 const mongoose = require("mongoose")
 
@@ -37,6 +38,14 @@ const VotingController = {
             votedAt: existingBallot?.submittedAt || null
           }
         })
+      )
+
+      // Log the system access
+      await AuditLog.logVoterAction(
+        "SYSTEM_ACCESS",
+        { _id: req.user.id, schoolId: req.user.schoolId },
+        "Accessed active elections list",
+        req
       )
 
       res.json({
@@ -103,6 +112,14 @@ const VotingController = {
         })
       )
 
+      // Log ballot access
+      await AuditLog.logVoterAction(
+        "BALLOT_ACCESSED",
+        { _id: req.user.id, schoolId: req.user.schoolId },
+        `Accessed election details for: ${election.electionName}`,
+        req
+      )
+
       res.json({
         success: true,
         data: {
@@ -141,6 +158,14 @@ const VotingController = {
       .populate('partylistId', 'partylistName')
       .sort({ 'positionId.positionOrder': 1, candidateNumber: 1 })
 
+      // Log system access
+      await AuditLog.logVoterAction(
+        "SYSTEM_ACCESS",
+        { _id: req.user.id, schoolId: req.user.schoolId },
+        `Viewed candidates for election ID: ${id}`,
+        req
+      )
+
       res.json({
         success: true,
         data: candidates.map(candidate => ({
@@ -169,6 +194,12 @@ const VotingController = {
 
       // Validate input
       if (!electionId || !votes || !Array.isArray(votes)) {
+        await AuditLog.logVoterAction(
+          "BALLOT_ABANDONED",
+          { _id: voterId, schoolId: req.user.schoolId },
+          "Invalid vote data submitted - missing electionId or votes array",
+          req
+        )
         return res.status(400).json({
           success: false,
           message: "Invalid vote data. Election ID and votes array are required."
@@ -176,6 +207,12 @@ const VotingController = {
       }
 
       if (!mongoose.Types.ObjectId.isValid(electionId)) {
+        await AuditLog.logVoterAction(
+          "BALLOT_ABANDONED",
+          { _id: voterId, schoolId: req.user.schoolId },
+          `Invalid election ID format: ${electionId}`,
+          req
+        )
         return res.status(400).json({
           success: false,
           message: "Invalid election ID"
@@ -185,17 +222,35 @@ const VotingController = {
       // Check if election exists and is active
       const election = await Election.findById(electionId).session(session)
       if (!election) {
+        await AuditLog.logVoterAction(
+          "BALLOT_ABANDONED",
+          { _id: voterId, schoolId: req.user.schoolId },
+          `Election not found: ${electionId}`,
+          req
+        )
         throw new Error("Election not found")
       }
 
       const currentDate = new Date()
       if (currentDate < election.startDate || currentDate > election.endDate || !election.isActive) {
+        await AuditLog.logVoterAction(
+          "BALLOT_ABANDONED",
+          { _id: voterId, schoolId: req.user.schoolId },
+          `Attempted to vote in inactive election: ${election.electionName}`,
+          req
+        )
         throw new Error("Election is not currently active")
       }
 
       // Check if voter exists
       const voter = await Voter.findById(voterId).session(session)
       if (!voter || !voter.isActive || !voter.isRegistered) {
+        await AuditLog.logVoterAction(
+          "BALLOT_ABANDONED",
+          { _id: voterId, schoolId: req.user.schoolId },
+          "Ineligible voter attempted to vote",
+          req
+        )
         throw new Error("Voter not found or not eligible to vote")
       }
 
@@ -207,13 +262,33 @@ const VotingController = {
       }).session(session)
 
       if (existingBallot) {
+        await AuditLog.logVoterAction(
+          "BALLOT_ABANDONED",
+          { _id: voterId, schoolId: voter.schoolId },
+          `Attempted duplicate voting in election: ${election.electionName}`,
+          req
+        )
         throw new Error("You have already voted in this election")
       }
+
+      // Log ballot started
+      await AuditLog.logVoterAction(
+        "BALLOT_STARTED",
+        { _id: voterId, schoolId: voter.schoolId },
+        `Started voting process for election: ${election.electionName}`,
+        req
+      )
 
       // Validate votes structure and candidates
       const validatedVotes = []
       for (const vote of votes) {
         if (!vote.positionId || !vote.candidateId) {
+          await AuditLog.logVoterAction(
+            "BALLOT_ABANDONED",
+            { _id: voterId, schoolId: voter.schoolId },
+            "Invalid vote structure - missing position or candidate ID",
+            req
+          )
           throw new Error("Invalid vote structure. Position ID and candidate ID are required.")
         }
 
@@ -225,6 +300,12 @@ const VotingController = {
         }).session(session)
 
         if (!position) {
+          await AuditLog.logVoterAction(
+            "BALLOT_ABANDONED",
+            { _id: voterId, schoolId: voter.schoolId },
+            `Invalid position ID: ${vote.positionId}`,
+            req
+          )
           throw new Error(`Invalid position: ${vote.positionId}`)
         }
 
@@ -237,6 +318,12 @@ const VotingController = {
         }).session(session)
 
         if (!candidate) {
+          await AuditLog.logVoterAction(
+            "BALLOT_ABANDONED",
+            { _id: voterId, schoolId: voter.schoolId },
+            `Invalid candidate ID: ${vote.candidateId} for position: ${vote.positionId}`,
+            req
+          )
           throw new Error(`Invalid candidate: ${vote.candidateId} for position: ${vote.positionId}`)
         }
 
@@ -250,6 +337,12 @@ const VotingController = {
       const positionIds = validatedVotes.map(v => v.positionId.toString())
       const uniquePositions = [...new Set(positionIds)]
       if (positionIds.length !== uniquePositions.length) {
+        await AuditLog.logVoterAction(
+          "BALLOT_ABANDONED",
+          { _id: voterId, schoolId: voter.schoolId },
+          "Duplicate votes for the same position detected",
+          req
+        )
         throw new Error("Duplicate votes for the same position are not allowed")
       }
 
@@ -287,6 +380,21 @@ const VotingController = {
 
       await session.commitTransaction()
 
+      // Log successful voting
+      await AuditLog.logVoterAction(
+        "VOTED",
+        { _id: voterId, schoolId: voter.schoolId },
+        `Successfully cast ${voteRecords.length} votes in election: ${election.electionName}`,
+        req
+      )
+
+      await AuditLog.logVoterAction(
+        "VOTE_SUBMITTED",
+        { _id: voterId, schoolId: voter.schoolId },
+        `Ballot submitted with token: ${savedBallot.ballotToken}`,
+        req
+      )
+
       res.json({
         success: true,
         message: "Vote cast successfully",
@@ -301,6 +409,17 @@ const VotingController = {
     } catch (error) {
       await session.abortTransaction()
       console.error("Cast vote error:", error)
+      
+      // Log the error if we have voter info
+      if (req.user?.id) {
+        await AuditLog.logVoterAction(
+          "BALLOT_ABANDONED",
+          { _id: req.user.id, schoolId: req.user.schoolId },
+          `Vote casting failed: ${error.message}`,
+          req
+        )
+      }
+
       res.status(400).json({
         success: false,
         message: error.message || "Error casting vote",
@@ -350,6 +469,14 @@ const VotingController = {
             }))
           }
         })
+      )
+
+      // Log system access
+      await AuditLog.logVoterAction(
+        "SYSTEM_ACCESS",
+        { _id: req.user.id, schoolId: req.user.schoolId },
+        "Accessed voting history",
+        req
       )
 
       res.json({
@@ -405,6 +532,14 @@ const VotingController = {
       // Check if voter is eligible (password not expired)
       const isEligible = voter.isActive && voter.isRegistered && 
                         voter.isPasswordActive && !voter.isPasswordExpired()
+
+      // Log system access
+      await AuditLog.logVoterAction(
+        "SYSTEM_ACCESS",
+        { _id: voterId, schoolId: voter.schoolId },
+        "Accessed voting status dashboard",
+        req
+      )
 
       res.json({
         success: true,

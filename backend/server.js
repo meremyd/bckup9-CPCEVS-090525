@@ -3,55 +3,25 @@ const mongoose = require("mongoose")
 const cors = require("cors")
 const helmet = require("helmet")
 const morgan = require("morgan")
-const rateLimit = require("express-rate-limit")
 require("dotenv").config()
 
 const { authMiddleware, authorizeRoles } = require("./src/middleware/authMiddleware")
 const errorHandler = require("./src/middleware/errorHandler")
 
+// Import rate limiters from rateLimiter.js
+const {
+  globalLimiter,
+  loginLimiter,
+  registrationLimiter,
+  adminLimiter,
+  voterLimiter,
+  votingLimiter,
+  chatSupportLimiter,
+  dashboardLimiter
+} = require("./src/middleware/rateLimiter")
+
 const app = express()
 
-/* ---------------- RATE LIMITERS ---------------- */
-// Global limiter (default for all routes)
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  handler: (req, res) => {
-    res.status(429).json({
-      message: "Too many requests from this IP, please try again later."
-    })
-  }
-})
-
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  handler: (req, res) => {
-    res.status(429).json({
-      message: "Too many login attempts, please wait 15 minutes before retrying."
-    })
-  }
-})
-
-const committeeLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000,
-  max: 200,
-  handler: (req, res) => {
-    res.status(429).json({
-      message: "Too many requests for admin staff, please slow down."
-    })
-  }
-})
-
-const voterLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000,
-  max: 50,
-  handler: (req, res) => {
-    res.status(429).json({
-      message: "Too many requests from voter, please try again later."
-    })
-  }
-})
 /* ---------------- SECURITY MIDDLEWARE ---------------- */
 app.use(helmet())
 app.use(morgan("combined"))
@@ -92,10 +62,11 @@ console.log("📄 Loading routes...")
 /* ---------------- ROUTES ---------------- */
 try {
   console.log("Loading auth routes...")
-  // Login endpoints with strict limiter
-  app.use("/api/auth/login", loginLimiter, require("./src/routes/auth"))
-  app.use("/api/auth/voter-login", loginLimiter, require("./src/routes/auth"))
-  // Other auth routes (registration, etc.)
+  // Auth routes with appropriate limiters
+  app.use("/api/auth/login", loginLimiter)
+  app.use("/api/auth/voter-login", loginLimiter)
+  app.use("/api/auth/pre-register-step1", registrationLimiter)
+  app.use("/api/auth/pre-register-step2", registrationLimiter)
   app.use("/api/auth", require("./src/routes/auth"))
   console.log("✅ Auth routes loaded")
 } catch (error) {
@@ -105,7 +76,7 @@ try {
 
 try {
   console.log("Loading users routes...")
-  app.use("/api/users", authMiddleware, authorizeRoles("admin"), committeeLimiter, require("./src/routes/users"))
+  app.use("/api/users", authMiddleware, authorizeRoles("admin"), adminLimiter, require("./src/routes/users"))
   console.log("✅ Users routes loaded")
 } catch (error) {
   console.error("❌ Error loading users routes:", error.message)
@@ -114,7 +85,7 @@ try {
 
 try {
   console.log("Loading voters routes...")
-  app.use("/api/voters", authMiddleware, authorizeRoles("admin", "election_committee"), voterLimiter, require("./src/routes/voters"))
+  app.use("/api/voters", authMiddleware, authorizeRoles("admin", "election_committee"), adminLimiter, require("./src/routes/voters"))
   console.log("✅ Voters routes loaded")
 } catch (error) {
   console.error("❌ Error loading voters routes:", error.message)
@@ -123,7 +94,7 @@ try {
 
 try {
   console.log("Loading candidates routes...")
-  app.use("/api/candidates", authMiddleware, authorizeRoles("admin", "election_committee"), committeeLimiter, require("./src/routes/candidate"))
+  app.use("/api/candidates", require("./src/routes/candidate"))
   console.log("✅ Candidates routes loaded")
 } catch (error) {
   console.error("❌ Error loading candidates routes:", error.message)
@@ -132,7 +103,7 @@ try {
 
 try {
   console.log("Loading degrees routes...")
-  app.use("/api/degrees", authMiddleware, authorizeRoles("admin", "election_committee"), committeeLimiter, require("./src/routes/degrees"))
+  app.use("/api/degrees", require("./src/routes/degrees"))
   console.log("✅ Degrees routes loaded")
 } catch (error) {
   console.error("❌ Error loading degrees routes:", error.message)
@@ -141,7 +112,7 @@ try {
 
 try {
   console.log("Loading audit-logs routes...")
-  app.use("/api/audit-logs", authMiddleware, authorizeRoles("admin"), committeeLimiter, require("./src/routes/audit-logs"))
+  app.use("/api/audit-logs", require("./src/routes/audit-logs"))
   console.log("✅ Audit-logs routes loaded")
 } catch (error) {
   console.error("❌ Error loading audit-logs routes:", error.message)
@@ -150,7 +121,7 @@ try {
 
 try {
   console.log("Loading elections routes...")
-  app.use("/api/elections", authMiddleware, authorizeRoles("admin", "election_committee"), committeeLimiter, require("./src/routes/elections"))
+  app.use("/api/elections", require("./src/routes/elections"))
   console.log("✅ Elections routes loaded")
 } catch (error) {
   console.error("❌ Error loading elections routes:", error.message)
@@ -158,17 +129,44 @@ try {
 }
 
 try {
-  console.log("Loading ballots routes...")
-  app.use("/api/ballots", authMiddleware, require("./src/routes/ballot"))
-  console.log("âœ… Ballots routes loaded")
+  console.log("Loading positions routes...")
+  app.use("/api/positions", require("./src/routes/positions"))
+  console.log("✅ Positions routes loaded")
 } catch (error) {
-  console.error("âŒ Error loading ballots routes:", error.message)
+  console.error("❌ Error loading positions routes:", error.message)
+  process.exit(1)
+}
+
+try {
+  console.log("Loading ballots routes...")
+  app.use("/api/ballots", require("./src/routes/ballot"))
+  console.log("✅ Ballots routes loaded")
+} catch (error) {
+  console.error("❌ Error loading ballots routes:", error.message)
+  process.exit(1)
+}
+
+try {
+  console.log("Loading partylist routes...")
+  app.use("/api/partylists", require("./src/routes/partylist"))
+  console.log("✅ Partylist routes loaded")
+} catch (error) {
+  console.error("❌ Error loading partylist routes:", error.message)
+  process.exit(1)
+}
+
+try {
+  console.log("Loading voting routes...")
+  app.use("/api/voting", votingLimiter, require("./src/routes/voting"))
+  console.log("✅ Voting routes loaded")
+} catch (error) {
+  console.error("❌ Error loading voting routes:", error.message)
   process.exit(1)
 }
 
 try {
   console.log("Loading chat-support routes...")
-  app.use("/api/chat-support", require("./src/routes/chat-support"))
+  app.use("/api/chat-support", chatSupportLimiter, require("./src/routes/chat-support"))
   console.log("✅ Chat-support routes loaded")
 } catch (error) {
   console.error("❌ Error loading chat-support routes:", error.message)
@@ -177,7 +175,7 @@ try {
 
 try {
   console.log("Loading dashboard routes...")
-  app.use("/api/dashboard", authMiddleware, committeeLimiter, require("./src/routes/dashboard"))
+  app.use("/api/dashboard", dashboardLimiter, require("./src/routes/dashboard"))
   console.log("✅ Dashboard routes loaded")
 } catch (error) {
   console.error("❌ Error loading dashboard routes:", error.message)
@@ -199,25 +197,27 @@ const PORT = process.env.PORT || 5000
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`)
   console.log(`🔍 Health check: http://localhost:${PORT}/api/health`)
-  console.log(`🔍 Available routes:`)
+  console.log(`📋 Available routes:`)
   console.log(`   - POST http://localhost:${PORT}/api/auth/login`)
   console.log(`   - POST http://localhost:${PORT}/api/auth/voter-login`)
   console.log(`   - POST http://localhost:${PORT}/api/auth/pre-register-step1`)
   console.log(`   - POST http://localhost:${PORT}/api/auth/pre-register-step2`)
   console.log(`   - GET  http://localhost:${PORT}/api/users (Protected - Admin)`)
   console.log(`   - GET  http://localhost:${PORT}/api/voters (Protected - Admin/Committee)`)
-  console.log(`   - GET  http://localhost:${PORT}/api/degrees (Protected - Admin/Committee)`)
-  console.log(`   - GET  http://localhost:${PORT}/api/elections (Protected - Admin/Committee)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/degrees`)
+  console.log(`   - GET  http://localhost:${PORT}/api/elections`)
+  console.log(`   - GET  http://localhost:${PORT}/api/candidates`)
+  console.log(`   - GET  http://localhost:${PORT}/api/positions`)
+  console.log(`   - GET  http://localhost:${PORT}/api/partylists`)
   console.log(`   - GET  http://localhost:${PORT}/api/voting/active-elections (Protected - Voters)`)
-  console.log(`   - GET  http://localhost:${PORT}/api/candidates (Protected - Admin/Committee)`)
   console.log(`   - POST http://localhost:${PORT}/api/voting/cast-vote (Protected - Voters)`)
-  console.log(`   - POST http://localhost:${PORT}/api/ballot (Public)`)
-  console.log(`   - GET  http://localhost:${PORT}/api/audit-logs (Protected - Admin)`)
-  console.log(`   - POST http://localhost:${PORT}/api/chat-support (Public)`)
-  console.log(`   - GET  http://localhost:${PORT}/api/chat-support (Protected - Admin)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/ballots`)
+  console.log(`   - GET  http://localhost:${PORT}/api/audit-logs`)
+  console.log(`   - POST http://localhost:${PORT}/api/chat-support`)
   console.log(`   - GET  http://localhost:${PORT}/api/dashboard/admin (Protected - Admin)`)
   console.log(`   - GET  http://localhost:${PORT}/api/dashboard/committee (Protected - Committee)`)
   console.log(`   - GET  http://localhost:${PORT}/api/dashboard/sao (Protected - SAO)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/dashboard/voter (Protected - Voter)`)
 })
 
 module.exports = app

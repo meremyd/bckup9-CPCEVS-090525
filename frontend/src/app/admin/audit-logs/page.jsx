@@ -11,6 +11,62 @@ export default function AuditLogsPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedAction, setSelectedAction] = useState("")
   const [dateFilter, setDateFilter] = useState("")
+  const [statistics, setStatistics] = useState(null)
+  
+  // All possible actions from AuditLog.js enum
+  const ALL_ACTIONS = [
+    "LOGIN",
+    "LOGOUT", 
+    "PASSWORD_RESET_REQUEST",
+    "PASSWORD_RESET_SUCCESS",
+    "UNAUTHORIZED_ACCESS_ATTEMPT",
+    "DATA_EXPORT",
+    "DATA_IMPORT",
+    "UPDATE_PASSWORD",
+    "FORCE_LOGOUT",
+    "CREATE_USER",
+    "UPDATE_USER", 
+    "DELETE_USER",
+    "ACTIVATE_USER",
+    "DEACTIVATE_USER",
+    "CREATE_VOTER",
+    "UPDATE_VOTER",
+    "DELETE_VOTER", 
+    "ACTIVATE_VOTER",
+    "DEACTIVATE_VOTER",
+    "VOTER_REGISTRATION",
+    "CREATE_DEGREE",
+    "UPDATE_DEGREE",
+    "DELETE_DEGREE",
+    "SYSTEM_ACCESS",
+    "CREATE_ELECTION",
+    "UPDATE_ELECTION",
+    "DELETE_ELECTION",
+    "START_ELECTION", 
+    "END_ELECTION",
+    "CANCEL_ELECTION",
+    "CREATE_CANDIDATE",
+    "UPDATE_CANDIDATE",
+    "DELETE_CANDIDATE",
+    "CREATE_POSITION",
+    "UPDATE_POSITION",
+    "DELETE_POSITION",
+    "CREATE_PARTYLIST",
+    "UPDATE_PARTYLIST",
+    "DELETE_PARTYLIST",
+    "VOTED",
+    "VOTE_SUBMITTED",
+    "BALLOT_ACCESSED",
+    "BALLOT_STARTED", 
+    "BALLOT_ABANDONED",
+    "CHAT_SUPPORT_REQUEST",
+    "CHAT_SUPPORT_RESPONSE",
+    "CHAT_SUPPORT_STATUS_UPDATE",
+    "FILE_UPLOAD",
+    "FILE_DELETE",
+    "PROFILE_PICTURE_UPDATE",
+    "CAMPAIGN_PICTURE_UPDATE"
+  ]
 
   // SweetAlert function
   const showAlert = (type, title, text) => {
@@ -22,109 +78,239 @@ export default function AuditLogsPage() {
     })
   }
 
-  // Fetch function with auth
-
   useEffect(() => {
     fetchAuditLogs()
+    fetchStatistics()
   }, [])
 
   const fetchAuditLogs = async () => {
     try {
-      const data = await auditLogsAPI.getAll()
-      // Handle both array and object responses
-      if (Array.isArray(data)) {
-        setLogs(data)
-      } else if (data.logs && Array.isArray(data.logs)) {
-        setLogs(data.logs)
-      } else {
-        console.error("Unexpected data format:", data)
-        setLogs([])
+      setLoading(true)
+      setError("")
+      
+      // Build query parameters for filtering
+      const params = {}
+      if (searchTerm.trim()) {
+        params.search = searchTerm.trim()
       }
+      if (selectedAction) {
+        params.action = selectedAction
+      }
+      if (dateFilter) {
+        params.date = dateFilter
+      }
+      
+      const response = await auditLogsAPI.getAll(params)
+      
+      // Handle different response structures
+      let auditLogs = []
+      if (response.success && Array.isArray(response.data)) {
+        auditLogs = response.data
+      } else if (response.success && response.data && Array.isArray(response.data.logs)) {
+        auditLogs = response.data.logs
+      } else if (Array.isArray(response)) {
+        auditLogs = response
+      } else if (response.logs && Array.isArray(response.logs)) {
+        auditLogs = response.logs
+      } else {
+        console.warn("Unexpected response structure:", response)
+        auditLogs = []
+      }
+      
+      setLogs(auditLogs)
     } catch (error) {
       console.error("Fetch audit logs error:", error)
-      const errorMessage = error.message || "Network error"
+      const errorMessage = error.response?.data?.message || error.message || "Failed to fetch audit logs"
       setError(errorMessage)
       showAlert("error", "Error!", `Failed to fetch audit logs: ${errorMessage}`)
+      setLogs([])
     } finally {
       setLoading(false)
     }
   }
 
-  const filteredLogs = Array.isArray(logs) ? logs.filter((log) => {
-    const matchesSearch =
-      (log.user || log.username || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (log.action || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (log.details || log.description || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (log.ipAddress || log.ip || "").includes(searchTerm)
+  const fetchStatistics = async () => {
+    try {
+      const response = await auditLogsAPI.getStatistics()
+      if (response.success) {
+        setStatistics(response.data)
+      }
+    } catch (error) {
+      console.error("Fetch statistics error:", error)
+      // Don't show error for statistics as it's not critical
+    }
+  }
 
-    const matchesAction = selectedAction === "" || log.action === selectedAction
-    const matchesDate =
-      dateFilter === "" || 
-      (log.date && new Date(log.date).toDateString() === new Date(dateFilter).toDateString()) ||
-      (log.createdAt && new Date(log.createdAt).toDateString() === new Date(dateFilter).toDateString()) ||
-      (log.timestamp && new Date(log.timestamp).toDateString() === new Date(dateFilter).toDateString())
+  // Filter logs on the frontend (in addition to backend filtering)
+  const filteredLogs = Array.isArray(logs) ? logs.filter((log) => {
+    const matchesSearch = !searchTerm || 
+      (log.username || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (log.action || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (log.details || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (log.ipAddress || "").includes(searchTerm) ||
+      (log.schoolId || "").toString().includes(searchTerm)
+
+    const matchesAction = !selectedAction || log.action === selectedAction
+    
+    const matchesDate = !dateFilter || 
+      (log.timestamp && new Date(log.timestamp).toDateString() === new Date(dateFilter).toDateString()) ||
+      (log.createdAt && new Date(log.createdAt).toDateString() === new Date(dateFilter).toDateString())
 
     return matchesSearch && matchesAction && matchesDate
   }) : []
 
+  // Apply search when filters change
+  useEffect(() => {
+    const delayedSearch = setTimeout(() => {
+      if (searchTerm || selectedAction || dateFilter) {
+        fetchAuditLogs()
+      }
+    }, 500) // Debounce search
+
+    return () => clearTimeout(delayedSearch)
+  }, [searchTerm, selectedAction, dateFilter])
+
   const getActionColor = (action) => {
-    switch (action) {
-      case "LOGIN":
-        return "bg-blue-100 text-blue-800"
-      case "LOGOUT":
-        return "bg-gray-100 text-gray-800"
-      case "CREATE_VOTER":
-        return "bg-green-100 text-green-800"
-      case "UPDATE_VOTER":
-        return "bg-yellow-100 text-yellow-800"
-      case "DELETE_VOTER":
-        return "bg-red-100 text-red-800"
-      case "CREATE_USER":
-        return "bg-purple-100 text-purple-800"
-      case "UPDATE_USER":
-        return "bg-indigo-100 text-indigo-800"
-      case "DELETE_USER":
-        return "bg-red-100 text-red-800"
-      case "VOTER_REGISTRATION":
-        return "bg-emerald-100 text-emerald-800"
-      case "SYSTEM_ACCESS":
-        return "bg-cyan-100 text-cyan-800"
-      default:
-        return "bg-gray-100 text-gray-800"
+    const colors = {
+      // Auth actions
+      "LOGIN": "bg-blue-100 text-blue-800",
+      "LOGOUT": "bg-gray-100 text-gray-800",
+      "PASSWORD_RESET_REQUEST": "bg-yellow-100 text-yellow-800",
+      "PASSWORD_RESET_SUCCESS": "bg-green-100 text-green-800",
+      "UNAUTHORIZED_ACCESS_ATTEMPT": "bg-red-100 text-red-800",
+      "FORCE_LOGOUT": "bg-red-100 text-red-800",
+      
+      // User management
+      "CREATE_USER": "bg-green-100 text-green-800",
+      "UPDATE_USER": "bg-blue-100 text-blue-800", 
+      "DELETE_USER": "bg-red-100 text-red-800",
+      "ACTIVATE_USER": "bg-green-100 text-green-800",
+      "DEACTIVATE_USER": "bg-orange-100 text-orange-800",
+      
+      // Voter management
+      "CREATE_VOTER": "bg-emerald-100 text-emerald-800",
+      "UPDATE_VOTER": "bg-blue-100 text-blue-800",
+      "DELETE_VOTER": "bg-red-100 text-red-800",
+      "ACTIVATE_VOTER": "bg-green-100 text-green-800", 
+      "DEACTIVATE_VOTER": "bg-orange-100 text-orange-800",
+      "VOTER_REGISTRATION": "bg-purple-100 text-purple-800",
+      
+      // Election management
+      "CREATE_ELECTION": "bg-indigo-100 text-indigo-800",
+      "UPDATE_ELECTION": "bg-blue-100 text-blue-800",
+      "DELETE_ELECTION": "bg-red-100 text-red-800", 
+      "START_ELECTION": "bg-green-100 text-green-800",
+      "END_ELECTION": "bg-gray-100 text-gray-800",
+      "CANCEL_ELECTION": "bg-red-100 text-red-800",
+      
+      // Voting actions
+      "VOTED": "bg-green-100 text-green-800",
+      "VOTE_SUBMITTED": "bg-emerald-100 text-emerald-800",
+      "BALLOT_ACCESSED": "bg-cyan-100 text-cyan-800",
+      "BALLOT_STARTED": "bg-blue-100 text-blue-800",
+      "BALLOT_ABANDONED": "bg-yellow-100 text-yellow-800",
+      
+      // System actions
+      "SYSTEM_ACCESS": "bg-cyan-100 text-cyan-800",
+      "DATA_EXPORT": "bg-purple-100 text-purple-800",
+      "DATA_IMPORT": "bg-purple-100 text-purple-800",
+      
+      // Support actions
+      "CHAT_SUPPORT_REQUEST": "bg-teal-100 text-teal-800",
+      "CHAT_SUPPORT_RESPONSE": "bg-teal-100 text-teal-800",
+      "CHAT_SUPPORT_STATUS_UPDATE": "bg-blue-100 text-blue-800",
+      
+      // File actions
+      "FILE_UPLOAD": "bg-green-100 text-green-800",
+      "FILE_DELETE": "bg-red-100 text-red-800",
+      "PROFILE_PICTURE_UPDATE": "bg-blue-100 text-blue-800",
+      "CAMPAIGN_PICTURE_UPDATE": "bg-blue-100 text-blue-800",
     }
+    
+    return colors[action] || "bg-gray-100 text-gray-800"
   }
 
-  const uniqueActions = Array.isArray(logs) ? [...new Set(logs.map((log) => log.action).filter(Boolean))] : []
+  const formatActionName = (action) => {
+    return action ? action.replace(/_/g, " ").toLowerCase()
+      .split(" ")
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ") : ""
+  }
+
+  const handleClearFilters = () => {
+    setSearchTerm("")
+    setSelectedAction("")
+    setDateFilter("")
+    // Refetch without filters
+    setTimeout(() => fetchAuditLogs(), 100)
+  }
+
+  const handleRefresh = () => {
+    fetchAuditLogs()
+    fetchStatistics()
+  }
 
   if (loading) {
     return (
-      <div className="text-center py-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto"></div>
-        <p className="mt-2 text-gray-600">Loading audit logs...</p>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="text-center py-8">
-        <p className="text-red-600">{error}</p>
+      <div className="text-center py-12">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
+        <p className="mt-4 text-gray-600">Loading audit logs...</p>
       </div>
     )
   }
 
   return (
     <div className="space-y-6">
+      {/* Statistics Cards */}
+      {statistics && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="text-sm font-medium text-gray-500">Total Logs</div>
+            <div className="text-2xl font-bold text-gray-900">{statistics.totalLogs || 0}</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="text-sm font-medium text-gray-500">Today's Activity</div>
+            <div className="text-2xl font-bold text-blue-600">{statistics.todayActivity || 0}</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="text-sm font-medium text-gray-500">Failed Attempts</div>
+            <div className="text-2xl font-bold text-red-600">{statistics.failedAttempts || 0}</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="text-sm font-medium text-gray-500">Active Users</div>
+            <div className="text-2xl font-bold text-green-600">{statistics.activeUsers || 0}</div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-lg shadow">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-gray-200">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+            <h1 className="text-lg font-semibold text-gray-900">Audit Logs</h1>
+            <div className="mt-4 sm:mt-0 flex space-x-3">
+              <button
+                onClick={handleRefresh}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Filters */}
-        <div className="px-6 py-4 border-b">
-          <div className="flex flex-col sm:flex-row gap-4">
-            {/* Search Bar */}
-            <div className="flex-1 max-w-md">
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* Search */}
+            <div className="md:col-span-2">
               <div className="relative">
                 <input
                   type="text"
-                  placeholder="Search by user, action, details, or IP address..."
+                  placeholder="Search by user, action, details, or IP..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
@@ -146,23 +332,23 @@ export default function AuditLogsPage() {
             </div>
 
             {/* Action Filter */}
-            <div className="min-w-[200px]">
+            <div>
               <select
                 value={selectedAction}
                 onChange={(e) => setSelectedAction(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
               >
                 <option value="">All Actions</option>
-                {uniqueActions.map((action) => (
+                {ALL_ACTIONS.map((action) => (
                   <option key={action} value={action}>
-                    {action.replace("_", " ")}
+                    {formatActionName(action)}
                   </option>
                 ))}
               </select>
             </div>
 
             {/* Date Filter */}
-            <div className="min-w-[150px]">
+            <div>
               <input
                 type="date"
                 value={dateFilter}
@@ -170,30 +356,40 @@ export default function AuditLogsPage() {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
               />
             </div>
+          </div>
 
-            {/* Clear Filters */}
+          {/* Filter Actions */}
+          <div className="mt-4 flex justify-between items-center">
+            <div className="text-sm text-gray-500">
+              Showing {filteredLogs.length} of {logs.length} logs
+            </div>
             <button
-              onClick={() => {
-                setSearchTerm("")
-                setSelectedAction("")
-                setDateFilter("")
-              }}
-              className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+              onClick={handleClearFilters}
+              className="text-sm text-purple-600 hover:text-purple-800 font-medium"
             >
               Clear Filters
             </button>
           </div>
         </div>
 
+        {/* Error State */}
+        {error && (
+          <div className="px-6 py-4 bg-red-50 border-b border-red-200">
+            <div className="text-sm text-red-600">{error}</div>
+          </div>
+        )}
+
         {/* Table */}
         <div className="overflow-x-auto">
-          <table className="min-w-full table-auto">
-            <thead>
-              <tr className="bg-gray-50">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Action
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  User
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Details
                 </th>
@@ -201,25 +397,39 @@ export default function AuditLogsPage() {
                   IP Address
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date
+                  Timestamp
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredLogs.map((log) => (
                 <tr key={log._id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getActionColor(log.action)}`}>
-                      {(log.action || "").replace("_", " ")}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${getActionColor(log.action)}`}>
+                      {formatActionName(log.action)}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{log.user || log.username || "Unknown"}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{log.details || log.description || "No details"}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{log.ipAddress || log.ip || "Unknown"}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900">
+                      {log.username || "Unknown"}
+                    </div>
+                    {log.schoolId && (
+                      <div className="text-sm text-gray-500">
+                        ID: {log.schoolId}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-gray-900 max-w-xs truncate" title={log.details}>
+                      {log.details || "No details"}
+                    </div>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {log.date ? new Date(log.date).toLocaleString() : 
-                     log.createdAt ? new Date(log.createdAt).toLocaleString() : 
-                     log.timestamp ? new Date(log.timestamp).toLocaleString() : "Unknown"}
+                    {log.ipAddress || "Unknown"}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {log.timestamp ? new Date(log.timestamp).toLocaleString() : 
+                     log.createdAt ? new Date(log.createdAt).toLocaleString() : "Unknown"}
                   </td>
                 </tr>
               ))}
@@ -228,9 +438,17 @@ export default function AuditLogsPage() {
         </div>
 
         {/* Empty State */}
-        {filteredLogs.length === 0 && (
-          <div className="text-center py-8">
-            <p className="text-gray-500">No audit logs found matching your criteria.</p>
+        {filteredLogs.length === 0 && !loading && (
+          <div className="text-center py-12">
+            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <h3 className="mt-2 text-sm font-medium text-gray-900">No audit logs found</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              {searchTerm || selectedAction || dateFilter
+                ? "Try adjusting your search filters"
+                : "No audit logs have been recorded yet"}
+            </p>
           </div>
         )}
       </div>

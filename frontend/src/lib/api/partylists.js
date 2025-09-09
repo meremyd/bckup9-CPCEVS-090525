@@ -1,39 +1,74 @@
 import api from '../api'
 
 export const partylistsAPI = {
-  // Get all partylists
+  // Get all partylists with optional filtering
   getAll: async (params = {}) => {
-    const response = await api.get('/partylists', { params })
-    return response.data
+    try {
+      const response = await api.get('/partylists', { params })
+      return response.data
+    } catch (error) {
+      throw error.response?.data || error.message
+    }
   },
   
-  // Get partylist by ID
+  // Get partylist by ID with candidates and statistics
   getById: async (id) => {
-    const response = await api.get(`/partylists/${id}`)
-    return response.data
+    try {
+      const response = await api.get(`/partylists/${id}`)
+      return response.data
+    } catch (error) {
+      throw error.response?.data || error.message
+    }
   },
   
-  // Create partylist
+  // Create new partylist
   create: async (partylistData) => {
-    const response = await api.post('/partylists', partylistData)
-    return response.data
+    try {
+      const response = await api.post('/partylists', partylistData)
+      return response.data
+    } catch (error) {
+      throw error.response?.data || error.message
+    }
   },
   
   // Update partylist
   update: async (id, partylistData) => {
-    const response = await api.put(`/partylists/${id}`, partylistData)
-    return response.data
+    try {
+      const response = await api.put(`/partylists/${id}`, partylistData)
+      return response.data
+    } catch (error) {
+      throw error.response?.data || error.message
+    }
   },
   
   // Delete partylist
-  delete: async (id) => {
-    const response = await api.delete(`/partylists/${id}`)
-    return response.data
+  delete: async (id, force = false) => {
+    try {
+      const params = force ? { force: true } : {}
+      const response = await api.delete(`/partylists/${id}`, { params })
+      return response.data
+    } catch (error) {
+      throw error.response?.data || error.message
+    }
   },
   
-  // Get partylists by election
-  getByElection: async (electionId, params = {}) => {
-    const response = await api.get(`/elections/${electionId}/partylists`, { params })
-    return response.data
+  // Get partylists by election ID
+  getByElection: async (electionId) => {
+    try {
+      const response = await api.get(`/partylists/election/${electionId}`)
+      return response.data
+    } catch (error) {
+      throw error.response?.data || error.message
+    }
+  },
+  
+  // Get detailed partylist statistics
+  getStatistics: async (id) => {
+    try {
+      const response = await api.get(`/partylists/${id}/statistics`)
+      return response.data
+    } catch (error) {
+      throw error.response?.data || error.message
+    }
   }
 }

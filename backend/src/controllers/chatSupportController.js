@@ -13,7 +13,7 @@ class ChatSupportController {
       if (!schoolId || !fullName || !degreeId || !birthday || !email || !message) {
         // Log unauthorized access attempt
         await AuditLog.create({
-          action: "CHAT_SUPPORT_ACCESS_DENIED",
+          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
           username: schoolId?.toString() || "unknown",
           details: `Invalid chat support request submission - missing required fields from ${req.ip}`,
           ipAddress: req.ip,
@@ -29,7 +29,7 @@ class ChatSupportController {
       const schoolIdNumber = Number(schoolId)
       if (isNaN(schoolIdNumber)) {
         await AuditLog.create({
-          action: "CHAT_SUPPORT_ACCESS_DENIED",
+          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
           username: schoolId?.toString() || "unknown",
           details: `Invalid school ID format in chat support request: ${schoolId}`,
           ipAddress: req.ip,
@@ -45,7 +45,7 @@ class ChatSupportController {
       const degree = await Degree.findById(degreeId)
       if (!degree) {
         await AuditLog.create({
-          action: "CHAT_SUPPORT_ACCESS_DENIED",
+          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
           username: schoolIdNumber.toString(),
           details: `Invalid degree selection in chat support request: ${degreeId}`,
           ipAddress: req.ip,
@@ -61,7 +61,7 @@ class ChatSupportController {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       if (!emailRegex.test(email)) {
         await AuditLog.create({
-          action: "CHAT_SUPPORT_ACCESS_DENIED",
+          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
           username: schoolIdNumber.toString(),
           details: `Invalid email format in chat support request: ${email}`,
           ipAddress: req.ip,
@@ -92,7 +92,7 @@ class ChatSupportController {
 
       // Log the support request submission
       await AuditLog.create({
-        action: "CHAT_SUPPORT_CREATE",
+        action: "CHAT_SUPPORT_REQUEST",
         username: schoolIdNumber.toString(),
         voterId: voter ? voter._id : null,
         schoolId: schoolIdNumber,
@@ -142,7 +142,7 @@ class ChatSupportController {
 
       // Log admin access to chat support requests
       await AuditLog.create({
-        action: "CHAT_SUPPORT_VIEW",
+        action: "SYSTEM_ACCESS",
         username: req.user?.username || "system",
         userId: req.user?.userId,
         details: `Admin accessed chat support requests list - Filter: ${JSON.stringify(filter)}, Page: ${page}`,
@@ -161,7 +161,7 @@ class ChatSupportController {
       })
     } catch (error) {
       await AuditLog.create({
-        action: "CHAT_SUPPORT_ACCESS_DENIED",
+        action: "UNAUTHORIZED_ACCESS_ATTEMPT",
         username: req.user?.username || "unknown",
         details: `Failed to access chat support requests: ${error.message}`,
         ipAddress: req.ip,
@@ -182,7 +182,7 @@ class ChatSupportController {
       
       if (!request) {
         await AuditLog.create({
-          action: "CHAT_SUPPORT_ACCESS_DENIED",
+          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
           username: req.user?.username || "unknown",
           details: `Attempted to access non-existent chat support request: ${id}`,
           ipAddress: req.ip,
@@ -196,7 +196,7 @@ class ChatSupportController {
 
       // Log successful access to specific request
       await AuditLog.create({
-        action: "CHAT_SUPPORT_VIEW",
+        action: "SYSTEM_ACCESS",
         username: req.user?.username || "system",
         userId: req.user?.userId,
         details: `Admin viewed chat support request ${id} from ${request.fullName} (School ID: ${request.schoolId})`,
@@ -207,7 +207,7 @@ class ChatSupportController {
       res.json(request)
     } catch (error) {
       await AuditLog.create({
-        action: "CHAT_SUPPORT_ACCESS_DENIED",
+        action: "UNAUTHORIZED_ACCESS_ATTEMPT",
         username: req.user?.username || "unknown",
         details: `Failed to access chat support request ${req.params.id}: ${error.message}`,
         ipAddress: req.ip,
@@ -226,7 +226,7 @@ class ChatSupportController {
       const validStatuses = ["pending", "in-progress", "resolved", "closed"]
       if (!validStatuses.includes(status)) {
         await AuditLog.create({
-          action: "CHAT_SUPPORT_ACCESS_DENIED",
+          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
           username: req.user?.username || "unknown",
           details: `Invalid status update attempt for chat support request ${id}: ${status}`,
           ipAddress: req.ip,
@@ -254,7 +254,7 @@ class ChatSupportController {
       
       if (!request) {
         await AuditLog.create({
-          action: "CHAT_SUPPORT_ACCESS_DENIED",
+          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
           username: req.user?.username || "unknown",
           details: `Attempted to update non-existent chat support request: ${id}`,
           ipAddress: req.ip,
@@ -268,7 +268,7 @@ class ChatSupportController {
 
       // Log the status update
       await AuditLog.create({
-        action: "CHAT_SUPPORT_UPDATE",
+        action: "CHAT_SUPPORT_STATUS_UPDATE",
         username: req.user?.username || "system",
         userId: req.user?.userId,
         details: `Chat support request ${id} status updated to ${status} by ${req.user?.username}${response ? ' - Response provided' : ''}`,
@@ -294,7 +294,7 @@ class ChatSupportController {
       })
     } catch (error) {
       await AuditLog.create({
-        action: "CHAT_SUPPORT_ACCESS_DENIED",
+        action: "UNAUTHORIZED_ACCESS_ATTEMPT",
         username: req.user?.username || "unknown",
         details: `Failed to update chat support request ${req.params.id}: ${error.message}`,
         ipAddress: req.ip,
@@ -371,7 +371,7 @@ class ChatSupportController {
 
       // Log statistics access
       await AuditLog.create({
-        action: "CHAT_SUPPORT_EXPORT",
+        action: "DATA_EXPORT",
         username: req.user?.username || "system",
         userId: req.user?.userId,
         details: `Admin accessed chat support statistics - Total requests: ${total}`,
@@ -392,7 +392,7 @@ class ChatSupportController {
       })
     } catch (error) {
       await AuditLog.create({
-        action: "CHAT_SUPPORT_ACCESS_DENIED",
+        action: "UNAUTHORIZED_ACCESS_ATTEMPT",
         username: req.user?.username || "unknown",
         details: `Failed to access chat support statistics: ${error.message}`,
         ipAddress: req.ip,
@@ -410,7 +410,7 @@ class ChatSupportController {
       const request = await ChatSupport.findById(id)
       if (!request) {
         await AuditLog.create({
-          action: "CHAT_SUPPORT_ACCESS_DENIED",
+          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
           username: req.user?.username || "unknown",
           details: `Attempted to delete non-existent chat support request: ${id}`,
           ipAddress: req.ip,
@@ -424,9 +424,9 @@ class ChatSupportController {
 
       await ChatSupport.findByIdAndDelete(id)
 
-      // Log the deletion
+      // Log the deletion (using existing enum value that's closest)
       await AuditLog.create({
-        action: "CHAT_SUPPORT_DELETE",
+        action: "SYSTEM_ACCESS",
         username: req.user?.username || "system",
         userId: req.user?.userId,
         details: `Chat support request ${id} deleted by ${req.user?.username} - Request from ${request.fullName} (School ID: ${request.schoolId})`,
@@ -439,7 +439,7 @@ class ChatSupportController {
       })
     } catch (error) {
       await AuditLog.create({
-        action: "CHAT_SUPPORT_ACCESS_DENIED",
+        action: "UNAUTHORIZED_ACCESS_ATTEMPT",
         username: req.user?.username || "unknown",
         details: `Failed to delete chat support request ${req.params.id}: ${error.message}`,
         ipAddress: req.ip,
@@ -456,7 +456,7 @@ class ChatSupportController {
 
       if (!requestIds || !Array.isArray(requestIds) || requestIds.length === 0) {
         await AuditLog.create({
-          action: "CHAT_SUPPORT_ACCESS_DENIED",
+          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
           username: req.user?.username || "unknown",
           details: `Invalid bulk update attempt - missing or invalid request IDs`,
           ipAddress: req.ip,
@@ -471,7 +471,7 @@ class ChatSupportController {
       const validStatuses = ["pending", "in-progress", "resolved", "closed"]
       if (!validStatuses.includes(status)) {
         await AuditLog.create({
-          action: "CHAT_SUPPORT_ACCESS_DENIED",
+          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
           username: req.user?.username || "unknown",
           details: `Invalid bulk status update attempt: ${status}`,
           ipAddress: req.ip,
@@ -493,7 +493,7 @@ class ChatSupportController {
 
       // Log bulk update
       await AuditLog.create({
-        action: "CHAT_SUPPORT_BULK_UPDATE",
+        action: "CHAT_SUPPORT_STATUS_UPDATE",
         username: req.user?.username || "system",
         userId: req.user?.userId,
         details: `Bulk status update performed by ${req.user?.username} - ${updateResult.modifiedCount} requests updated to ${status}`,
@@ -507,7 +507,7 @@ class ChatSupportController {
       })
     } catch (error) {
       await AuditLog.create({
-        action: "CHAT_SUPPORT_ACCESS_DENIED",
+        action: "UNAUTHORIZED_ACCESS_ATTEMPT",
         username: req.user?.username || "unknown",
         details: `Failed bulk update of chat support requests: ${error.message}`,
         ipAddress: req.ip,
@@ -539,7 +539,7 @@ class ChatSupportController {
 
       // Log data export
       await AuditLog.create({
-        action: "CHAT_SUPPORT_EXPORT",
+        action: "DATA_EXPORT",
         username: req.user?.username || "system",
         userId: req.user?.userId,
         details: `Chat support data exported by ${req.user?.username} - Format: ${format}, Count: ${requests.length}, Filter: ${JSON.stringify(filter)}`,
@@ -584,7 +584,7 @@ class ChatSupportController {
       }
     } catch (error) {
       await AuditLog.create({
-        action: "CHAT_SUPPORT_ACCESS_DENIED",
+        action: "UNAUTHORIZED_ACCESS_ATTEMPT",
         username: req.user?.username || "unknown",
         details: `Failed to export chat support requests: ${error.message}`,
         ipAddress: req.ip,

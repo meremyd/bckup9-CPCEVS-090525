@@ -1,57 +1,83 @@
 import api from '../api'
 
 export const degreesAPI = {
-  // Get all degrees
+  // Get all degrees (public)
   getAll: async (params = {}) => {
-    const response = await api.get('/degrees', { params })
-    return response.data
+    try {
+      const response = await api.get('/degrees', { params })
+      return response.data
+    } catch (error) {
+      console.error('Error fetching degrees:', error)
+      throw error
+    }
   },
   
-  // Get degree by ID
+  // Get degree by ID (public)
   getById: async (id) => {
-    const response = await api.get(`/degrees/${id}`)
-    return response.data
+    try {
+      const response = await api.get(`/degrees/${id}`)
+      return response.data
+    } catch (error) {
+      console.error('Error fetching degree:', error)
+      throw error
+    }
   },
   
-  // Create degree
+  // Create degree (admin only)
   create: async (degreeData) => {
-    const response = await api.post('/degrees', degreeData)
-    return response.data
+    try {
+      const response = await api.post('/degrees', degreeData)
+      return response.data
+    } catch (error) {
+      console.error('Error creating degree:', error)
+      throw error
+    }
   },
   
-  // Update degree
+  // Update degree (admin only)
   update: async (id, degreeData) => {
-    const response = await api.put(`/degrees/${id}`, degreeData)
-    return response.data
+    try {
+      const response = await api.put(`/degrees/${id}`, degreeData)
+      return response.data
+    } catch (error) {
+      console.error('Error updating degree:', error)
+      throw error
+    }
   },
   
-  // Delete degree
+  // Delete degree (admin only)
   delete: async (id, force = false) => {
-    const response = await api.delete(`/degrees/${id}`, { params: { force } })
-    return response.data
+    try {
+      const response = await api.delete(`/degrees/${id}`, { 
+        params: { force: force.toString() } 
+      })
+      return response.data
+    } catch (error) {
+      console.error('Error deleting degree:', error)
+      throw error
+    } 
+
   },
   
-  // Get degree statistics
+  // Bulk create degrees (admin only) 
+  bulkCreate: async (degrees) => {
+    try {
+      const response = await api.post('/degrees/bulk', { degrees })   
+      return response.data
+    } catch (error) {
+      console.error('Error bulk creating degrees:', error)
+      throw error
+    } 
+  },
+
+  // Get degree statistics (admin and election committee)   
   getStatistics: async () => {
-    const response = await api.get('/degrees/statistics/overview')
-    return response.data
-  },
-  
-  // Get departments
-  getDepartments: async () => {
-    const response = await api.get('/degrees/departments/all')
-    return response.data
-  },
-  
-  // Bulk create degrees
-  bulkCreate: async (degreesData) => {
-    const response = await api.post('/degrees/bulk', degreesData)
-    return response.data
-  },
-  
-  // Search degrees
-  search: async (params = {}) => {
-    const response = await api.get('/degrees/search', { params })
-    return response.data
+    try {
+      const response = await api.get('/degrees/statistics/overview')  
+      return response.data
+    } catch (error) {
+      console.error('Error fetching degree statistics:', error)
+      throw error
+    }   
   }
 }

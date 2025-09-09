@@ -29,16 +29,15 @@ class UserController {
 
       const total = await User.countDocuments(filter)
 
-      // Log the access
-      await AuditLog.create({
-        action: "SYSTEM_ACCESS",
-        username: req.user?.username || "system",
-        details: `Users list accessed - ${users.length} users returned`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the access using the static method
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        { username: req.user?.username },
+        `Users list accessed - ${users.length} users returned`,
+        req
+      )
 
-      res.json(users) // Return just the array for frontend compatibility
+      res.json(users)
     } catch (error) {
       next(error)
     }
@@ -51,10 +50,26 @@ class UserController {
 
       const user = await User.findById(id).select("-passwordHash")
       if (!user) {
+        // Log failed access attempt
+        await AuditLog.logUserAction(
+          "SYSTEM_ACCESS",
+          { username: req.user?.username },
+          `Failed to access user - User ID ${id} not found`,
+          req
+        )
+        
         const error = new Error("User not found")
         error.statusCode = 404
         return next(error)
       }
+
+      // Log successful user access
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        { username: req.user?.username },
+        `User accessed - ${user.username} (${user.userType})`,
+        req
+      )
 
       res.json(user)
     } catch (error) {
@@ -74,7 +89,6 @@ class UserController {
         return next(error)
       }
 
-      // FIXED: Removed "voter" from valid user types
       const validUserTypes = ["admin", "election_committee", "sao"]
       if (!validUserTypes.includes(userType)) {
         const error = new Error("Invalid user type")
@@ -91,6 +105,14 @@ class UserController {
       // Check if username already exists
       const existingUser = await User.findOne({ username })
       if (existingUser) {
+        // Log failed creation attempt
+        await AuditLog.logUserAction(
+          "CREATE_USER",
+          { username: req.user?.username },
+          `Failed to create user - Username ${username} already exists`,
+          req
+        )
+        
         const error = new Error("Username already exists")
         error.statusCode = 400
         return next(error)
@@ -104,18 +126,13 @@ class UserController {
         isActive,
       })
 
-      // Log the creation
-      try {
-        await AuditLog.create({
-          action: "CREATE_USER",
-          username: req.user?.username || "system",
-          details: `User created - ${username} (${userType})`,
-          ipAddress: req.ip,
-          userAgent: req.get("User-Agent"),
-        })
-      } catch (logError) {
-        console.error("Failed to log audit entry:", logError.message)
-      }
+      // Log the creation using the static method
+      await AuditLog.logUserAction(
+        "CREATE_USER",
+        { username: req.user?.username, userId: req.user?.userId },
+        `User created - ${username} (${userType})`,
+        req
+      )
 
       const userResponse = await User.findById(user._id).select("-passwordHash")
 
@@ -136,21 +153,42 @@ class UserController {
 
       const user = await User.findById(id)
       if (!user) {
+        // Log failed update attempt
+        await AuditLog.logUserAction(
+          "UPDATE_USER",
+          { username: req.user?.username },
+          `Failed to update user - User ID ${id} not found`,
+          req
+        )
+        
         const error = new Error("User not found")
         error.statusCode = 404
         return next(error)
       }
+
+      const originalUsername = user.username
+      const originalUserType = user.userType
+      const originalIsActive = user.isActive
+      let updateDetails = []
 
       // Update username if provided
       if (username && username !== user.username) {
         // Check if new username already exists
         const existingUser = await User.findOne({ username, _id: { $ne: id } })
         if (existingUser) {
+          await AuditLog.logUserAction(
+            "UPDATE_USER",
+            { username: req.user?.username },
+            `Failed to update user - Username ${username} already exists`,
+            req
+          )
+          
           const error = new Error("Username already exists")
           error.statusCode = 400
           return next(error)
         }
         user.username = username
+        updateDetails.push(`username changed from ${originalUsername} to ${username}`)
       }
 
       // Update password if provided
@@ -161,11 +199,11 @@ class UserController {
           return next(error)
         }
         await user.updatePassword(password)
+        updateDetails.push("password updated")
       }
 
       // Update userType if provided
-      if (userType) {
-        // FIXED: Removed "voter" from valid user types
+      if (userType && userType !== user.userType) {
         const validUserTypes = ["admin", "election_committee", "sao"]
         if (!validUserTypes.includes(userType)) {
           const error = new Error("Invalid user type")
@@ -173,23 +211,37 @@ class UserController {
           return next(error)
         }
         user.userType = userType
+        updateDetails.push(`user type changed from ${originalUserType} to ${userType}`)
       }
 
       // Update isActive if provided
-      if (isActive !== undefined) {
+      if (isActive !== undefined && isActive !== user.isActive) {
         user.isActive = isActive
+        updateDetails.push(`status changed from ${originalIsActive ? 'active' : 'inactive'} to ${isActive ? 'active' : 'inactive'}`)
+        
+        // Log specific activation/deactivation actions
+        const activationAction = isActive ? "ACTIVATE_USER" : "DEACTIVATE_USER"
+        await AuditLog.logUserAction(
+          activationAction,
+          { username: req.user?.username, userId: req.user?.userId },
+          `User ${isActive ? 'activated' : 'deactivated'} - ${user.username} (${user.userType})`,
+          req
+        )
       }
 
       await user.save()
 
-      // Log the update
-      await AuditLog.create({
-        action: "UPDATE_USER",
-        username: req.user?.username || "system",
-        details: `User updated - ${user.username} (${user.userType})`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the update with detailed changes
+      const detailsString = updateDetails.length > 0 
+        ? `User updated - ${user.username} (${user.userType}): ${updateDetails.join(', ')}`
+        : `User updated - ${user.username} (${user.userType})`
+        
+      await AuditLog.logUserAction(
+        "UPDATE_USER",
+        { username: req.user?.username, userId: req.user?.userId },
+        detailsString,
+        req
+      )
 
       const updatedUser = await User.findById(id).select("-passwordHash")
 
@@ -209,6 +261,14 @@ class UserController {
 
       const user = await User.findById(id)
       if (!user) {
+        // Log failed deletion attempt
+        await AuditLog.logUserAction(
+          "DELETE_USER",
+          { username: req.user?.username },
+          `Failed to delete user - User ID ${id} not found`,
+          req
+        )
+        
         const error = new Error("User not found")
         error.statusCode = 404
         return next(error)
@@ -218,22 +278,32 @@ class UserController {
       if (user.userType === "admin") {
         const adminCount = await User.countDocuments({ userType: "admin", isActive: true })
         if (adminCount <= 1) {
+          // Log failed deletion attempt
+          await AuditLog.logUserAction(
+            "DELETE_USER",
+            { username: req.user?.username },
+            `Failed to delete user - Cannot delete last active admin: ${user.username}`,
+            req
+          )
+          
           const error = new Error("Cannot delete the last active admin user")
           error.statusCode = 400
           return next(error)
         }
       }
 
+      const deletedUsername = user.username
+      const deletedUserType = user.userType
+
       await User.findByIdAndDelete(id)
 
-      // Log the deletion
-      await AuditLog.create({
-        action: "DELETE_USER",
-        username: req.user?.username || "system",
-        details: `User deleted - ${user.username} (${user.userType})`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the deletion using the static method
+      await AuditLog.logUserAction(
+        "DELETE_USER",
+        { username: req.user?.username, userId: req.user?.userId },
+        `User deleted - ${deletedUsername} (${deletedUserType})`,
+        req
+      )
 
       res.json({ message: "User deleted successfully" })
     } catch (error) {
@@ -261,6 +331,14 @@ class UserController {
           },
         },
       ])
+
+      // Log statistics access
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        { username: req.user?.username },
+        `User statistics accessed - Total: ${total}, Active: ${active}, Inactive: ${inactive}`,
+        req
+      )
 
       res.json({
         total,

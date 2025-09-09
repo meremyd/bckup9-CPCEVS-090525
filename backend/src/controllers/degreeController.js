@@ -42,7 +42,7 @@ class DegreeController {
       // Log the access using proper static method
       await AuditLog.logUserAction(
         "SYSTEM_ACCESS",
-        req.user,
+        req.user || { username: "anonymous" },
         `Degrees list accessed - ${degrees.length} degrees returned`,
         req
       )
@@ -89,6 +89,14 @@ class DegreeController {
         degreeId: id, 
         isActive: true 
       })
+
+      // Log degree access
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user || { username: "anonymous" },
+        `Degree details accessed - ${degree.degreeCode}${degree.major ? ` (${degree.major})` : ""}`,
+        req
+      )
 
       const degreeObject = degree.toObject()
       res.json({
@@ -167,7 +175,7 @@ class DegreeController {
       // Log the creation using proper action and method
       await AuditLog.logUserAction(
         "CREATE_DEGREE",
-        req.user,
+        req.user || { username: "system" },
         `Degree created - ${trimmedDegreeCode}${trimmedMajor ? ` (${trimmedMajor})` : ""} - ${trimmedDegreeName}`,
         req
       )
@@ -283,7 +291,7 @@ class DegreeController {
       // Log the update using proper action and method
       await AuditLog.logUserAction(
         "UPDATE_DEGREE",
-        req.user,
+        req.user || { username: "system" },
         `Degree updated from "${originalData.degreeCode}${originalData.major ? ` (${originalData.major})` : ""}" to "${degree.degreeCode}${degree.major ? ` (${degree.major})` : ""}" - ${degree.degreeName}${voterCount > 0 ? ` (${voterCount} voters affected)` : ""}`,
         req
       )
@@ -348,8 +356,8 @@ class DegreeController {
       // If force delete and voters exist, log warning about orphaned records
       if (voterCount > 0 && force === 'true') {
         await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
+          "DATA_EXPORT",
+          req.user || { username: "system" },
           `Force delete degree - ${voterCount} voter records now have invalid degreeId references`,
           req
         )
@@ -358,7 +366,7 @@ class DegreeController {
       // Log the deletion using proper action and method
       await AuditLog.logUserAction(
         "DELETE_DEGREE",
-        req.user,
+        req.user || { username: "system" },
         `Degree deleted - ${degreeInfo.degreeCode}${degreeInfo.major ? ` (${degreeInfo.major})` : ""} - ${degreeInfo.degreeName}${voterCount > 0 ? ` (${voterCount} voters were associated)` : ""}`,
         req
       )
@@ -483,7 +491,7 @@ class DegreeController {
       // Log statistics access
       await AuditLog.logUserAction(
         "DATA_EXPORT",
-        req.user,
+        req.user || { username: "system" },
         "Retrieved degree statistics",
         req
       )
@@ -508,6 +516,15 @@ class DegreeController {
   static async getDepartments(req, res, next) {
     try {
       const departments = await Degree.distinct("department")
+      
+      // Log department access
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user || { username: "anonymous" },
+        `Departments list accessed - ${departments.length} departments returned`,
+        req
+      )
+      
       res.json(departments.sort())
     } catch (error) {
       next(error)
@@ -598,8 +615,8 @@ class DegreeController {
 
       // Log the bulk creation using proper action and method
       await AuditLog.logUserAction(
-        "CREATE_DEGREE",
-        req.user,
+        "DATA_IMPORT",
+        req.user || { username: "system" },
         `Bulk created ${createdDegrees.length} degrees`,
         req
       )
@@ -704,6 +721,14 @@ class DegreeController {
       countPipeline.push({ $count: "total" })
       const countResult = await Degree.aggregate(countPipeline)
       const total = countResult.length > 0 ? countResult[0].total : 0
+
+      // Log search activity
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user || { username: "anonymous" },
+        `Degrees search performed - query: "${query || 'none'}", results: ${degrees.length}`,
+        req
+      )
 
       res.json({
         degrees,

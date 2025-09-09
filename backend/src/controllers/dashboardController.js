@@ -18,8 +18,7 @@ class DashboardController {
       const registeredVoters = await Voter.countDocuments({ password: { $ne: null } })
       const systemUsers = await User.countDocuments()
       const auditLogs = await AuditLog.countDocuments()
-      const totalElections = await Election.countDocuments()
-      const activeElections = await Election.countDocuments({ status: "active" })
+      const totalDegrees = await Degree.countDocuments()
       const totalChatSupport = await ChatSupport.countDocuments()
       const pendingChatSupport = await ChatSupport.countDocuments({ status: "pending" })
 
@@ -43,8 +42,7 @@ class DashboardController {
         registeredVoters,
         systemUsers,
         auditLogs,
-        totalElections,
-        activeElections,
+        totalDegrees,
         totalChatSupport,
         pendingChatSupport,
         recentActivities
@@ -59,12 +57,12 @@ class DashboardController {
     try {
       const totalVoters = await Voter.countDocuments()
       const registeredVoters = await Voter.countDocuments({ password: { $ne: null } })
-      const activeElections = await Election.countDocuments({ status: "active" })
       const upcomingElections = await Election.countDocuments({ status: "upcoming" })
       const completedElections = await Election.countDocuments({ status: "completed" })
       const totalCandidates = await Candidate.countDocuments()
       const totalPositions = await Position.countDocuments()
       const totalPartylists = await Partylist.countDocuments()
+      const totalDegrees = await Degree.countDocuments()
 
       // Get voter stats by degree
       const degrees = await Degree.find()
@@ -101,12 +99,12 @@ class DashboardController {
       res.json({
         totalVoters,
         registeredVoters,
-        activeElections,
         upcomingElections,
         completedElections,
         totalCandidates,
         totalPositions,
         totalPartylists,
+        totalDegrees,
         voterStats,
         recentElections
       })
@@ -124,8 +122,7 @@ class DashboardController {
       const votersWhoVoted = await Ballot.countDocuments({ isSubmitted: true })
       const votersWhoDidntVote = registeredVoters - votersWhoVoted
       const voterTurnout = registeredVoters > 0 ? Math.round((votersWhoVoted / registeredVoters) * 100) : 0
-      
-      const activeElections = await Election.countDocuments({ status: "active" })
+      const totalDegrees = await Degree.countDocuments()
       const completedElections = await Election.countDocuments({ status: "completed" })
 
       // Get voter stats by degree
@@ -182,7 +179,7 @@ class DashboardController {
         votersWhoVoted,
         votersWhoDidntVote,
         voterTurnout,
-        activeElections,
+        totalDegrees,
         completedElections,
         voterStats,
         votingStats,

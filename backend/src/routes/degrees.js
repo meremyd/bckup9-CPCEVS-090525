@@ -1,20 +1,26 @@
 const express = require("express");
 const DegreeController = require("../controllers/degreeController");
+const { authMiddleware, authorizeRoles } = require("../middleware/authMiddleware");
 const router = express.Router();
 
-// Specific routes MUST come before parameterized routes
-router.get("/statistics/overview", DegreeController.getDegreeStatistics);
-router.get("/departments/all", DegreeController.getDepartments);
-router.get("/search", DegreeController.searchDegrees);
-router.post("/bulk", DegreeController.bulkCreateDegrees);
-
-// General CRUD routes
+// Public routes (no authentication required)
 router.get("/", DegreeController.getAllDegrees);
-router.post("/", DegreeController.createDegree);
-
-// Parameterized routes should come last
+router.get("/search", DegreeController.searchDegrees);
+router.get("/departments/all", DegreeController.getDepartments);
 router.get("/:id", DegreeController.getDegree);
-router.put("/:id", DegreeController.updateDegree);
-router.delete("/:id", DegreeController.deleteDegree);
+
+// Protected routes requiring authentication and specific roles
+// Statistics routes - require admin or election committee access
+router.get("/statistics/overview", authMiddleware, authorizeRoles("admin", "election_committee"), DegreeController.getDegreeStatistics);
+
+// Create, Update, Delete routes - require admin access only
+router.post("/", authMiddleware, authorizeRoles("admin"), DegreeController.createDegree);
+
+router.put("/:id", authMiddleware, authorizeRoles("admin"), DegreeController.updateDegree);
+
+router.delete("/:id", authMiddleware, authorizeRoles("admin"), DegreeController.deleteDegree);
+
+// Bulk operations - require admin access only
+router.post("/bulk", authMiddleware, authorizeRoles("admin"), DegreeController.bulkCreateDegrees);
 
 module.exports = router;

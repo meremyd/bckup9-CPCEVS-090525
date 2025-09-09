@@ -49,14 +49,13 @@ class PartylistController {
         }
       }))
 
-      // Log the access
-      await AuditLog.create({
-        action: "SYSTEM_ACCESS",
-        username: req.user?.username || "system",
-        details: `Partylists accessed - ${partylists.length} partylists returned`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the access using proper audit log method
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Partylists accessed - ${partylists.length} partylists returned`,
+        req
+      )
 
       res.json({
         partylists: partylistsWithStats,
@@ -186,14 +185,13 @@ class PartylistController {
       await partylist.save()
       await partylist.populate("electionId", "title electionId electionYear")
 
-      // Log the creation
-      await AuditLog.create({
-        action: "CREATE_PARTYLIST",
-        username: req.user?.username || "system",
-        details: `Partylist created - ${partylist.partylistName} (${partylist.partylistId}) for election ${election.title}`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the creation using proper audit log method
+      await AuditLog.logUserAction(
+        "CREATE_PARTYLIST",
+        req.user,
+        `Partylist created - ${partylist.partylistName} (${partylist.partylistId}) for election ${election.title}`,
+        req
+      )
 
       res.status(201).json(partylist)
     } catch (error) {
@@ -298,14 +296,13 @@ class PartylistController {
         runValidators: true
       }).populate("electionId", "title electionId electionYear status")
 
-      // Log the update
-      await AuditLog.create({
-        action: "UPDATE_PARTYLIST",
-        username: req.user?.username || "system",
-        details: `Partylist updated - ${updatedPartylist.partylistName} (${updatedPartylist.partylistId})${candidateCount > 0 ? ` - ${candidateCount} candidates affected` : ""}`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the update using proper audit log method
+      await AuditLog.logUserAction(
+        "UPDATE_PARTYLIST",
+        req.user,
+        `Partylist updated - ${updatedPartylist.partylistName} (${updatedPartylist.partylistId})${candidateCount > 0 ? ` - ${candidateCount} candidates affected` : ""}`,
+        req
+      )
 
       res.json(updatedPartylist)
     } catch (error) {
@@ -353,14 +350,13 @@ class PartylistController {
 
       await Partylist.findByIdAndDelete(id)
 
-      // Log the deletion
-      await AuditLog.create({
-        action: "DELETE_PARTYLIST",
-        username: req.user?.username || "system",
-        details: `Partylist deleted - ${partylist.partylistName} (${partylist.partylistId})${candidateCount > 0 ? ` - ${candidateCount} candidates unlinked` : ""}`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the deletion using proper audit log method
+      await AuditLog.logUserAction(
+        "DELETE_PARTYLIST",
+        req.user,
+        `Partylist deleted - ${partylist.partylistName} (${partylist.partylistId})${candidateCount > 0 ? ` - ${candidateCount} candidates unlinked` : ""}`,
+        req
+      )
 
       res.json({ 
         message: "Partylist deleted successfully",
@@ -472,72 +468,6 @@ class PartylistController {
           status: election.status
         },
         partylists: partylistsWithCounts
-      })
-    } catch (error) {
-      next(error)
-    }
-  }
-
-  // Bulk operations
-  static async bulkCreatePartylists(req, res, next) {
-    try {
-      const { partylists, electionId } = req.body
-
-      if (!Array.isArray(partylists) || partylists.length === 0) {
-        const error = new Error("Partylists array is required and must not be empty")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      if (!electionId) {
-        const error = new Error("Election ID is required for bulk creation")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      // Validate election
-      const election = await Election.findById(electionId)
-      if (!election) {
-        const error = new Error("Election not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      if (election.status === "completed" || election.status === "cancelled") {
-        const error = new Error("Cannot add partylists to completed or cancelled elections")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      // Validate and prepare partylists
-      const validatedPartylists = partylists.map((partylist, index) => {
-        if (!partylist.partylistId || !partylist.partylistName) {
-          throw new Error(`Partylist at index ${index} must have partylistId and partylistName`)
-        }
-        
-        return {
-          partylistId: partylist.partylistId.trim().toUpperCase(),
-          electionId,
-          partylistName: partylist.partylistName.trim(),
-          description: partylist.description?.trim() || null,
-          logo: null // Bulk creation doesn't support logos
-        }
-      })
-
-      const createdPartylists = await Partylist.insertMany(validatedPartylists, { ordered: false })
-
-      // Log the bulk creation
-      await AuditLog.create({
-        action: "BULK_CREATE_PARTYLISTS",
-        username: req.user?.username || "system",
-        details: `Bulk created ${createdPartylists.length} partylists for election ${election.title}`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
-
-      res.status(201).json({
-        message: `Successfully created ${createdPartylists.length} partylists`,
-        partylists: createdPartylists
       })
     } catch (error) {
       next(error)

@@ -40,14 +40,13 @@ class ElectionController {
       const total = await Election.countDocuments(filter)
       const totalPages = Math.ceil(total / limitNum)
 
-      // Log the access
-      await AuditLog.create({
-        action: "SYSTEM_ACCESS",
-        username: req.user?.username || "system",
-        details: `Elections list accessed - ${elections.length} elections returned`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the access using proper AuditLog method
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Elections list accessed - ${elections.length} elections returned`,
+        req
+      )
 
       res.json({
         elections,
@@ -100,6 +99,14 @@ class ElectionController {
       // Get basic statistics
       const totalBallots = await Ballot.countDocuments({ electionId: id })
       const submittedBallots = await Ballot.countDocuments({ electionId: id, isSubmitted: true })
+
+      // Log election access
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Accessed election details - ${election.title} (${election.electionId})`,
+        req
+      )
 
       res.json({
         election,
@@ -199,14 +206,13 @@ class ElectionController {
       await election.save()
       await election.populate("createdBy", "username")
 
-      // Log the creation
-      await AuditLog.create({
-        action: "CREATE_ELECTION",
-        username: req.user?.username || "system",
-        details: `Election created - ${title} (${electionId})`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the creation using proper AuditLog method
+      await AuditLog.logUserAction(
+        "CREATE_ELECTION",
+        req.user,
+        `Election created - ${title} (${electionId})`,
+        req
+      )
 
       res.status(201).json(election)
     } catch (error) {
@@ -278,14 +284,13 @@ class ElectionController {
         runValidators: true,
       }).populate("createdBy", "username")
 
-      // Log the update
-      await AuditLog.create({
-        action: "UPDATE_ELECTION",
-        username: req.user?.username || "system",
-        details: `Election updated - ${election.title} (${election.electionId})`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the update using proper AuditLog method
+      await AuditLog.logUserAction(
+        "UPDATE_ELECTION",
+        req.user,
+        `Election updated - ${election.title} (${election.electionId})`,
+        req
+      )
 
       res.json(election)
     } catch (error) {
@@ -343,14 +348,13 @@ class ElectionController {
         await session.endSession()
       }
 
-      // Log the deletion
-      await AuditLog.create({
-        action: "DELETE_ELECTION",
-        username: req.user?.username || "system",
-        details: `Election deleted - ${election.title} (${election.electionId})`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the deletion using proper AuditLog method
+      await AuditLog.logUserAction(
+        "DELETE_ELECTION",
+        req.user,
+        `Election deleted - ${election.title} (${election.electionId})`,
+        req
+      )
 
       res.json({ message: "Election deleted successfully" })
     } catch (error) {
@@ -490,6 +494,14 @@ class ElectionController {
         electionType: election.electionType
       }
 
+      // Log statistics access
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Accessed election statistics - ${election.title} (${election.electionId})`,
+        req
+      )
+
       res.json({
         overview,
         candidatesByPosition,
@@ -586,6 +598,14 @@ class ElectionController {
         }
       ])
 
+      // Log results access
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Accessed election results - ${election.title} (${election.electionId})`,
+        req
+      )
+
       res.json({
         election: {
           id: election._id,
@@ -632,14 +652,22 @@ class ElectionController {
         return next(error)
       }
 
-      // Log the status change
-      await AuditLog.create({
-        action: "UPDATE_ELECTION",
-        username: req.user?.username || "system",
-        details: `Election status changed to ${status} - ${election.title} (${election.electionId})`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      // Log the status change based on the new status
+      let auditAction = "UPDATE_ELECTION"
+      if (status === "active") {
+        auditAction = "START_ELECTION"
+      } else if (status === "completed") {
+        auditAction = "END_ELECTION"
+      } else if (status === "cancelled") {
+        auditAction = "CANCEL_ELECTION"
+      }
+
+      await AuditLog.logUserAction(
+        auditAction,
+        req.user,
+        `Election status changed to ${status} - ${election.title} (${election.electionId})`,
+        req
+      )
 
       res.json(election)
     } catch (error) {
@@ -670,6 +698,14 @@ class ElectionController {
           }
         }
       ])
+
+      // Log dashboard access
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        "Accessed elections dashboard summary",
+        req
+      )
 
       res.json({
         summary: {
