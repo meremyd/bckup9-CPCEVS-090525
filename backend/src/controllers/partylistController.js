@@ -1,6 +1,6 @@
 const mongoose = require("mongoose")
 const Partylist = require("../models/Partylist")
-const Election = require("../models/Election")
+const SSGElection = require("../models/SSGElection")
 const Candidate = require("../models/Candidate")
 const AuditLog = require("../models/AuditLog")
 
@@ -8,11 +8,12 @@ class PartylistController {
   // Get all partylists
   static async getAllPartylists(req, res, next) {
     try {
-      const { electionId, search, page = 1, limit = 50 } = req.query
+      const { ssgElectionId, search, page = 1, limit = 50, status } = req.query
 
       // Build filter
       const filter = {}
-      if (electionId) filter.electionId = electionId
+      if (ssgElectionId) filter.ssgElectionId = ssgElectionId
+      if (status) filter.isActive = status === 'active'
       if (search) {
         filter.$or = [
           { partylistId: { $regex: search, $options: "i" } },
@@ -25,7 +26,7 @@ class PartylistController {
       const skip = (page - 1) * limit
 
       const partylists = await Partylist.find(filter)
-        .populate("electionId", "title electionId electionYear status")
+        .populate("ssgElectionId", "title ssgElectionId electionYear status electionDate")
         .sort({ partylistName: 1 })
         .skip(skip)
         .limit(Number.parseInt(limit))
@@ -34,9 +35,20 @@ class PartylistController {
 
       // Add candidate count for each partylist
       const partylistsWithStats = await Promise.all(partylists.map(async (partylist) => {
-        const candidateCount = await Candidate.countDocuments({ partylistId: partylist._id })
+        const candidateCount = await Candidate.countDocuments({ 
+          partylistId: partylist._id,
+          ssgElectionId: partylist.ssgElectionId._id,
+          isActive: true
+        })
+        
         const totalVotes = await Candidate.aggregate([
-          { $match: { partylistId: partylist._id } },
+          { 
+            $match: { 
+              partylistId: partylist._id,
+              ssgElectionId: partylist.ssgElectionId._id,
+              isActive: true
+            } 
+          },
           { $group: { _id: null, totalVotes: { $sum: "$voteCount" } } }
         ])
         
@@ -49,7 +61,7 @@ class PartylistController {
         }
       }))
 
-      // Log the access using proper audit log method
+      // Log the access
       await AuditLog.logUserAction(
         "SYSTEM_ACCESS",
         req.user,
@@ -71,13 +83,76 @@ class PartylistController {
     }
   }
 
+  // Get partylists by SSG election
+  static async getPartylistsBySSGElection(req, res, next) {
+    try {
+      const { ssgElectionId } = req.params
+
+      // Validate SSG election exists
+      const ssgElection = await SSGElection.findById(ssgElectionId)
+      if (!ssgElection) {
+        const error = new Error("SSG Election not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      const partylists = await Partylist.find({ 
+        ssgElectionId,
+        isActive: true 
+      }).sort({ partylistName: 1 })
+
+      // Add candidate counts
+      const partylistsWithCounts = await Promise.all(partylists.map(async (partylist) => {
+        const candidateCount = await Candidate.countDocuments({ 
+          partylistId: partylist._id,
+          isActive: true
+        })
+        const totalVotes = await Candidate.aggregate([
+          { 
+            $match: { 
+              partylistId: partylist._id,
+              isActive: true
+            } 
+          },
+          { $group: { _id: null, totalVotes: { $sum: "$voteCount" } } }
+        ])
+        
+        return {
+          ...partylist.toObject(),
+          candidateCount,
+          totalVotes: totalVotes[0]?.totalVotes || 0
+        }
+      }))
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Retrieved partylists for SSG election: ${ssgElection.title}`,
+        req
+      )
+
+      res.json({
+        ssgElection: {
+          _id: ssgElection._id,
+          title: ssgElection.title,
+          ssgElectionId: ssgElection.ssgElectionId,
+          status: ssgElection.status,
+          electionDate: ssgElection.electionDate
+        },
+        partylists: partylistsWithCounts
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
   // Get single partylist
   static async getPartylist(req, res, next) {
     try {
       const { id } = req.params
 
       const partylist = await Partylist.findById(id)
-        .populate("electionId", "title electionId electionYear status electionType department")
+        .populate("ssgElectionId", "title ssgElectionId electionYear status electionDate")
 
       if (!partylist) {
         const error = new Error("Partylist not found")
@@ -86,13 +161,23 @@ class PartylistController {
       }
 
       // Get candidates for this partylist
-      const candidates = await Candidate.find({ partylistId: id })
-        .populate("voterId", "firstName middleName lastName schoolId")
+      const candidates = await Candidate.find({ 
+        partylistId: id,
+        isActive: true
+      })
+        .populate("voterId", "firstName middleName lastName schoolId departmentId yearLevel")
         .populate("positionId", "positionName positionOrder")
         .sort({ candidateNumber: 1 })
 
       // Calculate statistics
-      const totalVotes = candidates.reduce((sum, candidate) => sum + candidate.voteCount, 0)
+      const totalVotes = candidates.reduce((sum, candidate) => sum + (candidate.voteCount || 0), 0)
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Retrieved partylist: ${partylist.partylistName} (${partylist.partylistId})`,
+        req
+      )
 
       res.json({
         partylist,
@@ -108,47 +193,154 @@ class PartylistController {
     }
   }
 
-  // Create new partylist
-  static async createPartylist(req, res, next) {
+  // Get partylist statistics
+  static async getPartylistStatistics(req, res, next) {
     try {
-      const { partylistId, electionId, partylistName, description, logo } = req.body
+      const { id } = req.params
 
-      // Validation
-      if (!partylistId || !electionId || !partylistName) {
-        const error = new Error("Partylist ID, election ID, and partylist name are required")
-        error.statusCode = 400
-        return next(error)
-      }
+      const partylist = await Partylist.findById(id)
+        .populate("ssgElectionId", "title electionYear status electionDate")
 
-      // Validate election exists and is not completed or cancelled
-      const election = await Election.findById(electionId)
-      if (!election) {
-        const error = new Error("Election not found")
+      if (!partylist) {
+        const error = new Error("Partylist not found")
         error.statusCode = 404
         return next(error)
       }
 
-      if (election.status === "completed" || election.status === "cancelled") {
-        const error = new Error("Cannot add partylists to completed or cancelled elections")
+      // Get detailed candidate statistics
+      const candidateStats = await Candidate.aggregate([
+        { 
+          $match: { 
+            partylistId: new mongoose.Types.ObjectId(id),
+            isActive: true
+          } 
+        },
+        {
+          $lookup: {
+            from: "positions",
+            localField: "positionId",
+            foreignField: "_id",
+            as: "position"
+          }
+        },
+        { $unwind: "$position" },
+        {
+          $lookup: {
+            from: "voters",
+            localField: "voterId",
+            foreignField: "_id",
+            as: "voter"
+          }
+        },
+        { $unwind: "$voter" },
+        {
+          $group: {
+            _id: {
+              positionId: "$position._id",
+              positionName: "$position.positionName",
+              positionOrder: "$position.positionOrder"
+            },
+            candidates: {
+              $push: {
+                candidateNumber: "$candidateNumber",
+                voteCount: { $ifNull: ["$voteCount", 0] },
+                voterName: {
+                  $concat: [
+                    "$voter.firstName",
+                    " ",
+                    { $ifNull: ["$voter.middleName", ""] },
+                    " ",
+                    "$voter.lastName"
+                  ]
+                },
+                schoolId: "$voter.schoolId"
+              }
+            },
+            totalVotes: { $sum: { $ifNull: ["$voteCount", 0] } },
+            candidateCount: { $sum: 1 }
+          }
+        },
+        { $sort: { "_id.positionOrder": 1 } }
+      ])
+
+      // Overall statistics
+      const totalCandidates = await Candidate.countDocuments({ 
+        partylistId: id,
+        isActive: true
+      })
+      
+      const totalVotes = await Candidate.aggregate([
+        { 
+          $match: { 
+            partylistId: new mongoose.Types.ObjectId(id),
+            isActive: true
+          } 
+        },
+        { $group: { _id: null, total: { $sum: { $ifNull: ["$voteCount", 0] } } } }
+      ])
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Retrieved statistics for partylist: ${partylist.partylistName}`,
+        req
+      )
+
+      res.json({
+        partylist,
+        statistics: {
+          totalCandidates,
+          totalVotes: totalVotes[0]?.total || 0,
+          averageVotesPerCandidate: totalCandidates > 0 ? ((totalVotes[0]?.total || 0) / totalCandidates).toFixed(2) : 0,
+          byPosition: candidateStats
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Create new partylist
+  static async createPartylist(req, res, next) {
+    try {
+      const { partylistId, ssgElectionId, partylistName, description, logo } = req.body
+
+      // Validation
+      if (!partylistId || !ssgElectionId || !partylistName) {
+        const error = new Error("Partylist ID, SSG election ID, and partylist name are required")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Validate SSG election exists and is not completed or cancelled
+      const ssgElection = await SSGElection.findById(ssgElectionId)
+      if (!ssgElection) {
+        const error = new Error("SSG Election not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      if (ssgElection.status === "completed" || ssgElection.status === "cancelled") {
+        const error = new Error("Cannot add partylists to completed or cancelled SSG elections")
         error.statusCode = 400
         return next(error)
       }
 
       // Check if partylist ID already exists globally
-      const existingPartylistId = await Partylist.findOne({ partylistId })
+      const existingPartylistId = await Partylist.findOne({ partylistId: partylistId.trim().toUpperCase() })
       if (existingPartylistId) {
         const error = new Error("Partylist ID already exists")
         error.statusCode = 400
         return next(error)
       }
 
-      // Check if partylist name exists in this election
+      // Check if partylist name exists in this SSG election
       const existingPartylistName = await Partylist.findOne({ 
-        electionId, 
+        ssgElectionId, 
         partylistName: partylistName.trim() 
       })
       if (existingPartylistName) {
-        const error = new Error("Partylist name already exists in this election")
+        const error = new Error("Partylist name already exists in this SSG election")
         error.statusCode = 400
         return next(error)
       }
@@ -157,7 +349,6 @@ class PartylistController {
       let logoBuffer = null
       if (logo) {
         if (typeof logo === 'string' && logo.startsWith('data:image/')) {
-          // Handle base64 image
           const base64Data = logo.replace(/^data:image\/\w+;base64,/, '')
           logoBuffer = Buffer.from(base64Data, 'base64')
           
@@ -176,20 +367,21 @@ class PartylistController {
 
       const partylist = new Partylist({
         partylistId: partylistId.trim().toUpperCase(),
-        electionId,
+        ssgElectionId,
         partylistName: partylistName.trim(),
         description: description?.trim() || null,
         logo: logoBuffer,
+        isActive: true
       })
 
       await partylist.save()
-      await partylist.populate("electionId", "title electionId electionYear")
+      await partylist.populate("ssgElectionId", "title ssgElectionId electionYear")
 
-      // Log the creation using proper audit log method
+      // Log the creation
       await AuditLog.logUserAction(
         "CREATE_PARTYLIST",
         req.user,
-        `Partylist created - ${partylist.partylistName} (${partylist.partylistId}) for election ${election.title}`,
+        `Partylist created - ${partylist.partylistName} (${partylist.partylistId}) for SSG election ${ssgElection.title}`,
         req
       )
 
@@ -199,7 +391,10 @@ class PartylistController {
       if (error.code === 11000) {
         const field = Object.keys(error.keyPattern)[0]
         if (field === 'partylistName') {
-          error.message = "Partylist name already exists in this election"
+          error.message = "Partylist name already exists in this SSG election"
+          error.statusCode = 400
+        } else if (field === 'partylistId') {
+          error.message = "Partylist ID already exists"
           error.statusCode = 400
         }
       }
@@ -211,10 +406,10 @@ class PartylistController {
   static async updatePartylist(req, res, next) {
     try {
       const { id } = req.params
-      const { partylistName, description, logo } = req.body
+      const { partylistName, description, logo, isActive } = req.body
 
       const partylist = await Partylist.findById(id)
-        .populate("electionId", "title status")
+        .populate("ssgElectionId", "title status")
 
       if (!partylist) {
         const error = new Error("Partylist not found")
@@ -222,17 +417,21 @@ class PartylistController {
         return next(error)
       }
 
-      // Check if election allows modifications
-      if (partylist.electionId.status === "completed") {
-        const error = new Error("Cannot modify partylists in completed elections")
+      // Check if SSG election allows modifications
+      if (partylist.ssgElectionId.status === "completed") {
+        const error = new Error("Cannot modify partylists in completed SSG elections")
         error.statusCode = 400
         return next(error)
       }
 
       // Check for candidates if trying to change critical info during active election
-      const candidateCount = await Candidate.countDocuments({ partylistId: id })
-      if (partylist.electionId.status === "active" && candidateCount > 0 && partylistName) {
-        const error = new Error("Cannot change partylist name during active election with existing candidates")
+      const candidateCount = await Candidate.countDocuments({ 
+        partylistId: id,
+        isActive: true
+      })
+      
+      if (partylist.ssgElectionId.status === "active" && candidateCount > 0 && partylistName) {
+        const error = new Error("Cannot change partylist name during active SSG election with existing candidates")
         error.statusCode = 400
         return next(error)
       }
@@ -248,15 +447,15 @@ class PartylistController {
           return next(error)
         }
 
-        // Check for duplicate name in same election (excluding current)
+        // Check for duplicate name in same SSG election (excluding current)
         const existingName = await Partylist.findOne({
-          electionId: partylist.electionId._id,
+          ssgElectionId: partylist.ssgElectionId._id,
           partylistName: trimmedName,
           _id: { $ne: id }
         })
         
         if (existingName) {
-          const error = new Error("Partylist name already exists in this election")
+          const error = new Error("Partylist name already exists in this SSG election")
           error.statusCode = 400
           return next(error)
         }
@@ -267,6 +466,11 @@ class PartylistController {
       // Update description
       if (description !== undefined) {
         updateData.description = description?.trim() || null
+      }
+
+      // Update active status
+      if (isActive !== undefined) {
+        updateData.isActive = Boolean(isActive)
       }
 
       // Process logo update
@@ -294,9 +498,9 @@ class PartylistController {
       const updatedPartylist = await Partylist.findByIdAndUpdate(id, updateData, {
         new: true,
         runValidators: true
-      }).populate("electionId", "title electionId electionYear status")
+      }).populate("ssgElectionId", "title ssgElectionId electionYear status")
 
-      // Log the update using proper audit log method
+      // Log the update
       await AuditLog.logUserAction(
         "UPDATE_PARTYLIST",
         req.user,
@@ -317,7 +521,7 @@ class PartylistController {
       const { force = false } = req.query
 
       const partylist = await Partylist.findById(id)
-        .populate("electionId", "title status")
+        .populate("ssgElectionId", "title status")
 
       if (!partylist) {
         const error = new Error("Partylist not found")
@@ -325,15 +529,19 @@ class PartylistController {
         return next(error)
       }
 
-      // Check if election allows deletions
-      if (partylist.electionId.status === "completed" && !force) {
-        const error = new Error("Cannot delete partylists from completed elections. Use ?force=true to override.")
+      // Check if SSG election allows deletions
+      if (partylist.ssgElectionId.status === "completed" && !force) {
+        const error = new Error("Cannot delete partylists from completed SSG elections. Use ?force=true to override.")
         error.statusCode = 400
         return next(error)
       }
 
       // Check for associated candidates
-      const candidateCount = await Candidate.countDocuments({ partylistId: id })
+      const candidateCount = await Candidate.countDocuments({ 
+        partylistId: id,
+        isActive: true
+      })
+      
       if (candidateCount > 0 && !force) {
         const error = new Error(`Cannot delete partylist. ${candidateCount} candidates are associated with it. Use ?force=true to delete anyway.`)
         error.statusCode = 400
@@ -350,7 +558,7 @@ class PartylistController {
 
       await Partylist.findByIdAndDelete(id)
 
-      // Log the deletion using proper audit log method
+      // Log the deletion
       await AuditLog.logUserAction(
         "DELETE_PARTYLIST",
         req.user,
@@ -361,113 +569,6 @@ class PartylistController {
       res.json({ 
         message: "Partylist deleted successfully",
         warning: candidateCount > 0 ? `${candidateCount} candidates were unlinked from this partylist` : null
-      })
-    } catch (error) {
-      next(error)
-    }
-  }
-
-  // Get partylist statistics
-  static async getPartylistStatistics(req, res, next) {
-    try {
-      const { id } = req.params
-
-      const partylist = await Partylist.findById(id)
-        .populate("electionId", "title electionYear status")
-
-      if (!partylist) {
-        const error = new Error("Partylist not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      // Get detailed candidate statistics
-      const candidateStats = await Candidate.aggregate([
-        { $match: { partylistId: new mongoose.Types.ObjectId(id) } },
-        {
-          $lookup: {
-            from: "positions",
-            localField: "positionId",
-            foreignField: "_id",
-            as: "position"
-          }
-        },
-        { $unwind: "$position" },
-        {
-          $group: {
-            _id: {
-              positionId: "$position._id",
-              positionName: "$position.positionName",
-              positionOrder: "$position.positionOrder"
-            },
-            candidates: {
-              $push: {
-                candidateNumber: "$candidateNumber",
-                voteCount: "$voteCount",
-                voterName: "$voterId"
-              }
-            },
-            totalVotes: { $sum: "$voteCount" },
-            candidateCount: { $sum: 1 }
-          }
-        },
-        { $sort: { "_id.positionOrder": 1 } }
-      ])
-
-      // Overall statistics
-      const totalCandidates = await Candidate.countDocuments({ partylistId: id })
-      const totalVotes = await Candidate.aggregate([
-        { $match: { partylistId: new mongoose.Types.ObjectId(id) } },
-        { $group: { _id: null, total: { $sum: "$voteCount" } } }
-      ])
-
-      res.json({
-        partylist,
-        statistics: {
-          totalCandidates,
-          totalVotes: totalVotes[0]?.total || 0,
-          averageVotesPerCandidate: totalCandidates > 0 ? ((totalVotes[0]?.total || 0) / totalCandidates).toFixed(2) : 0,
-          byPosition: candidateStats
-        }
-      })
-    } catch (error) {
-      next(error)
-    }
-  }
-
-  // Get partylists by election
-  static async getPartylistsByElection(req, res, next) {
-    try {
-      const { electionId } = req.params
-
-      // Validate election exists
-      const election = await Election.findById(electionId)
-      if (!election) {
-        const error = new Error("Election not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      const partylists = await Partylist.find({ electionId })
-        .sort({ partylistName: 1 })
-
-      // Add candidate counts
-      const partylistsWithCounts = await Promise.all(partylists.map(async (partylist) => {
-        const candidateCount = await Candidate.countDocuments({ partylistId: partylist._id })
-        return {
-          ...partylist.toObject(),
-          candidateCount
-        }
-      }))
-
-      res.json({
-        election: {
-          _id: election._id,
-          title: election.title,
-          electionId: election.electionId,
-          status: election.status
-        },
-        partylists: partylistsWithCounts
       })
     } catch (error) {
       next(error)

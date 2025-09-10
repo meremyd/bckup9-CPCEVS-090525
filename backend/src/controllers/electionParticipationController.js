@@ -1,53 +1,66 @@
 const ElectionParticipation = require("../models/ElectionParticipation")
-const Election = require("../models/Election")
+const SSGElection = require("../models/SSGElection")
+const DepartmentalElection = require("../models/DepartmentalElection")
 const Voter = require("../models/Voter")
 const AuditLog = require("../models/AuditLog")
 
 class ElectionParticipationController {
-  // Confirm participation in an election
+  // Confirm participation in an election (SSG or Departmental)
   static async confirmParticipation(req, res, next) {
     try {
-      const { electionId, voterId } = req.body
+      const { electionId, electionType } = req.body
+      const voterId = req.user.voterId
 
-      if (!electionId || !voterId) {
-        const error = new Error("Election ID and Voter ID are required")
-        error.statusCode = 400
-        return next(error)
+      if (!electionId || !electionType) {
+        return res.status(400).json({ message: "Election ID and election type are required" })
       }
 
-      // Verify election exists and is active
-      const election = await Election.findById(electionId)
-      if (!election) {
-        const error = new Error("Election not found")
-        error.statusCode = 404
-        return next(error)
+      if (!['ssg', 'departmental'].includes(electionType)) {
+        return res.status(400).json({ message: "Election type must be 'ssg' or 'departmental'" })
       }
 
-      if (election.status !== "active" && election.status !== "upcoming") {
-        const error = new Error("Election is not available for participation")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      // Verify voter exists and is active
-      const voter = await Voter.findById(voterId).populate("degreeId")
+      // Verify voter exists and get voter info
+      const voter = await Voter.findById(voterId).populate('departmentId')
       if (!voter) {
-        const error = new Error("Voter not found")
-        error.statusCode = 404
-        return next(error)
+        return res.status(404).json({ message: "Voter not found" })
       }
 
       if (!voter.isActive || !voter.isRegistered) {
-        const error = new Error("Voter is not eligible to participate")
-        error.statusCode = 400
-        return next(error)
+        return res.status(400).json({ message: "Only active and registered voters can participate in elections" })
+      }
+
+      // Verify election exists and is available for participation
+      let election
+      if (electionType === 'ssg') {
+        election = await SSGElection.findById(electionId)
+        if (!election) {
+          return res.status(404).json({ message: "SSG Election not found" })
+        }
+      } else {
+        election = await DepartmentalElection.findById(electionId).populate('departmentId')
+        if (!election) {
+          return res.status(404).json({ message: "Departmental Election not found" })
+        }
+
+        // For departmental elections, check if voter's department matches
+        if (voter.departmentId.college !== election.departmentId.college) {
+          return res.status(400).json({ message: "You can only participate in elections for your department/college" })
+        }
+      }
+
+      if (election.status !== "active" && election.status !== "upcoming") {
+        return res.status(400).json({ message: "Election is not available for participation" })
       }
 
       // Check if voter has already confirmed for this election
-      const existingParticipation = await ElectionParticipation.findOne({
-        voterId,
-        electionId
-      })
+      const query = { voterId }
+      if (electionType === 'ssg') {
+        query.ssgElectionId = electionId
+      } else {
+        query.deptElectionId = electionId
+      }
+
+      const existingParticipation = await ElectionParticipation.findOne(query)
 
       if (existingParticipation) {
         if (existingParticipation.status === "withdrawn") {
@@ -59,7 +72,7 @@ class ElectionParticipationController {
           await AuditLog.logVoterAction(
             "ELECTION_PARTICIPATION",
             voter,
-            `Voter reconfirmed participation in election: ${election.title}`,
+            `Reconfirmed participation in ${electionType.toUpperCase()} election: ${election.title}`,
             req
           )
 
@@ -68,38 +81,46 @@ class ElectionParticipationController {
             participation: existingParticipation
           })
         } else {
-          const error = new Error("Voter has already confirmed participation in this election")
-          error.statusCode = 400
-          return next(error)
+          return res.status(400).json({ message: "You have already confirmed participation in this election" })
         }
       }
 
       // Create new participation record
-      const participation = new ElectionParticipation({
+      const participationData = {
         voterId,
-        electionId,
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent'),
+        departmentId: voter.departmentId._id,
         status: "confirmed"
-      })
+      }
 
+      if (electionType === 'ssg') {
+        participationData.ssgElectionId = electionId
+      } else {
+        participationData.deptElectionId = electionId
+      }
+
+      const participation = new ElectionParticipation(participationData)
       await participation.save()
 
-      // Log the confirmation
+      // Populate for response
+      await participation.populate([
+        { path: 'voterId', select: 'schoolId firstName lastName departmentId yearLevel' },
+        { path: 'departmentId', select: 'departmentCode degreeProgram college' },
+        ...(electionType === 'ssg' 
+          ? [{ path: 'ssgElectionId', select: 'title electionDate status' }]
+          : [{ path: 'deptElectionId', select: 'title electionDate status departmentId' }]
+        )
+      ])
+
       await AuditLog.logVoterAction(
         "ELECTION_PARTICIPATION",
         voter,
-        `Voter confirmed participation in election: ${election.title}`,
+        `Confirmed participation in ${electionType.toUpperCase()} election: ${election.title}`,
         req
       )
 
-      const populatedParticipation = await ElectionParticipation.findById(participation._id)
-        .populate('voterId', 'schoolId firstName lastName degreeId')
-        .populate('electionId', 'title electionYear electionType')
-
       res.status(201).json({
         message: "Participation confirmed successfully",
-        participation: populatedParticipation
+        participation
       })
     } catch (error) {
       next(error)
@@ -109,41 +130,43 @@ class ElectionParticipationController {
   // Mark voter as having voted (called when vote is cast)
   static async markAsVoted(req, res, next) {
     try {
-      const { electionId, voterId } = req.body
+      const { electionId, electionType, voterId } = req.body
 
-      if (!electionId || !voterId) {
-        const error = new Error("Election ID and Voter ID are required")
-        error.statusCode = 400
-        return next(error)
+      if (!electionId || !electionType || !voterId) {
+        return res.status(400).json({ message: "Election ID, election type, and voter ID are required" })
       }
 
-      const participation = await ElectionParticipation.findOne({
-        voterId,
-        electionId,
-        status: { $ne: "withdrawn" }
-      }).populate('voterId', 'schoolId firstName lastName')
-        .populate('electionId', 'title')
+      if (!['ssg', 'departmental'].includes(electionType)) {
+        return res.status(400).json({ message: "Election type must be 'ssg' or 'departmental'" })
+      }
+
+      const query = { voterId, status: { $ne: "withdrawn" } }
+      if (electionType === 'ssg') {
+        query.ssgElectionId = electionId
+      } else {
+        query.deptElectionId = electionId
+      }
+
+      const participation = await ElectionParticipation.findOne(query)
+        .populate('voterId', 'schoolId firstName lastName')
+        .populate(electionType === 'ssg' ? 'ssgElectionId' : 'deptElectionId', 'title')
 
       if (!participation) {
-        const error = new Error("Participation record not found")
-        error.statusCode = 404
-        return next(error)
+        return res.status(404).json({ message: "Participation record not found" })
       }
 
       if (participation.hasVoted) {
-        const error = new Error("Voter has already been marked as voted")
-        error.statusCode = 400
-        return next(error)
+        return res.status(400).json({ message: "Voter has already been marked as voted" })
       }
 
       // Mark as voted
       await participation.markAsVoted()
 
-      // Log the vote
+      const election = participation.ssgElectionId || participation.deptElectionId
       await AuditLog.logVoterAction(
-        "VOTE_CAST",
+        "VOTED",
         participation.voterId,
-        `Voter cast ballot in election: ${participation.electionId.title}`,
+        `Voted in ${electionType.toUpperCase()} election: ${election.title}`,
         req
       )
 
@@ -160,46 +183,56 @@ class ElectionParticipationController {
   static async getElectionParticipants(req, res, next) {
     try {
       const { electionId } = req.params
-      const { status, hasVoted, page = 1, limit = 100, search } = req.query
+      const { electionType, status, hasVoted, page = 1, limit = 100, search } = req.query
 
-      if (!electionId) {
-        const error = new Error("Election ID is required")
-        error.statusCode = 400
-        return next(error)
+      if (!electionId || !electionType) {
+        return res.status(400).json({ message: "Election ID and election type are required" })
+      }
+
+      if (!['ssg', 'departmental'].includes(electionType)) {
+        return res.status(400).json({ message: "Election type must be 'ssg' or 'departmental'" })
+      }
+
+      // Verify election exists
+      let election
+      if (electionType === 'ssg') {
+        election = await SSGElection.findById(electionId)
+      } else {
+        election = await DepartmentalElection.findById(electionId)
+      }
+
+      if (!election) {
+        return res.status(404).json({ message: `${electionType.toUpperCase()} Election not found` })
       }
 
       // Build filter
-      const filter = { electionId }
+      const filter = {}
+      if (electionType === 'ssg') {
+        filter.ssgElectionId = electionId
+      } else {
+        filter.deptElectionId = electionId
+      }
       
       if (status) filter.status = status
       if (hasVoted !== undefined) filter.hasVoted = hasVoted === "true"
 
-      // Get participants with search functionality
+      // Build query
       let query = ElectionParticipation.find(filter)
         .populate({
           path: 'voterId',
-          select: 'schoolId firstName middleName lastName degreeId',
+          select: 'schoolId firstName middleName lastName departmentId yearLevel',
           populate: {
-            path: 'degreeId',
-            select: 'degreeCode degreeName major department'
+            path: 'departmentId',
+            select: 'departmentCode degreeProgram college'
           }
         })
-        .populate('electionId', 'title electionYear electionType')
+        .populate('departmentId', 'departmentCode degreeProgram college')
+        .populate(electionType === 'ssg' ? 'ssgElectionId' : 'deptElectionId', 'title electionDate status')
         .sort({ confirmedAt: -1 })
 
       // Apply search if provided
       if (search) {
         const searchNumber = Number(search)
-        const searchConditions = [
-          { 'voterId.firstName': { $regex: search, $options: 'i' } },
-          { 'voterId.lastName': { $regex: search, $options: 'i' } }
-        ]
-        
-        if (!isNaN(searchNumber)) {
-          searchConditions.push({ 'voterId.schoolId': searchNumber })
-        }
-
-        // We need to use aggregation for complex search
         const participants = await ElectionParticipation.aggregate([
           { $match: filter },
           {
@@ -213,17 +246,26 @@ class ElectionParticipationController {
           { $unwind: '$voter' },
           {
             $lookup: {
-              from: 'degrees',
-              localField: 'voter.degreeId',
+              from: 'departments',
+              localField: 'voter.departmentId',
               foreignField: '_id',
-              as: 'voter.degree'
+              as: 'voter.department'
             }
           },
-          { $unwind: '$voter.degree' },
+          { $unwind: '$voter.department' },
           {
             $lookup: {
-              from: 'elections',
-              localField: 'electionId',
+              from: 'departments',
+              localField: 'departmentId',
+              foreignField: '_id',
+              as: 'department'
+            }
+          },
+          { $unwind: '$department' },
+          {
+            $lookup: {
+              from: electionType === 'ssg' ? 'ssgelections' : 'departmentalelections',
+              localField: electionType === 'ssg' ? 'ssgElectionId' : 'deptElectionId',
               foreignField: '_id',
               as: 'election'
             }
@@ -234,8 +276,7 @@ class ElectionParticipationController {
               $or: [
                 { 'voter.firstName': { $regex: search, $options: 'i' } },
                 { 'voter.lastName': { $regex: search, $options: 'i' } },
-                ...(searchConditions.filter(cond => cond['voterId.schoolId']))
-                  .map(cond => ({ 'voter.schoolId': cond['voterId.schoolId'] }))
+                ...(isNaN(searchNumber) ? [] : [{ 'voter.schoolId': searchNumber }])
               ]
             }
           },
@@ -260,8 +301,7 @@ class ElectionParticipationController {
               $or: [
                 { 'voter.firstName': { $regex: search, $options: 'i' } },
                 { 'voter.lastName': { $regex: search, $options: 'i' } },
-                ...(searchConditions.filter(cond => cond['voterId.schoolId']))
-                  .map(cond => ({ 'voter.schoolId': cond['voterId.schoolId'] }))
+                ...(isNaN(searchNumber) ? [] : [{ 'voter.schoolId': searchNumber }])
               ]
             }
           },
@@ -269,9 +309,9 @@ class ElectionParticipationController {
         ])
 
         await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          { username: req.user?.username },
-          `Election participants accessed with search - Election: ${electionId}, Results: ${participants.length}`,
+          "DATA_EXPORT",
+          req.user,
+          `${electionType.toUpperCase()} election participants accessed with search - Election: ${election.title}, Results: ${participants.length}`,
           req
         )
 
@@ -279,7 +319,14 @@ class ElectionParticipationController {
           participants,
           total: total[0]?.total || 0,
           page: Number.parseInt(page),
-          limit: Number.parseInt(limit)
+          limit: Number.parseInt(limit),
+          election: {
+            _id: election._id,
+            title: election.title,
+            electionDate: election.electionDate,
+            status: election.status,
+            type: electionType.toUpperCase()
+          }
         })
       }
 
@@ -289,9 +336,9 @@ class ElectionParticipationController {
       const total = await ElectionParticipation.countDocuments(filter)
 
       await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        { username: req.user?.username },
-        `Election participants accessed - Election: ${electionId}, Results: ${participants.length}`,
+        "DATA_EXPORT",
+        req.user,
+        `${electionType.toUpperCase()} election participants accessed - Election: ${election.title}, Results: ${participants.length}`,
         req
       )
 
@@ -299,7 +346,14 @@ class ElectionParticipationController {
         participants,
         total,
         page: Number.parseInt(page),
-        limit: Number.parseInt(limit)
+        limit: Number.parseInt(limit),
+        election: {
+          _id: election._id,
+          title: election.title,
+          electionDate: election.electionDate,
+          status: election.status,
+          type: electionType.toUpperCase()
+        }
       })
     } catch (error) {
       next(error)
@@ -310,21 +364,29 @@ class ElectionParticipationController {
   static async getElectionStats(req, res, next) {
     try {
       const { electionId } = req.params
+      const { electionType } = req.query
 
-      if (!electionId) {
-        const error = new Error("Election ID is required")
-        error.statusCode = 400
-        return next(error)
+      if (!electionId || !electionType) {
+        return res.status(400).json({ message: "Election ID and election type are required" })
       }
 
-      const election = await Election.findById(electionId)
+      if (!['ssg', 'departmental'].includes(electionType)) {
+        return res.status(400).json({ message: "Election type must be 'ssg' or 'departmental'" })
+      }
+
+      // Verify election exists
+      let election
+      if (electionType === 'ssg') {
+        election = await SSGElection.findById(electionId)
+      } else {
+        election = await DepartmentalElection.findById(electionId)
+      }
+
       if (!election) {
-        const error = new Error("Election not found")
-        error.statusCode = 404
-        return next(error)
+        return res.status(404).json({ message: `${electionType.toUpperCase()} Election not found` })
       }
 
-      const stats = await ElectionParticipation.getElectionStats(electionId)
+      const stats = await ElectionParticipation.getElectionStats(electionId, electionType)
       
       // Calculate participation rate
       const participationRate = stats.totalConfirmed > 0 
@@ -332,15 +394,16 @@ class ElectionParticipationController {
         : 0
 
       await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        { username: req.user?.username },
-        `Election participation stats accessed - Election: ${election.title}`,
+        "DATA_EXPORT",
+        req.user,
+        `${electionType.toUpperCase()} election participation stats accessed - Election: ${election.title}`,
         req
       )
 
       res.json({
         electionId,
         electionTitle: election.title,
+        electionType: electionType.toUpperCase(),
         ...stats,
         participationRate
       })
@@ -355,22 +418,29 @@ class ElectionParticipationController {
       const { voterId } = req.params
 
       if (!voterId) {
-        const error = new Error("Voter ID is required")
-        error.statusCode = 400
-        return next(error)
+        return res.status(400).json({ message: "Voter ID is required" })
       }
 
       const voter = await Voter.findById(voterId)
       if (!voter) {
-        const error = new Error("Voter not found")
-        error.statusCode = 404
-        return next(error)
+        return res.status(404).json({ message: "Voter not found" })
       }
 
-      const history = await ElectionParticipation.getVoterHistory(voterId)
+      const history = await ElectionParticipation.find({ voterId })
+        .populate('ssgElectionId', 'title electionDate status electionYear')
+        .populate('deptElectionId', 'title electionDate status electionYear')
+        .populate('departmentId', 'departmentCode degreeProgram college')
+        .sort({ confirmedAt: -1 })
+
+      // Format history with election type
+      const formattedHistory = history.map(participation => ({
+        ...participation.toObject(),
+        electionType: participation.ssgElectionId ? 'SSG' : 'DEPARTMENTAL',
+        election: participation.ssgElectionId || participation.deptElectionId
+      }))
 
       await AuditLog.logVoterAction(
-        "SYSTEM_ACCESS",
+        "DATA_EXPORT",
         voter,
         `Voter participation history accessed - ${history.length} elections`,
         req
@@ -378,9 +448,9 @@ class ElectionParticipationController {
 
       res.json({
         voterId,
-        voterName: `${voter.firstName} ${voter.lastName}`,
+        voterName: voter.fullName,
         schoolId: voter.schoolId,
-        participationHistory: history
+        participationHistory: formattedHistory
       })
     } catch (error) {
       next(error)
@@ -390,40 +460,44 @@ class ElectionParticipationController {
   // Withdraw from election
   static async withdrawParticipation(req, res, next) {
     try {
-      const { electionId, voterId } = req.body
+      const { electionId, electionType } = req.body
+      const voterId = req.user.voterId
 
-      if (!electionId || !voterId) {
-        const error = new Error("Election ID and Voter ID are required")
-        error.statusCode = 400
-        return next(error)
+      if (!electionId || !electionType) {
+        return res.status(400).json({ message: "Election ID and election type are required" })
       }
 
-      const participation = await ElectionParticipation.findOne({
-        voterId,
-        electionId,
-        status: { $ne: "withdrawn" }
-      }).populate('voterId', 'schoolId firstName lastName')
-        .populate('electionId', 'title')
+      if (!['ssg', 'departmental'].includes(electionType)) {
+        return res.status(400).json({ message: "Election type must be 'ssg' or 'departmental'" })
+      }
+
+      const query = { voterId, status: { $ne: "withdrawn" } }
+      if (electionType === 'ssg') {
+        query.ssgElectionId = electionId
+      } else {
+        query.deptElectionId = electionId
+      }
+
+      const participation = await ElectionParticipation.findOne(query)
+        .populate('voterId', 'schoolId firstName lastName')
+        .populate(electionType === 'ssg' ? 'ssgElectionId' : 'deptElectionId', 'title')
 
       if (!participation) {
-        const error = new Error("Active participation record not found")
-        error.statusCode = 404
-        return next(error)
+        return res.status(404).json({ message: "Active participation record not found" })
       }
 
       if (participation.hasVoted) {
-        const error = new Error("Cannot withdraw after voting")
-        error.statusCode = 400
-        return next(error)
+        return res.status(400).json({ message: "Cannot withdraw after voting" })
       }
 
       // Withdraw participation
       await participation.withdraw()
 
+      const election = participation.ssgElectionId || participation.deptElectionId
       await AuditLog.logVoterAction(
         "ELECTION_PARTICIPATION",
         participation.voterId,
-        `Voter withdrew from election: ${participation.electionId.title}`,
+        `Withdrew from ${electionType.toUpperCase()} election: ${election.title}`,
         req
       )
 
@@ -439,25 +513,67 @@ class ElectionParticipationController {
   // Check voter's status for a specific election
   static async checkVoterStatus(req, res, next) {
     try {
-      const { electionId, voterId } = req.params
+      const { electionId } = req.params
+      const { electionType } = req.query
+      const voterId = req.user.voterId
 
-      if (!electionId || !voterId) {
-        const error = new Error("Election ID and Voter ID are required")
-        error.statusCode = 400
-        return next(error)
+      if (!electionId || !electionType) {
+        return res.status(400).json({ message: "Election ID and election type are required" })
       }
 
-      const participation = await ElectionParticipation.findOne({
-        voterId,
-        electionId
-      }).populate('electionId', 'title status electionDate')
+      if (!['ssg', 'departmental'].includes(electionType)) {
+        return res.status(400).json({ message: "Election type must be 'ssg' or 'departmental'" })
+      }
+
+      // Get voter info for eligibility check
+      const voter = await Voter.findById(voterId).populate('departmentId')
+      if (!voter) {
+        return res.status(404).json({ message: "Voter not found" })
+      }
+
+      // Check voting eligibility
+      let canVote = false
+      let eligibilityMessage = ""
+
+      if (electionType === 'ssg') {
+        canVote = voter.isRegistered && voter.isPasswordActive
+        eligibilityMessage = canVote 
+          ? "You are eligible to vote in this SSG election"
+          : "You must be a registered voter to participate in SSG elections"
+      } else {
+        canVote = voter.isRegistered && voter.isPasswordActive && voter.isClassOfficer
+        if (canVote) {
+          eligibilityMessage = "You are eligible to vote in this departmental election"
+        } else if (!voter.isRegistered || !voter.isPasswordActive) {
+          eligibilityMessage = "You must be a registered voter to participate in departmental elections"
+        } else {
+          eligibilityMessage = "Only class officers can vote in departmental elections. You can view statistics and results."
+        }
+      }
+
+      const query = { voterId }
+      if (electionType === 'ssg') {
+        query.ssgElectionId = electionId
+      } else {
+        query.deptElectionId = electionId
+      }
+
+      const participation = await ElectionParticipation.findOne(query)
+        .populate(electionType === 'ssg' ? 'ssgElectionId' : 'deptElectionId', 'title status electionDate')
 
       res.json({
         hasConfirmed: !!participation,
         hasVoted: participation?.hasVoted || false,
         status: participation?.status || "not_confirmed",
         confirmedAt: participation?.confirmedAt || null,
-        votedAt: participation?.votedAt || null
+        votedAt: participation?.votedAt || null,
+        canVote,
+        eligibilityMessage,
+        voterInfo: {
+          isRegistered: voter.isRegistered,
+          isClassOfficer: voter.isClassOfficer,
+          isPasswordActive: voter.isPasswordActive
+        }
       })
     } catch (error) {
       next(error)

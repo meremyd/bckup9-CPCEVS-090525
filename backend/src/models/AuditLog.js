@@ -54,6 +54,7 @@ const auditLogSchema = new mongoose.Schema(
         "BALLOT_ACCESSED",
         "BALLOT_STARTED",
         "BALLOT_ABANDONED",
+        "DELETE_BALLOT",
         "CHAT_SUPPORT_REQUEST",
         "CHAT_SUPPORT_RESPONSE",
         "CHAT_SUPPORT_STATUS_UPDATE",

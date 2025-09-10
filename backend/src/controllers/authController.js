@@ -96,7 +96,7 @@ class AuthController {
     }
   }
 
-  // Voter Login - Fixed schoolId type consistency
+  // Voter Login - Updated to include department information
   static async voterLogin(req, res, next) {
     try {
       const { userId, password } = req.body
@@ -115,8 +115,8 @@ class AuthController {
         return next(error)
       }
 
-      // Find voter by school ID (now consistent Number type)
-      const voter = await Voter.findOne({ schoolId }).populate("degreeId")
+      // Find voter by school ID and populate department information
+      const voter = await Voter.findOne({ schoolId }).populate("departmentId")
       if (!voter) {
         await AuditLog.create({
           action: "UNAUTHORIZED_ACCESS_ATTEMPT",
@@ -194,6 +194,13 @@ class AuthController {
           schoolId: voter.schoolId,
           firstName: voter.firstName,
           lastName: voter.lastName,
+          yearLevel: voter.yearLevel,
+          department: voter.departmentId ? {
+            id: voter.departmentId._id,
+            departmentCode: voter.departmentId.departmentCode,
+            degreeProgram: voter.departmentId.degreeProgram,
+            college: voter.departmentId.college
+          } : null,
           userType: "voter",
         },
         redirectTo: "/voter/dashboard",
@@ -203,7 +210,7 @@ class AuthController {
     }
   }
 
-  // Pre-registration Step 1 - Fixed schoolId type consistency
+  // Pre-registration Step 1 - Updated for Department model
   static async preRegisterStep1(req, res, next) {
     try {
       const { schoolId } = req.body
@@ -222,8 +229,8 @@ class AuthController {
         return next(error)
       }
 
-      // Find voter by school ID (now consistent Number type)
-      const voter = await Voter.findOne({ schoolId: schoolIdNumber }).populate("degreeId")
+      // Find voter by school ID and populate department information
+      const voter = await Voter.findOne({ schoolId: schoolIdNumber }).populate("departmentId")
       if (!voter) {
         // Log failed pre-registration attempt
         await AuditLog.create({
@@ -274,7 +281,14 @@ class AuthController {
           firstName: voter.firstName,
           middleName: voter.middleName,
           lastName: voter.lastName,
-          degree: voter.degreeId,
+          yearLevel: voter.yearLevel,
+          department: voter.departmentId ? {
+            id: voter.departmentId._id,
+            departmentCode: voter.departmentId.departmentCode,
+            degreeProgram: voter.departmentId.degreeProgram,
+            college: voter.departmentId.college,
+            displayName: voter.departmentId.displayName
+          } : null,
         },
       })
     } catch (error) {
@@ -282,7 +296,7 @@ class AuthController {
     }
   }
 
-  // Pre-registration Step 2 - Simplified password handling
+  // Pre-registration Step 2 - Updated validation and response
   static async preRegisterStep2(req, res, next) {
     try {
       const { voterId, password, confirmPassword, firstName, middleName, lastName, schoolId, photoCompleted } = req.body
@@ -312,8 +326,8 @@ class AuthController {
         return next(error)
       }
 
-      // Find voter
-      const voter = await Voter.findById(voterId)
+      // Find voter and populate department
+      const voter = await Voter.findById(voterId).populate("departmentId")
       if (!voter) {
         const error = new Error("Voter not found")
         error.statusCode = 404
@@ -358,6 +372,13 @@ class AuthController {
           schoolId: voter.schoolId,
           firstName: voter.firstName,
           lastName: voter.lastName,
+          yearLevel: voter.yearLevel,
+          department: voter.departmentId ? {
+            id: voter.departmentId._id,
+            departmentCode: voter.departmentId.departmentCode,
+            degreeProgram: voter.departmentId.degreeProgram,
+            college: voter.departmentId.college
+          } : null,
         },
       })
     } catch (error) {

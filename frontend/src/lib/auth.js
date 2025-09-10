@@ -40,17 +40,17 @@ export async function login(username, password) {
 }
 
 /**
- * Voter login
+ * Voter login - Updated to handle new response structure with department info
  */
 export async function voterLogin(schoolId, password) {
   try {
-    const data = await authAPI.voterLogin({ schoolId, password })
-    const { token, voter } = data
+    const data = await authAPI.voterLogin({ userId: schoolId, password })
+    const { token, user } = data
 
     localStorage.setItem("voterToken", token)
-    if (voter) localStorage.setItem("voter", JSON.stringify(voter))
+    if (user) localStorage.setItem("voter", JSON.stringify(user))
 
-    return { token, voter }
+    return { token, voter: user }
   } catch (error) {
     const errorMessage = error.response?.data?.message || error.message || "Voter login failed"
     throw new Error(errorMessage)
@@ -58,20 +58,41 @@ export async function voterLogin(schoolId, password) {
 }
 
 /**
- * Logout (admin/user + voter)
+ * Pre-registration functions - Updated to handle department info
+ */
+export async function preRegisterStep1(schoolId) {
+  try {
+    const data = await authAPI.preRegisterStep1({ schoolId })
+    return data
+  } catch (error) {
+    const errorMessage = error.response?.data?.message || error.message || "Pre-registration step 1 failed"
+    throw new Error(errorMessage)
+  }
+}
+
+export async function preRegisterStep2(registrationData) {
+  try {
+    const data = await authAPI.preRegisterStep2(registrationData)
+    return data
+  } catch (error) {
+    const errorMessage = error.response?.data?.message || error.message || "Pre-registration step 2 failed"
+    throw new Error(errorMessage)
+  }
+}
+
+/**
+ * Logout functions
  */
 export function logout() {
   localStorage.removeItem("token")
   localStorage.removeItem("user")
   window.location.href = "/adminlogin"
-  // router.push("/adminlogin")
 }
 
 export function voterLogout() {
   localStorage.removeItem("voterToken")
   localStorage.removeItem("voter")
-   window.location.href = "/voterlogin"
-  // router.push("/voterlogin")
+  window.location.href = "/voterlogin"
 }
 
 /**
@@ -117,6 +138,38 @@ export function getVoterFromToken() {
   } catch (error) {
     console.error("Invalid voter token:", error)
     voterLogout()
+    return null
+  }
+}
+
+/**
+ * Helper to get stored voter data (includes department info)
+ */
+export function getStoredVoter() {
+  const voterData = localStorage.getItem("voter")
+  if (!voterData) return null
+  
+  try {
+    return JSON.parse(voterData)
+  } catch (error) {
+    console.error("Invalid voter data:", error)
+    voterLogout()
+    return null
+  }
+}
+
+/**
+ * Helper to get stored user data
+ */
+export function getStoredUser() {
+  const userData = localStorage.getItem("user")
+  if (!userData) return null
+  
+  try {
+    return JSON.parse(userData)
+  } catch (error) {
+    console.error("Invalid user data:", error)
+    logout()
     return null
   }
 }

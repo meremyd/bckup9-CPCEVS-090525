@@ -102,8 +102,8 @@ try {
 }
 
 try {
-  console.log("Loading degrees routes...")
-  app.use("/api/degrees", require("./src/routes/degrees"))
+  console.log("Loading departments routes...")
+  app.use("/api/departments", require("./src/routes/department"))
   console.log("Degrees routes loaded")
 } catch (error) {
   console.error("Error loading degrees routes:", error.message)
@@ -119,14 +119,14 @@ try {
   process.exit(1)
 }
 
-try {
-  console.log("Loading elections routes...")
-  app.use("/api/elections", require("./src/routes/elections"))
-  console.log("Elections routes loaded")
-} catch (error) {
-  console.error("Error loading elections routes:", error.message)
-  process.exit(1)
-}
+// try {
+//   console.log("Loading elections routes...")
+//   app.use("/api/elections", require("./src/routes/elections"))
+//   console.log("Elections routes loaded")
+// } catch (error) {
+//   console.error("Error loading elections routes:", error.message)
+//   process.exit(1)
+// }
 
 try {
   console.log("Loading positions routes...")
@@ -158,7 +158,7 @@ try {
 try {
   console.log("Loading voting routes...")
   app.use("/api/voting", votingLimiter, require("./src/routes/voting"))
-  console.log(" Voting routes loaded")
+  console.log("Voting routes loaded")
 } catch (error) {
   console.error("Error loading voting routes:", error.message)
   process.exit(1)
@@ -231,13 +231,23 @@ app.listen(PORT, () => {
   console.log(`   - POST http://localhost:${PORT}/api/auth/pre-register-step2`)
   console.log(`   - GET  http://localhost:${PORT}/api/users (Protected - Admin)`)
   console.log(`   - GET  http://localhost:${PORT}/api/voters (Protected - Admin/Committee)`)
-  console.log(`   - GET  http://localhost:${PORT}/api/degrees`)
+  console.log(`   - GET  http://localhost:${PORT}/api/departments`)
   console.log(`   - GET  http://localhost:${PORT}/api/elections`)
   console.log(`   - GET  http://localhost:${PORT}/api/candidates`)
   console.log(`   - GET  http://localhost:${PORT}/api/positions`)
   console.log(`   - GET  http://localhost:${PORT}/api/partylists`)
-  console.log(`   - GET  http://localhost:${PORT}/api/voting/active-elections (Protected - Voters)`)
-  console.log(`   - POST http://localhost:${PORT}/api/voting/cast-vote (Protected - Voters)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/voting/ssg-elections/active (Protected - Voters)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/voting/ssg-election/:id/details (Protected - Staff/Voters)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/voting/ssg-election/:id/candidates (Protected - Staff/Voters)`)
+  console.log(`   - POST http://localhost:${PORT}/api/voting/ssg-election/cast-vote (Protected - Registered Voters)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/voting/ssg-votes/my-votes (Protected - Voters)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/voting/ssg-voting-status (Protected - Voters)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/voting/departmental-elections/active (Protected - Voters)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/voting/departmental-election/:id/details (Protected - Staff/Voters)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/voting/departmental-election/:id/candidates (Protected - Staff/Voters)`)
+  console.log(`   - POST http://localhost:${PORT}/api/voting/departmental-election/cast-vote (Protected - Class Officers)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/voting/departmental-votes/my-votes (Protected - Voters)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/voting/departmental-voting-status (Protected - Voters)`)
   console.log(`   - GET  http://localhost:${PORT}/api/ballots`)
   console.log(`   - GET  http://localhost:${PORT}/api/audit-logs`)
   console.log(`   - POST http://localhost:${PORT}/api/chat-support`)

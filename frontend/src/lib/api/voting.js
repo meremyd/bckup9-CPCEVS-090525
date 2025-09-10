@@ -1,27 +1,65 @@
 import api from '../api'
 
 export const votingAPI = {
-  // Get active ballot for election
-  getActiveBallot: async (electionId) => {
-    const response = await api.get(`/voting/ballot/${electionId}`)
+  // SSG Election APIs
+  getActiveSSGElections: async () => {
+    const response = await api.get('/voting/ssg-elections/active')
     return response.data
   },
   
-  // Submit ballot
-  submitBallot: async (ballotData) => {
-    const response = await api.post('/voting/submit-ballot', ballotData)
+  getSSGElectionDetails: async (electionId) => {
+    const response = await api.get(`/voting/ssg-election/${electionId}/details`)
     return response.data
   },
   
-  // Get voting history
-  getVotingHistory: async (params = {}) => {
-    const response = await api.get('/voting/history', { params })
+  getSSGElectionCandidates: async (electionId) => {
+    const response = await api.get(`/voting/ssg-election/${electionId}/candidates`)
     return response.data
   },
   
-  // Verify vote
-  verifyVote: async (verificationData) => {
-    const response = await api.post('/voting/verify', verificationData)
+  castSSGVote: async (voteData) => {
+    const response = await api.post('/voting/ssg-election/cast-vote', voteData)
+    return response.data
+  },
+  
+  getMySSGVotes: async () => {
+    const response = await api.get('/voting/ssg-votes/my-votes')
+    return response.data
+  },
+  
+  getSSGVotingStatus: async () => {
+    const response = await api.get('/voting/ssg-voting-status')
+    return response.data
+  },
+
+  // Departmental Election APIs
+  getActiveDepartmentalElections: async () => {
+    const response = await api.get('/voting/departmental-elections/active')
+    return response.data
+  },
+  
+  getDepartmentalElectionDetails: async (electionId) => {
+    const response = await api.get(`/voting/departmental-election/${electionId}/details`)
+    return response.data
+  },
+  
+  getDepartmentalElectionCandidates: async (electionId) => {
+    const response = await api.get(`/voting/departmental-election/${electionId}/candidates`)
+    return response.data
+  },
+  
+  castDepartmentalVote: async (voteData) => {
+    const response = await api.post('/voting/departmental-election/cast-vote', voteData)
+    return response.data
+  },
+  
+  getMyDepartmentalVotes: async () => {
+    const response = await api.get('/voting/departmental-votes/my-votes')
+    return response.data
+  },
+  
+  getDepartmentalVotingStatus: async () => {
+    const response = await api.get('/voting/departmental-voting-status')
     return response.data
   }
 }

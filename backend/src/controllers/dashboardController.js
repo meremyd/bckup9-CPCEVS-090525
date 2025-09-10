@@ -1,11 +1,12 @@
 const Voter = require("../models/Voter")
 const User = require("../models/User")
 const AuditLog = require("../models/AuditLog")
-const Election = require("../models/Election")
+const SSGElection = require("../models/SSGElection")
+const DepartmentalElection = require("../models/DepartmentalElection")
 const Candidate = require("../models/Candidate")
 const Position = require("../models/Position")
 const Partylist = require("../models/Partylist")
-const Degree = require("../models/Degree")
+const Department = require("../models/Department")
 const Ballot = require("../models/Ballot")
 const Vote = require("../models/Vote")
 const ChatSupport = require("../models/ChatSupport")
@@ -18,7 +19,7 @@ class DashboardController {
       const registeredVoters = await Voter.countDocuments({ password: { $ne: null } })
       const systemUsers = await User.countDocuments()
       const auditLogs = await AuditLog.countDocuments()
-      const totalDegrees = await Degree.countDocuments()
+      const totalDepartments = await Department.countDocuments()
       const totalChatSupport = await ChatSupport.countDocuments()
       const pendingChatSupport = await ChatSupport.countDocuments({ status: "pending" })
 
@@ -42,7 +43,7 @@ class DashboardController {
         registeredVoters,
         systemUsers,
         auditLogs,
-        totalDegrees,
+        totalDepartments,
         totalChatSupport,
         pendingChatSupport,
         recentActivities
@@ -57,37 +58,45 @@ class DashboardController {
     try {
       const totalVoters = await Voter.countDocuments()
       const registeredVoters = await Voter.countDocuments({ password: { $ne: null } })
-      const upcomingElections = await Election.countDocuments({ status: "upcoming" })
-      const completedElections = await Election.countDocuments({ status: "completed" })
+      const upcomingSSGElections = await SSGElection.countDocuments({ status: "upcoming" })
+      const upcomingDeptElections = await DepartmentalElection.countDocuments({ status: "upcoming" })
+      const completedSSGElections = await SSGElection.countDocuments({ status: "completed" })
+      const completedDeptElections = await DepartmentalElection.countDocuments({ status: "completed" })
       const totalCandidates = await Candidate.countDocuments()
       const totalPositions = await Position.countDocuments()
       const totalPartylists = await Partylist.countDocuments()
-      const totalDegrees = await Degree.countDocuments()
+      const totalDepartments = await Department.countDocuments()
 
-      // Get voter stats by degree
-      const degrees = await Degree.find()
+      // Get voter stats by department
+      const departments = await Department.find()
       const voterStats = {}
 
-      for (const degree of degrees) {
-        const totalCount = await Voter.countDocuments({ degreeId: degree._id })
+      for (const department of departments) {
+        const totalCount = await Voter.countDocuments({ departmentId: department._id })
         const registeredCount = await Voter.countDocuments({
-          degreeId: degree._id,
+          departmentId: department._id,
           password: { $ne: null },
         })
 
-        const key = degree.major ? `${degree.degreeCode}-${degree.major}` : degree.degreeCode
-        voterStats[key] = {
+        voterStats[department.departmentCode] = {
           total: totalCount,
           registered: registeredCount,
-          degreeName: degree.degreeName,
+          departmentName: department.degreeProgram,
+          college: department.college
         }
       }
 
       // Recent election activities
-      const recentElections = await Election.find()
+      const recentSSGElections = await SSGElection.find()
         .sort({ createdAt: -1 })
-        .limit(5)
-        .select('title status electionDate electionType')
+        .limit(3)
+        .select('title status electionDate')
+
+      const recentDeptElections = await DepartmentalElection.find()
+        .sort({ createdAt: -1 })
+        .limit(3)
+        .select('title status electionDate')
+        .populate('departmentId', 'departmentCode college')
 
       await AuditLog.logUserAction(
         "SYSTEM_ACCESS",
@@ -99,14 +108,21 @@ class DashboardController {
       res.json({
         totalVoters,
         registeredVoters,
-        upcomingElections,
-        completedElections,
+        upcomingElections: upcomingSSGElections + upcomingDeptElections,
+        completedElections: completedSSGElections + completedDeptElections,
+        upcomingSSGElections,
+        upcomingDeptElections,
+        completedSSGElections,
+        completedDeptElections,
         totalCandidates,
         totalPositions,
         totalPartylists,
-        totalDegrees,
+        totalDepartments,
         voterStats,
-        recentElections
+        recentElections: {
+          ssgElections: recentSSGElections,
+          departmentalElections: recentDeptElections
+        }
       })
     } catch (error) {
       next(error)
@@ -122,40 +138,42 @@ class DashboardController {
       const votersWhoVoted = await Ballot.countDocuments({ isSubmitted: true })
       const votersWhoDidntVote = registeredVoters - votersWhoVoted
       const voterTurnout = registeredVoters > 0 ? Math.round((votersWhoVoted / registeredVoters) * 100) : 0
-      const totalDegrees = await Degree.countDocuments()
-      const completedElections = await Election.countDocuments({ status: "completed" })
+      const totalDepartments = await Department.countDocuments()
+      const completedSSGElections = await SSGElection.countDocuments({ status: "completed" })
+      const completedDeptElections = await DepartmentalElection.countDocuments({ status: "completed" })
 
-      // Get voter stats by degree
-      const degrees = await Degree.find()
+      // Get voter stats by department
+      const departments = await Department.find()
       const voterStats = {}
       const votingStats = {}
 
-      for (const degree of degrees) {
-        const totalCount = await Voter.countDocuments({ degreeId: degree._id })
+      for (const department of departments) {
+        const totalCount = await Voter.countDocuments({ departmentId: department._id })
         const registeredCount = await Voter.countDocuments({
-          degreeId: degree._id,
+          departmentId: department._id,
           password: { $ne: null },
         })
 
-        // Get voting participation by degree
-        const votersFromDegree = await Voter.find({ degreeId: degree._id }).select('_id')
-        const voterIds = votersFromDegree.map(v => v._id)
+        // Get voting participation by department
+        const votersFromDepartment = await Voter.find({ departmentId: department._id }).select('_id')
+        const voterIds = votersFromDepartment.map(v => v._id)
         const votedCount = await Ballot.countDocuments({
           voterId: { $in: voterIds },
           isSubmitted: true
         })
 
-        const key = degree.major ? `${degree.degreeCode}-${degree.major}` : degree.degreeCode
-        voterStats[key] = {
+        voterStats[department.departmentCode] = {
           total: totalCount,
           registered: registeredCount,
-          degreeName: degree.degreeName,
+          departmentName: department.degreeProgram,
+          college: department.college
         }
         
-        votingStats[key] = {
+        votingStats[department.departmentCode] = {
           eligible: registeredCount,
           voted: votedCount,
-          turnout: registeredCount > 0 ? Math.round((votedCount / registeredCount) * 100) : 0
+          turnout: registeredCount > 0 ? Math.round((votedCount / registeredCount) * 100) : 0,
+          departmentName: department.degreeProgram
         }
       }
 
@@ -179,8 +197,10 @@ class DashboardController {
         votersWhoVoted,
         votersWhoDidntVote,
         voterTurnout,
-        totalDegrees,
-        completedElections,
+        totalDepartments,
+        completedElections: completedSSGElections + completedDeptElections,
+        completedSSGElections,
+        completedDeptElections,
         voterStats,
         votingStats,
         recentVotes
@@ -190,33 +210,48 @@ class DashboardController {
     }
   }
 
-  // NEW: Voter Dashboard
+  // Voter Dashboard
   static async getVoterDashboard(req, res, next) {
     try {
       // Get voter info from token
       const voterId = req.user?.voterId || req.user?.userId
-      const voter = await Voter.findById(voterId).populate('degreeId')
+      const voter = await Voter.findById(voterId).populate('departmentId')
       
       if (!voter) {
         return res.status(404).json({ message: "Voter not found" })
       }
 
-      // Get available elections for this voter
+      // Get available SSG elections for this voter
       const currentDate = new Date()
-      const availableElections = await Election.find({
+      const availableSSGElections = await SSGElection.find({
         status: "active",
         electionDate: { $gte: currentDate }
-      }).select('title electionDate ballotOpenTime ballotCloseTime electionType')
+      }).select('title electionDate ballotOpenTime ballotCloseTime')
+
+      // Get available Departmental elections for this voter (based on department)
+      const availableDeptElections = await DepartmentalElection.find({
+        status: "active",
+        electionDate: { $gte: currentDate },
+        departmentId: voter.departmentId._id
+      }).select('title electionDate ballotOpenTime ballotCloseTime')
+      .populate('departmentId', 'departmentCode degreeProgram')
 
       // Check if voter has voted in active elections
-      const voterBallots = await Ballot.find({ 
+      const voterSSGBallots = await Ballot.find({ 
         voterId: voter._id,
-        isSubmitted: true 
-      }).populate('electionId', 'title electionDate')
+        isSubmitted: true,
+        ssgElectionId: { $ne: null }
+      }).populate('ssgElectionId', 'title electionDate')
+
+      const voterDeptBallots = await Ballot.find({ 
+        voterId: voter._id,
+        isSubmitted: true,
+        deptElectionId: { $ne: null }
+      }).populate('deptElectionId', 'title electionDate')
 
       // Get voter's voting history count
       const totalVotesCast = await Vote.countDocuments({
-        ballotId: { $in: voterBallots.map(b => b._id) }
+        ballotId: { $in: [...voterSSGBallots.map(b => b._id), ...voterDeptBallots.map(b => b._id)] }
       })
 
       // Check for any chat support requests
@@ -228,8 +263,12 @@ class DashboardController {
       const voterInfo = {
         fullName: voter.fullName,
         schoolId: voter.schoolId,
-        degree: voter.degreeId?.degreeName,
+        department: voter.departmentId?.degreeProgram,
+        departmentCode: voter.departmentId?.departmentCode,
+        college: voter.departmentId?.college,
+        yearLevel: voter.yearLevel,
         isRegistered: voter.isRegistered,
+        isClassOfficer: voter.isClassOfficer,
         isPasswordActive: voter.isPasswordActive,
         passwordExpiresAt: voter.passwordExpiresAt
       }
@@ -243,8 +282,14 @@ class DashboardController {
 
       res.json({
         voterInfo,
-        availableElections,
-        completedElections: voterBallots,
+        availableElections: {
+          ssg: availableSSGElections,
+          departmental: availableDeptElections
+        },
+        completedElections: {
+          ssg: voterSSGBallots,
+          departmental: voterDeptBallots
+        },
         totalVotesCast,
         chatSupportRequests: chatSupportRequests.map(cs => ({
           message: cs.message.substring(0, 100) + (cs.message.length > 100 ? '...' : ''),

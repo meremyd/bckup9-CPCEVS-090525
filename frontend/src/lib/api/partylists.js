@@ -52,10 +52,10 @@ export const partylistsAPI = {
     }
   },
   
-  // Get partylists by election ID
-  getByElection: async (electionId) => {
+  // Get partylists by SSG election ID
+  getBySSGElection: async (ssgElectionId) => {
     try {
-      const response = await api.get(`/partylists/election/${electionId}`)
+      const response = await api.get(`/partylists/ssg-election/${ssgElectionId}`)
       return response.data
     } catch (error) {
       throw error.response?.data || error.message

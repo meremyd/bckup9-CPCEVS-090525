@@ -70,9 +70,44 @@ const authorizeStaffAndVoters = (...staffRoles) => {
   }
 }
 
+const voterAuthMiddleware = async (req, res, next) => {
+  try {
+    const token = req.header('Authorization')?.replace('Bearer ', '')
+    
+    if (!token) {
+      return res.status(401).json({ message: 'Access denied. No token provided.' })
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET)
+    
+    // Check if this is a voter token (has voterId instead of userId)
+    if (!decoded.voterId) {
+      return res.status(401).json({ message: 'Invalid token. Voter access required.' })
+    }
+
+    // Get voter information
+    const voter = await Voter.findById(decoded.voterId)
+    if (!voter || !voter.isActive) {
+      return res.status(401).json({ message: 'Voter account not found or inactive.' })
+    }
+
+    req.user = {
+      voterId: decoded.voterId,
+      schoolId: voter.schoolId,
+      userType: 'voter'
+    }
+    
+    next()
+  } catch (error) {
+    console.error('Voter auth error:', error)
+    res.status(401).json({ message: 'Invalid token.' })
+  }
+}
+
 module.exports = { 
   authMiddleware, 
   authorizeRoles, 
   voterOnly,
-  authorizeStaffAndVoters 
+  authorizeStaffAndVoters, 
+  voterAuthMiddleware 
 }

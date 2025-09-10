@@ -14,7 +14,7 @@ router.get("/",
   DepartmentalElectionController.getAllDepartmentalElections
 )
 
-// Get available departments
+// Get available departments with election statistics
 // GET /api/departmentalElections/departments
 router.get("/departments", 
   authorizeStaffAndVoters("admin", "election_committee", "sao"),
@@ -35,11 +35,19 @@ router.get("/audit-logs",
   DepartmentalElectionController.getDepartmentalElectionAuditLogs
 )
 
-// Get elections by specific department
-// GET /api/departmentalElections/department/:department
-router.get("/department/:department", 
+// Get elections by specific department ID
+// GET /api/departmentalElections/department/:departmentId
+router.get("/department/:departmentId", 
   authorizeStaffAndVoters("admin", "election_committee", "sao"),
   DepartmentalElectionController.getElectionsByDepartment
+)
+
+// VOTER SPECIFIC ROUTES
+// Get candidates for voter view with eligibility check
+// GET /api/departmentalElections/:electionId/candidates/voter
+router.get("/:electionId/candidates/voter",
+  voterOnly,
+  DepartmentalElectionController.getCandidatesForVoter
 )
 
 // ELECTION DETAIL ROUTES
@@ -50,17 +58,19 @@ router.get("/:id",
   DepartmentalElectionController.getDepartmentalElection
 )
 
-// Get departmental election results (viewable after election ends or by admin/election committee)
+// Get departmental election results 
+// All users can view results, but voters only get full details if from same department
 // GET /api/departmentalElections/:id/results
 router.get("/:id/results", 
   authorizeStaffAndVoters("admin", "election_committee", "sao"),
   DepartmentalElectionController.getDepartmentalElectionResults
 )
 
-// Get departmental election statistics (Admin/Election Committee only)
+// Get departmental election statistics
+// Admin/Election Committee get full stats, voters from department get limited stats
 // GET /api/departmentalElections/:id/statistics
 router.get("/:id/statistics", 
-  authorizeRoles("admin", "election_committee"),
+  authorizeStaffAndVoters("admin", "election_committee"),
   DepartmentalElectionController.getDepartmentalElectionStatistics
 )
 

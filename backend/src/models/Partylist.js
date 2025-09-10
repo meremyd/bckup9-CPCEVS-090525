@@ -6,6 +6,8 @@ const partylistSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
+      uppercase: true,
+      trim: true,
     },
     ssgElectionId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -15,14 +17,20 @@ const partylistSchema = new mongoose.Schema(
     partylistName: {
       type: String,
       required: true,
+      trim: true,
     },
     description: {
       type: String,
       default: null,
+      trim: true,
     },
     logo: {
       type: Buffer,
       default: null,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
     },
   },
   {
@@ -30,7 +38,9 @@ const partylistSchema = new mongoose.Schema(
   },
 )
 
-// Compound index to ensure unique partylist per election
+// Compound index to ensure unique partylist per SSG election
 partylistSchema.index({ ssgElectionId: 1, partylistName: 1 }, { unique: true })
+partylistSchema.index({ partylistId: 1 }, { unique: true })
+partylistSchema.index({ ssgElectionId: 1, isActive: 1 })
 
 module.exports = mongoose.model("Partylist", partylistSchema)

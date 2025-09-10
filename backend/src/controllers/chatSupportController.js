@@ -1,5 +1,5 @@
 const ChatSupport = require("../models/ChatSupport")
-const Degree = require("../models/Degree")
+const Department = require("../models/Department")
 const Voter = require("../models/Voter")
 const AuditLog = require("../models/AuditLog")
 
@@ -7,10 +7,10 @@ class ChatSupportController {
   // Submit chat support request
   static async submitRequest(req, res, next) {
     try {
-      const { schoolId, fullName, degreeId, birthday, email, message } = req.body
+      const { schoolId, fullName, departmentId, birthday, email, message } = req.body
 
       // Validation
-      if (!schoolId || !fullName || !degreeId || !birthday || !email || !message) {
+      if (!schoolId || !fullName || !departmentId || !birthday || !email || !message) {
         // Log unauthorized access attempt
         await AuditLog.create({
           action: "UNAUTHORIZED_ACCESS_ATTEMPT",
@@ -41,18 +41,18 @@ class ChatSupportController {
         return next(error)
       }
 
-      // Validate degreeId exists in database
-      const degree = await Degree.findById(degreeId)
-      if (!degree) {
+      // Validate departmentId exists in database
+      const department = await Department.findById(departmentId)
+      if (!department) {
         await AuditLog.create({
           action: "UNAUTHORIZED_ACCESS_ATTEMPT",
           username: schoolIdNumber.toString(),
-          details: `Invalid degree selection in chat support request: ${degreeId}`,
+          details: `Invalid department selection in chat support request: ${departmentId}`,
           ipAddress: req.ip,
           userAgent: req.get("User-Agent"),
         })
 
-        const error = new Error("Invalid degree selection")
+        const error = new Error("Invalid department selection")
         error.statusCode = 400
         return next(error)
       }
@@ -81,7 +81,7 @@ class ChatSupportController {
         schoolId: schoolIdNumber,
         voterId: voter ? voter._id : null, // Link to voter if exists
         fullName,
-        degreeId,
+        departmentId,
         birthday: new Date(birthday),
         email,
         message,
@@ -121,19 +121,19 @@ class ChatSupportController {
   // Get all chat support requests (for admin)
   static async getAllRequests(req, res, next) {
     try {
-      const { status, degreeId, page = 1, limit = 50 } = req.query
+      const { status, departmentId, page = 1, limit = 50 } = req.query
 
       // Build filter
       const filter = {}
       if (status) filter.status = status
-      if (degreeId) filter.degreeId = degreeId
+      if (departmentId) filter.departmentId = departmentId
 
       // Pagination
       const skip = (page - 1) * limit
 
       const requests = await ChatSupport.find(filter)
-        .populate("degreeId", "degreeCode degreeName")
-        .populate("voterId", "firstName middleName lastName email") // Populate voter info if linked
+        .populate("departmentId", "departmentCode degreeProgram college")
+        .populate("voterId", "firstName middleName lastName email schoolId yearLevel") // Added yearLevel
         .sort({ submittedAt: -1 })
         .skip(skip)
         .limit(Number.parseInt(limit))
@@ -177,8 +177,8 @@ class ChatSupportController {
       const { id } = req.params
 
       const request = await ChatSupport.findById(id)
-        .populate("degreeId", "degreeCode degreeName")
-        .populate("voterId", "firstName middleName lastName email schoolId")
+        .populate("departmentId", "departmentCode degreeProgram college")
+        .populate("voterId", "firstName middleName lastName email schoolId yearLevel")
       
       if (!request) {
         await AuditLog.create({
@@ -249,8 +249,8 @@ class ChatSupportController {
       }
 
       const request = await ChatSupport.findByIdAndUpdate(id, updateData, { new: true })
-        .populate("degreeId", "degreeCode degreeName")
-        .populate("voterId", "firstName middleName lastName email schoolId")
+        .populate("departmentId", "departmentCode degreeProgram college")
+        .populate("voterId", "firstName middleName lastName email schoolId yearLevel")
       
       if (!request) {
         await AuditLog.create({
@@ -316,27 +316,29 @@ class ChatSupportController {
         },
       ])
 
-      const degreeStats = await ChatSupport.aggregate([
+      const departmentStats = await ChatSupport.aggregate([
         {
           $lookup: {
-            from: "degrees",
-            localField: "degreeId",
+            from: "departments",
+            localField: "departmentId",
             foreignField: "_id",
-            as: "degree"
+            as: "department"
           }
         },
         {
-          $unwind: "$degree"
+          $unwind: "$department"
         },
         {
           $group: {
-            _id: "$degree.degreeName",
+            _id: "$department.degreeProgram",
+            departmentCode: { $first: "$department.departmentCode" },
+            college: { $first: "$department.college" },
             count: { $sum: 1 },
           },
         },
       ])
 
-      // Stats by voter registration status
+      // Stats by voter registration status and year level
       const voterStats = await ChatSupport.aggregate([
         {
           $lookup: {
@@ -353,7 +355,8 @@ class ChatSupportController {
               { $gt: [{ $size: "$voter" }, 0] },
               { $ne: [{ $arrayElemAt: ["$voter.password", 0] }, null] },
               false
-            ]}
+            ]},
+            yearLevel: { $arrayElemAt: ["$voter.yearLevel", 0] }
           }
         },
         {
@@ -363,6 +366,37 @@ class ChatSupportController {
             fromVoters: { $sum: { $cond: ["$hasVoterRecord", 1, 0] } },
             fromRegisteredVoters: { $sum: { $cond: ["$isRegistered", 1, 0] } },
             fromNonVoters: { $sum: { $cond: ["$hasVoterRecord", 0, 1] } }
+          }
+        }
+      ])
+
+      // Stats by year level
+      const yearLevelStats = await ChatSupport.aggregate([
+        {
+          $lookup: {
+            from: "voters",
+            localField: "schoolId",
+            foreignField: "schoolId",
+            as: "voter"
+          }
+        },
+        {
+          $unwind: {
+            path: "$voter",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $group: {
+            _id: "$voter.yearLevel",
+            count: { $sum: 1 }
+          }
+        },
+        {
+          $project: {
+            yearLevel: { $ifNull: ["$_id", "Unknown"] },
+            count: 1,
+            _id: 0
           }
         }
       ])
@@ -382,7 +416,8 @@ class ChatSupportController {
       res.json({
         total,
         byStatus: stats,
-        byDegree: degreeStats,
+        byDepartment: departmentStats,
+        byYearLevel: yearLevelStats,
         voterStats: voterStats[0] || {
           totalRequests: 0,
           fromVoters: 0,
@@ -424,9 +459,9 @@ class ChatSupportController {
 
       await ChatSupport.findByIdAndDelete(id)
 
-      // Log the deletion (using existing enum value that's closest)
+      // Log the deletion
       await AuditLog.create({
-        action: "SYSTEM_ACCESS",
+        action: "DATA_DELETION",
         username: req.user?.username || "system",
         userId: req.user?.userId,
         details: `Chat support request ${id} deleted by ${req.user?.username} - Request from ${request.fullName} (School ID: ${request.schoolId})`,
@@ -520,12 +555,12 @@ class ChatSupportController {
   // Export chat support data (admin only)
   static async exportRequests(req, res, next) {
     try {
-      const { format = 'json', status, degreeId, dateFrom, dateTo } = req.query
+      const { format = 'json', status, departmentId, dateFrom, dateTo } = req.query
 
       // Build filter
       const filter = {}
       if (status) filter.status = status
-      if (degreeId) filter.degreeId = degreeId
+      if (departmentId) filter.departmentId = departmentId
       if (dateFrom || dateTo) {
         filter.submittedAt = {}
         if (dateFrom) filter.submittedAt.$gte = new Date(dateFrom)
@@ -533,8 +568,8 @@ class ChatSupportController {
       }
 
       const requests = await ChatSupport.find(filter)
-        .populate("degreeId", "degreeCode degreeName")
-        .populate("voterId", "firstName middleName lastName email schoolId")
+        .populate("departmentId", "departmentCode degreeProgram college")
+        .populate("voterId", "firstName middleName lastName email schoolId yearLevel")
         .sort({ submittedAt: -1 })
 
       // Log data export
@@ -554,7 +589,10 @@ class ChatSupportController {
           'School ID': request.schoolId,
           'Full Name': request.fullName,
           'Email': request.email,
-          'Degree': request.degreeId?.degreeName || 'N/A',
+          'Department': request.departmentId?.degreeProgram || 'N/A',
+          'Department Code': request.departmentId?.departmentCode || 'N/A',
+          'College': request.departmentId?.college || 'N/A',
+          'Year Level': request.voterId?.yearLevel || 'N/A',
           'Status': request.status,
           'Message': request.message,
           'Response': request.response || '',

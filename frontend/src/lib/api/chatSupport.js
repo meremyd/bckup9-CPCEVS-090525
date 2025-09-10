@@ -7,7 +7,7 @@ export const chatSupportAPI = {
     return response.data
   },
   
-  // Get all support requests (admin only)
+  // Get all support requests with filtering (admin only)
   getAll: async (params = {}) => {
     const response = await api.get('/chat-support', { params })
     return response.data
@@ -19,7 +19,7 @@ export const chatSupportAPI = {
     return response.data
   },
   
-  // Update support request status (admin only)
+  // Update support request status and response (admin only)
   updateStatus: async (id, updateData) => {
     const response = await api.put(`/chat-support/${id}`, updateData)
     return response.data
@@ -31,7 +31,7 @@ export const chatSupportAPI = {
     return response.data
   },
   
-  // Get support statistics (admin only)
+  // Get comprehensive support statistics (admin only)
   getStatistics: async () => {
     const response = await api.get('/chat-support/stats/summary')
     return response.data
@@ -43,9 +43,24 @@ export const chatSupportAPI = {
     return response.data
   },
   
-  // Export support requests (admin only)
+  // Export support requests with filtering (admin only)
   export: async (params = {}) => {
-    const response = await api.get('/chat-support/export', { params })
+    const response = await api.get('/chat-support/export', { 
+      params,
+      responseType: params.format === 'csv' ? 'blob' : 'json'
+    })
+    return response.data
+  },
+
+  // Get departments for form dropdown
+  getDepartments: async () => {
+    const response = await api.get('/departments')
+    return response.data
+  },
+
+  // Validate school ID (optional helper)
+  validateSchoolId: async (schoolId) => {
+    const response = await api.get(`/voters/${schoolId}/validate`)
     return response.data
   }
 }

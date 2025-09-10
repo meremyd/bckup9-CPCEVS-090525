@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { dashboardAPI } from '@/lib/api/dashboard'
-import { electionsAPI } from '@/lib/api/elections'
+import { electionsAPI as ssgElectionsAPI} from '@/lib/api/ssgElections'
+import { electionsAPI as deptElectionsAPI } from '@/lib/api/departmentalElections'
 
 export default function ElectionCommitteeDashboard() {
   const [dashboardData, setDashboardData] = useState(null)
@@ -50,7 +51,7 @@ export default function ElectionCommitteeDashboard() {
         console.error("Auth check error:", error)
         setError("Authentication error occurred")
         router.push("/adminlogin")
-      }
+      } 
     }
 
     checkAuthAndLoadData()

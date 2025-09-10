@@ -26,9 +26,15 @@ const positionSchema = new mongoose.Schema(
       default: 1,
       min: 1,
     },
+    maxCandidates: {
+      type: Number,
+      default: 10,
+      min: 1,
+    },
     description: {
       type: String,
       default: null,
+      trim: true,
     },
     isActive: {
       type: Boolean,
@@ -45,5 +51,14 @@ positionSchema.index({ deptElectionId: 1, positionName: 1 }, { unique: true, spa
 positionSchema.index({ ssgElectionId: 1, positionName: 1 }, { unique: true, sparse: true })
 positionSchema.index({ deptElectionId: 1, positionOrder: 1 })
 positionSchema.index({ ssgElectionId: 1, positionOrder: 1 })
+
+// Virtual to get election type
+positionSchema.virtual('electionType').get(function() {
+  return this.ssgElectionId ? 'ssg' : 'departmental'
+})
+
+// Ensure virtual fields are serialized
+positionSchema.set('toJSON', { virtuals: true })
+positionSchema.set('toObject', { virtuals: true })
 
 module.exports = mongoose.model("Position", positionSchema)

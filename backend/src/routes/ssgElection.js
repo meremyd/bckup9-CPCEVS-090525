@@ -1,7 +1,7 @@
 const express = require("express")
 const router = express.Router()
 const SSGElectionController = require("../controllers/ssgElectionController")
-const { authMiddleware, authorizeRoles } = require("../middleware/authMiddleware")
+const { authMiddleware, authorizeRoles, authorizeStaffAndVoters } = require("../middleware/authMiddleware")
 
 // Apply authentication middleware to all routes
 router.use(authMiddleware)
@@ -27,6 +27,20 @@ router.get("/upcoming",
   SSGElectionController.getUpcomingSSGElections
 )
 
+// Get SSG elections for voting (accessible by registered voters)
+// GET /api/ssg-elections/for-voting
+router.get("/for-voting", 
+  authorizeStaffAndVoters("admin", "election_committee", "sao"), 
+  SSGElectionController.getSSGElectionsForVoting
+)
+
+// Get SSG elections for specific voter
+// GET /api/ssg-elections/for-voting/:voterId
+router.get("/for-voting/:voterId", 
+  authorizeStaffAndVoters("admin", "election_committee", "sao"), 
+  SSGElectionController.getSSGElectionsForVoting
+)
+
 // Get single SSG election details
 // GET /api/ssg-elections/:id
 router.get("/:id", 
@@ -34,17 +48,17 @@ router.get("/:id",
   SSGElectionController.getSSGElection
 )
 
-// Get SSG election statistics
+// Get SSG election statistics (accessible by registered voters for viewing)
 // GET /api/ssg-elections/:id/statistics
 router.get("/:id/statistics", 
-  authorizeRoles("admin", "election_committee", "sao"), 
+  authorizeStaffAndVoters("admin", "election_committee", "sao"), 
   SSGElectionController.getSSGElectionStatistics
 )
 
-// Get SSG election results
+// Get SSG election results (accessible by registered voters for viewing)
 // GET /api/ssg-elections/:id/results
 router.get("/:id/results", 
-  authorizeRoles("admin", "election_committee", "sao"), 
+  authorizeStaffAndVoters("admin", "election_committee", "sao"), 
   SSGElectionController.getSSGElectionResults
 )
 

@@ -15,8 +15,9 @@ const departmentalElectionSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    department: {
-      type: String,
+    departmentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Department",
       required: true,
     },
     status: {
@@ -56,9 +57,9 @@ const departmentalElectionSchema = new mongoose.Schema(
 )
 
 // Indexes for better query performance
-departmentalElectionSchema.index({ department: 1, status: 1 })
+departmentalElectionSchema.index({ departmentId: 1, status: 1 })
 departmentalElectionSchema.index({ electionDate: 1 })
 departmentalElectionSchema.index({ electionYear: 1 })
-departmentalElectionSchema.index({ department: 1 })
+departmentalElectionSchema.index({ departmentId: 1 })
 
 module.exports = mongoose.model("DepartmentalElection", departmentalElectionSchema)

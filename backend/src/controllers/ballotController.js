@@ -21,8 +21,8 @@ class BallotController {
 
       const ballots = await Ballot.find(query)
         .populate('ssgElectionId', 'title electionDate status')
-        .populate('voterId', 'schoolId firstName lastName degreeId')
-        .populate('voterId.degreeId', 'degreeCode degreeName')
+        .populate('voterId', 'schoolId firstName lastName departmentId yearLevel')
+        .populate('voterId.departmentId', 'departmentCode degreeProgram college')
         .sort({ createdAt: -1 })
         .limit(limit * 1)
         .skip((page - 1) * limit)
@@ -50,7 +50,7 @@ class BallotController {
   // Get all Departmental ballots (Committee only)
   static async getDepartmentalBallots(req, res, next) {
     try {
-      const { page = 1, limit = 10, electionId, status } = req.query
+      const { page = 1, limit = 10, electionId, status, positionId } = req.query
       
       const query = { deptElectionId: { $ne: null } }
       if (electionId) query.deptElectionId = electionId
@@ -59,9 +59,10 @@ class BallotController {
       if (positionId) query.currentPositionId = positionId
 
       const ballots = await Ballot.find(query)
-        .populate('deptElectionId', 'title electionDate status department')
-        .populate('voterId', 'schoolId firstName lastName degreeId')
-        .populate('voterId.degreeId', 'degreeCode degreeName department')
+        .populate('deptElectionId', 'title electionDate status departmentId')
+        .populate('deptElectionId.departmentId', 'departmentCode degreeProgram college')
+        .populate('voterId', 'schoolId firstName lastName departmentId yearLevel')
+        .populate('voterId.departmentId', 'departmentCode degreeProgram college')
         .populate('currentPositionId', 'positionName positionOrder')
         .sort({ createdAt: -1 })
         .limit(limit * 1)
@@ -94,9 +95,11 @@ class BallotController {
       
       const ballot = await Ballot.findById(id)
         .populate('ssgElectionId', 'title electionDate status ballotOpenTime ballotCloseTime')
-        .populate('deptElectionId', 'title electionDate status ballotOpenTime ballotCloseTime department')
-        .populate('voterId', 'schoolId firstName lastName degreeId')
-        .populate('voterId.degreeId', 'degreeCode degreeName department')
+        .populate('deptElectionId', 'title electionDate status ballotOpenTime ballotCloseTime departmentId')
+        .populate('deptElectionId.departmentId', 'departmentCode degreeProgram college')
+        .populate('voterId', 'schoolId firstName lastName departmentId yearLevel email')
+        .populate('voterId.departmentId', 'departmentCode degreeProgram college')
+        .populate('currentPositionId', 'positionName positionOrder')
 
       if (!ballot) {
         return res.status(404).json({ message: "Ballot not found" })
@@ -113,11 +116,13 @@ class BallotController {
         return res.status(403).json({ message: "Access denied" })
       }
 
+      const actionType = req.user.userType === 'voter' ? "BALLOT_ACCESSED" : "DATA_EXPORT"
       await AuditLog.logAction({
-        action: "BALLOT_ACCESSED",
+        action: actionType,
         username: req.user.username || req.user.schoolId?.toString(),
         userId: req.user.userId,
         voterId: req.user.voterId,
+        schoolId: req.user.schoolId,
         details: `Accessed ballot ${id}`,
         ipAddress: req.ip,
         userAgent: req.get("User-Agent")
@@ -150,7 +155,7 @@ class BallotController {
       await Ballot.findByIdAndDelete(ballot._id)
 
       await AuditLog.logUserAction(
-        "DELETE_USER",
+        "DELETE_BALLOT",
         req.user,
         `Deleted SSG ballot ${id} for voter ${ballot.voterId.schoolId} in election ${ballot.ssgElectionId.title}. Removed ${voteCount} votes.`,
         req
@@ -173,6 +178,7 @@ class BallotController {
       const ballot = await Ballot.findById(id)
         .populate('deptElectionId', 'title')
         .populate('voterId', 'schoolId firstName lastName')
+        .populate('currentPositionId', 'positionName')
 
       if (!ballot || !ballot.deptElectionId) {
         return res.status(404).json({ message: "Departmental Ballot not found" })
@@ -186,9 +192,9 @@ class BallotController {
       await Ballot.findByIdAndDelete(ballot._id)
 
       await AuditLog.logUserAction(
-        "DELETE_USER",
+        "DELETE_BALLOT",
         req.user,
-        `Deleted Departmental ballot ${id} for voter ${ballot.voterId.schoolId} in election ${ballot.deptElectionId.title}. Removed ${voteCount} votes.`,
+        `Deleted Departmental ballot ${id} for voter ${ballot.voterId.schoolId}, position ${ballot.currentPositionId?.positionName} in election ${ballot.deptElectionId.title}. Removed ${voteCount} votes.`,
         req
       )
 
@@ -231,9 +237,9 @@ class BallotController {
       }
 
       // Verify voter is registered
-      const voter = await Voter.findById(voterId)
+      const voter = await Voter.findById(voterId).populate('departmentId')
       if (!voter || !voter.isRegistered || !voter.isPasswordActive) {
-        return res.status(400).json({ message: "Voter is not eligible to vote in SSG elections" })
+        return res.status(400).json({ message: "Only registered voters can participate in SSG elections" })
       }
 
       // Create new ballot with unique token
@@ -270,7 +276,7 @@ class BallotController {
     }
   }
 
-  // Start Departmental ballot (Class officers only)
+  // Start Departmental ballot (Registered voters and class officers only)
   static async startDepartmentalBallot(req, res, next) {
     try {
       const { electionId, positionId } = req.body
@@ -278,6 +284,7 @@ class BallotController {
 
       // Validate election exists and is active
       const election = await DepartmentalElection.findById(electionId)
+        .populate('departmentId')
       if (!election) {
         return res.status(404).json({ message: "Departmental Election not found" })
       }
@@ -314,9 +321,9 @@ class BallotController {
       }
 
       // Verify voter is registered and is a class officer
-      const voter = await Voter.findById(voterId).populate('degreeId')
+      const voter = await Voter.findById(voterId).populate('departmentId')
       if (!voter || !voter.isRegistered || !voter.isPasswordActive) {
-        return res.status(400).json({ message: "Voter is not eligible to vote" })
+        return res.status(400).json({ message: "Only registered voters can participate in departmental elections" })
       }
 
       if (!voter.isClassOfficer) {
@@ -324,7 +331,7 @@ class BallotController {
       }
 
       // Check if voter's department matches election department
-      if (voter.degreeId.department !== election.department) {
+      if (voter.departmentId.college !== election.departmentId.college) {
         return res.status(403).json({ message: "You can only vote in your department's elections" })
       }
 
@@ -430,6 +437,7 @@ class BallotController {
       const ballot = await Ballot.findById(id)
         .populate('deptElectionId', 'title')
         .populate('voterId', 'schoolId firstName lastName')
+        .populate('currentPositionId', 'positionName')
 
       if (!ballot || !ballot.deptElectionId) {
         return res.status(404).json({ message: "Departmental Ballot not found" })
@@ -464,14 +472,15 @@ class BallotController {
       await AuditLog.logVoterAction(
         "VOTE_SUBMITTED",
         ballot.voterId,
-        `Submitted Departmental ballot with ${voteCount} votes for election: ${ballot.deptElectionId.title}`,
+        `Submitted Departmental ballot with ${voteCount} votes for position: ${ballot.currentPositionId?.positionName} in election: ${ballot.deptElectionId.title}`,
         req
       )
 
       res.json({
         message: "Departmental Ballot submitted successfully",
         submittedAt: ballot.submittedAt,
-        voteCount
+        voteCount,
+        position: ballot.currentPositionId?.positionName
       })
     } catch (error) {
       next(error)
@@ -502,6 +511,7 @@ class BallotController {
       }
 
       // Delete associated votes
+      const voteCount = await Vote.countDocuments({ ballotId: ballot._id })
       await Vote.deleteMany({ ballotId: ballot._id })
 
       // Delete ballot
@@ -510,11 +520,14 @@ class BallotController {
       await AuditLog.logVoterAction(
         "BALLOT_ABANDONED",
         ballot.voterId,
-        `Abandoned SSG ballot for election: ${ballot.ssgElectionId.title}`,
+        `Abandoned SSG ballot with ${voteCount} votes for election: ${ballot.ssgElectionId.title}`,
         req
       )
 
-      res.json({ message: "SSG Ballot abandoned successfully" })
+      res.json({ 
+        message: "SSG Ballot abandoned successfully",
+        abandonedVotes: voteCount
+      })
     } catch (error) {
       next(error)
     }
@@ -529,6 +542,7 @@ class BallotController {
       const ballot = await Ballot.findById(id)
         .populate('deptElectionId', 'title')
         .populate('voterId', 'schoolId firstName lastName')
+        .populate('currentPositionId', 'positionName')
 
       if (!ballot || !ballot.deptElectionId) {
         return res.status(404).json({ message: "Departmental Ballot not found" })
@@ -544,6 +558,7 @@ class BallotController {
       }
 
       // Delete associated votes
+      const voteCount = await Vote.countDocuments({ ballotId: ballot._id })
       await Vote.deleteMany({ ballotId: ballot._id })
 
       // Delete ballot
@@ -552,11 +567,15 @@ class BallotController {
       await AuditLog.logVoterAction(
         "BALLOT_ABANDONED",
         ballot.voterId,
-        `Abandoned Departmental ballot for election: ${ballot.deptElectionId.title}`,
+        `Abandoned Departmental ballot with ${voteCount} votes for position: ${ballot.currentPositionId?.positionName} in election: ${ballot.deptElectionId.title}`,
         req
       )
 
-      res.json({ message: "Departmental Ballot abandoned successfully" })
+      res.json({ 
+        message: "Departmental Ballot abandoned successfully",
+        abandonedVotes: voteCount,
+        position: ballot.currentPositionId?.positionName
+      })
     } catch (error) {
       next(error)
     }
@@ -568,25 +587,50 @@ class BallotController {
       const { electionId } = req.params
       const voterId = req.user.voterId
 
+      // Get voter info to check eligibility
+      const voter = await Voter.findById(voterId).populate('departmentId')
+      if (!voter) {
+        return res.status(404).json({ message: "Voter not found" })
+      }
+
+      const canVote = voter.isRegistered && voter.isPasswordActive
+
       const ballot = await Ballot.findOne({ ssgElectionId: electionId, voterId })
         .populate('ssgElectionId', 'title status electionDate ballotOpenTime ballotCloseTime')
+
+      await AuditLog.logVoterAction(
+        "DATA_EXPORT",
+        voter,
+        `Checked SSG ballot status for election: ${electionId}`,
+        req
+      )
 
       if (!ballot) {
         return res.json({ 
           hasVoted: false, 
-          canVote: true,
-          ballot: null 
+          canVote: canVote,
+          ballot: null,
+          voterEligibility: {
+            isRegistered: voter.isRegistered,
+            isPasswordActive: voter.isPasswordActive,
+            message: canVote ? "You are eligible to vote in SSG elections" : "You must be a registered voter with an active password to participate in SSG elections"
+          }
         })
       }
 
       res.json({
         hasVoted: ballot.isSubmitted,
-        canVote: !ballot.isSubmitted,
+        canVote: !ballot.isSubmitted && canVote,
         ballot: {
           _id: ballot._id,
           isSubmitted: ballot.isSubmitted,
           submittedAt: ballot.submittedAt,
           createdAt: ballot.createdAt
+        },
+        voterEligibility: {
+          isRegistered: voter.isRegistered,
+          isPasswordActive: voter.isPasswordActive,
+          message: canVote ? "You are eligible to vote in SSG elections" : "You must be a registered voter with an active password to participate in SSG elections"
         }
       })
     } catch (error) {
@@ -600,24 +644,56 @@ class BallotController {
       const { electionId, positionId } = req.params
       const voterId = req.user.voterId
 
+      // Get voter info to check eligibility
+      const voter = await Voter.findById(voterId).populate('departmentId')
+      if (!voter) {
+        return res.status(404).json({ message: "Voter not found" })
+      }
+
+      // Get election info
+      const election = await DepartmentalElection.findById(electionId)
+        .populate('departmentId')
+      if (!election) {
+        return res.status(404).json({ message: "Departmental Election not found" })
+      }
+
+      const canVote = voter.isRegistered && voter.isPasswordActive && voter.isClassOfficer &&
+                     voter.departmentId.college === election.departmentId.college
+
       const query = { deptElectionId: electionId, voterId }
       if (positionId) query.currentPositionId = positionId
 
       const ballot = await Ballot.findOne(query)
-        .populate('deptElectionId', 'title status electionDate ballotOpenTime ballotCloseTime department')
+        .populate('deptElectionId', 'title status electionDate ballotOpenTime ballotCloseTime')
         .populate('currentPositionId', 'positionName positionOrder')
+
+      await AuditLog.logVoterAction(
+        "DATA_EXPORT",
+        voter,
+        `Checked Departmental ballot status for election: ${electionId}${positionId ? `, position: ${positionId}` : ''}`,
+        req
+      )
 
       if (!ballot) {
         return res.json({ 
           hasVoted: false, 
-          canVote: true,
-          ballot: null 
+          canVote: canVote,
+          ballot: null,
+          voterEligibility: {
+            isRegistered: voter.isRegistered,
+            isPasswordActive: voter.isPasswordActive,
+            isClassOfficer: voter.isClassOfficer,
+            departmentMatch: voter.departmentId.college === election.departmentId.college,
+            message: canVote ? 
+              "You are eligible to vote in departmental elections" : 
+              "Only registered class officers from this department can vote in departmental elections"
+          }
         })
       }
 
       res.json({
         hasVoted: ballot.isSubmitted,
-        canVote: !ballot.isSubmitted,
+        canVote: !ballot.isSubmitted && canVote,
         ballot: {
           _id: ballot._id,
           currentPositionId: ballot.currentPositionId,
@@ -625,6 +701,114 @@ class BallotController {
           isSubmitted: ballot.isSubmitted,
           submittedAt: ballot.submittedAt,
           createdAt: ballot.createdAt
+        },
+        voterEligibility: {
+          isRegistered: voter.isRegistered,
+          isPasswordActive: voter.isPasswordActive,
+          isClassOfficer: voter.isClassOfficer,
+          departmentMatch: voter.departmentId.college === election.departmentId.college,
+          message: canVote ? 
+            "You are eligible to vote in departmental elections" : 
+            "Only registered class officers from this department can vote in departmental elections"
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Get available positions for departmental voting
+  static async getAvailablePositionsForVoting(req, res, next) {
+    try {
+      const { electionId } = req.params
+      const voterId = req.user.voterId
+
+      // Verify election exists
+      const election = await DepartmentalElection.findById(electionId)
+        .populate('departmentId')
+      if (!election) {
+        return res.status(404).json({ message: "Departmental Election not found" })
+      }
+
+      // Get all positions for this election
+      const positions = await Position.find({
+        deptElectionId: electionId,
+        isActive: true
+      }).sort({ positionOrder: 1 })
+
+      // Get positions voter has already voted for
+      const votedPositions = await Ballot.find({
+        deptElectionId: electionId,
+        voterId,
+        isSubmitted: true
+      }).distinct('currentPositionId')
+
+      // Filter available positions
+      const availablePositions = positions.filter(
+        position => !votedPositions.some(voted => voted.toString() === position._id.toString())
+      )
+
+      await AuditLog.logVoterAction(
+        "DATA_EXPORT",
+        { _id: voterId, schoolId: req.user.schoolId },
+        `Retrieved available positions for departmental election: ${election.title}`,
+        req
+      )
+
+      res.json({
+        election: {
+          _id: election._id,
+          title: election.title,
+          status: election.status
+        },
+        totalPositions: positions.length,
+        votedPositions: votedPositions.length,
+        availablePositions: availablePositions.map(pos => ({
+          _id: pos._id,
+          positionName: pos.positionName,
+          positionOrder: pos.positionOrder,
+          maxVotes: pos.maxVotes
+        })),
+        isComplete: availablePositions.length === 0
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Get next available position for departmental voting
+  static async getNextPositionForVoting(req, res, next) {
+    try {
+      const { electionId } = req.params
+      const voterId = req.user.voterId
+
+      // Get voted positions
+      const votedPositions = await Ballot.find({
+        deptElectionId: electionId,
+        voterId,
+        isSubmitted: true
+      }).distinct('currentPositionId')
+
+      // Get next available position
+      const nextPosition = await Position.findOne({
+        deptElectionId: electionId,
+        isActive: true,
+        _id: { $nin: votedPositions }
+      }).sort({ positionOrder: 1 })
+
+      if (!nextPosition) {
+        return res.json({
+          nextPosition: null,
+          message: "All positions have been voted for"
+        })
+      }
+
+      res.json({
+        nextPosition: {
+          _id: nextPosition._id,
+          positionName: nextPosition.positionName,
+          positionOrder: nextPosition.positionOrder,
+          maxVotes: nextPosition.maxVotes
         }
       })
     } catch (error) {
@@ -662,6 +846,13 @@ class BallotController {
         .populate('positionId', 'positionName positionOrder')
         .sort({ 'positionId.positionOrder': 1 })
 
+      await AuditLog.logVoterAction(
+        "BALLOT_ACCESSED",
+        { _id: voterId, schoolId: req.user.schoolId },
+        `Reviewed SSG ballot ${id} with ${votes.length} votes`,
+        req
+      )
+
       res.json({
         ballot,
         votes: votes.map(vote => ({
@@ -686,7 +877,8 @@ class BallotController {
       const voterId = req.user.voterId
 
       const ballot = await Ballot.findById(id)
-        .populate('deptElectionId', 'title electionDate department')
+        .populate('deptElectionId', 'title electionDate')
+        .populate('currentPositionId', 'positionName')
 
       if (!ballot || !ballot.deptElectionId) {
         return res.status(404).json({ message: "Departmental Ballot not found" })
@@ -707,6 +899,13 @@ class BallotController {
         })
         .populate('positionId', 'positionName positionOrder')
         .sort({ 'positionId.positionOrder': 1 })
+
+      await AuditLog.logVoterAction(
+        "BALLOT_ACCESSED",
+        { _id: voterId, schoolId: req.user.schoolId },
+        `Reviewed Departmental ballot ${id} for position ${ballot.currentPositionId?.positionName} with ${votes.length} votes`,
+        req
+      )
 
       res.json({
         ballot,
@@ -772,6 +971,53 @@ class BallotController {
         }
       ])
 
+      // Get ballots by department for SSG
+      const ballotsByDepartment = await Ballot.aggregate([
+        { $match: query },
+        {
+          $lookup: {
+            from: 'voters',
+            localField: 'voterId',
+            foreignField: '_id',
+            as: 'voter'
+          }
+        },
+        { $unwind: '$voter' },
+        {
+          $lookup: {
+            from: 'departments',
+            localField: 'voter.departmentId',
+            foreignField: '_id',
+            as: 'department'
+          }
+        },
+        { $unwind: '$department' },
+        {
+          $group: {
+            _id: '$department.college',
+            total: { $sum: 1 },
+            submitted: {
+              $sum: { $cond: ['$isSubmitted', 1, 0] }
+            }
+          }
+        },
+        {
+          $project: {
+            college: '$_id',
+            total: 1,
+            submitted: 1,
+            pending: { $subtract: ['$total', '$submitted'] },
+            turnout: {
+              $round: [
+                { $multiply: [{ $divide: ['$submitted', '$total'] }, 100] },
+                2
+              ]
+            }
+          }
+        },
+        { $sort: { college: 1 } }
+      ])
+
       await AuditLog.logUserAction(
         "DATA_EXPORT",
         req.user,
@@ -784,7 +1030,8 @@ class BallotController {
         submittedBallots,
         pendingBallots,
         turnoutRate: totalBallots > 0 ? Math.round((submittedBallots / totalBallots) * 100) : 0,
-        ballotsByElection
+        ballotsByElection,
+        ballotsByDepartment
       })
     } catch (error) {
       next(error)
@@ -824,9 +1071,17 @@ class BallotController {
           }
         },
         {
+          $lookup: {
+            from: 'departments',
+            localField: 'election.departmentId',
+            foreignField: '_id',
+            as: 'department'
+          }
+        },
+        {
           $project: {
             electionTitle: { $arrayElemAt: ['$election.title', 0] },
-            department: { $arrayElemAt: ['$election.department', 0] },
+            college: { $arrayElemAt: ['$department.college', 0] },
             total: 1,
             submitted: 1,
             pending: { $subtract: ['$total', '$submitted'] },
@@ -838,6 +1093,44 @@ class BallotController {
             }
           }
         }
+      ])
+
+      // Get ballots by position for departmental elections
+      const ballotsByPosition = await Ballot.aggregate([
+        { $match: query },
+        {
+          $group: {
+            _id: '$currentPositionId',
+            total: { $sum: 1 },
+            submitted: {
+              $sum: { $cond: ['$isSubmitted', 1, 0] }
+            }
+          }
+        },
+        {
+          $lookup: {
+            from: 'positions',
+            localField: '_id',
+            foreignField: '_id',
+            as: 'position'
+          }
+        },
+        {
+          $project: {
+            positionName: { $arrayElemAt: ['$position.positionName', 0] },
+            positionOrder: { $arrayElemAt: ['$position.positionOrder', 0] },
+            total: 1,
+            submitted: 1,
+            pending: { $subtract: ['$total', '$submitted'] },
+            turnout: {
+              $round: [
+                { $multiply: [{ $divide: ['$submitted', '$total'] }, 100] },
+                2
+              ]
+            }
+          }
+        },
+        { $sort: { positionOrder: 1 } }
       ])
 
       await AuditLog.logUserAction(
@@ -852,7 +1145,8 @@ class BallotController {
         submittedBallots,
         pendingBallots,
         turnoutRate: totalBallots > 0 ? Math.round((submittedBallots / totalBallots) * 100) : 0,
-        ballotsByElection
+        ballotsByElection,
+        ballotsByPosition
       })
     } catch (error) {
       next(error)
