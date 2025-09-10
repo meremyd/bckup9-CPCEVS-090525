@@ -17,9 +17,9 @@ const chatSupportSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-    degreeId: {
+    departmentId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Degree",
+      ref: "Department",
       required: true,
     },
     birthday: {
@@ -68,7 +68,7 @@ const chatSupportSchema = new mongoose.Schema(
 // Index for efficient queries
 chatSupportSchema.index({ status: 1, submittedAt: -1 })
 chatSupportSchema.index({ schoolId: 1 })
-chatSupportSchema.index({ degreeId: 1 })
+chatSupportSchema.index({ departmentId: 1 })
 
 // Pre-save hook to auto-populate voterId if not provided
 chatSupportSchema.pre('save', async function(next) {

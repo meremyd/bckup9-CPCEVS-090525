@@ -50,14 +50,14 @@ app.get("/api/health", (req, res) => {
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => {
-    console.log("✅ Connected to MongoDB")
+    console.log("Connected to MongoDB")
   })
   .catch((error) => {
-    console.error("❌ MongoDB connection error:", error)
+    console.error("MongoDB connection error:", error)
     process.exit(1)
   })
 
-console.log("📂 Loading routes...")
+console.log("Loading routes...")
 
 /* ---------------- ROUTES ---------------- */
 try {
@@ -68,130 +68,148 @@ try {
   app.use("/api/auth/pre-register-step1", registrationLimiter)
   app.use("/api/auth/pre-register-step2", registrationLimiter)
   app.use("/api/auth", require("./src/routes/auth"))
-  console.log("✅ Auth routes loaded")
+  console.log("Auth routes loaded")
 } catch (error) {
-  console.error("❌ Error loading auth routes:", error.message)
+  console.error("Error loading auth routes:", error.message)
   process.exit(1)
 }
 
 try {
   console.log("Loading users routes...")
   app.use("/api/users", authMiddleware, authorizeRoles("admin"), adminLimiter, require("./src/routes/users"))
-  console.log("✅ Users routes loaded")
+  console.log("Users routes loaded")
 } catch (error) {
-  console.error("❌ Error loading users routes:", error.message)
+  console.error("Error loading users routes:", error.message)
   process.exit(1)
 }
 
 try {
   console.log("Loading voters routes...")
   app.use("/api/voters", authMiddleware, authorizeRoles("admin", "election_committee"), adminLimiter, require("./src/routes/voters"))
-  console.log("✅ Voters routes loaded")
+  console.log("Voters routes loaded")
 } catch (error) {
-  console.error("❌ Error loading voters routes:", error.message)
+  console.error("Error loading voters routes:", error.message)
   process.exit(1)
 }
 
 try {
   console.log("Loading candidates routes...")
   app.use("/api/candidates", require("./src/routes/candidate"))
-  console.log("✅ Candidates routes loaded")
+  console.log("Candidates routes loaded")
 } catch (error) {
-  console.error("❌ Error loading candidates routes:", error.message)
+  console.error("Error loading candidates routes:", error.message)
   process.exit(1)
 }
 
 try {
   console.log("Loading degrees routes...")
   app.use("/api/degrees", require("./src/routes/degrees"))
-  console.log("✅ Degrees routes loaded")
+  console.log("Degrees routes loaded")
 } catch (error) {
-  console.error("❌ Error loading degrees routes:", error.message)
+  console.error("Error loading degrees routes:", error.message)
   process.exit(1)
 }
 
 try {
   console.log("Loading audit-logs routes...")
   app.use("/api/audit-logs", require("./src/routes/audit-logs"))
-  console.log("✅ Audit-logs routes loaded")
+  console.log("Audit-logs routes loaded")
 } catch (error) {
-  console.error("❌ Error loading audit-logs routes:", error.message)
+  console.error("Error loading audit-logs routes:", error.message)
   process.exit(1)
 }
 
 try {
   console.log("Loading elections routes...")
   app.use("/api/elections", require("./src/routes/elections"))
-  console.log("✅ Elections routes loaded")
+  console.log("Elections routes loaded")
 } catch (error) {
-  console.error("❌ Error loading elections routes:", error.message)
+  console.error("Error loading elections routes:", error.message)
   process.exit(1)
 }
 
 try {
   console.log("Loading positions routes...")
   app.use("/api/positions", require("./src/routes/positions"))
-  console.log("✅ Positions routes loaded")
+  console.log("Positions routes loaded")
 } catch (error) {
-  console.error("❌ Error loading positions routes:", error.message)
+  console.error("Error loading positions routes:", error.message)
   process.exit(1)
 }
 
 try {
   console.log("Loading ballots routes...")
   app.use("/api/ballots", require("./src/routes/ballot"))
-  console.log("✅ Ballots routes loaded")
+  console.log("Ballots routes loaded")
 } catch (error) {
-  console.error("❌ Error loading ballots routes:", error.message)
+  console.error("Error loading ballots routes:", error.message)
   process.exit(1)
 }
 
 try {
   console.log("Loading partylist routes...")
   app.use("/api/partylists", require("./src/routes/partylist"))
-  console.log("✅ Partylist routes loaded")
+  console.log("Partylist routes loaded")
 } catch (error) {
-  console.error("❌ Error loading partylist routes:", error.message)
+  console.error("Error loading partylist routes:", error.message)
   process.exit(1)
 }
 
 try {
   console.log("Loading voting routes...")
   app.use("/api/voting", votingLimiter, require("./src/routes/voting"))
-  console.log("✅ Voting routes loaded")
+  console.log(" Voting routes loaded")
 } catch (error) {
-  console.error("❌ Error loading voting routes:", error.message)
+  console.error("Error loading voting routes:", error.message)
   process.exit(1)
 }
 
 try {
   console.log("Loading election-participation routes...")
   app.use("/api/election-participation", authMiddleware, voterLimiter, require("./src/routes/electionParticipation"))
-  console.log("✅ Election-participation routes loaded")
+  console.log("Election-participation routes loaded")
 } catch (error) {
-  console.error("❌ Error loading election-participation routes:", error.message)
+  console.error("Error loading election-participation routes:", error.message)
   process.exit(1)
 }
 
 try {
   console.log("Loading chat-support routes...")
   app.use("/api/chat-support", chatSupportLimiter, require("./src/routes/chat-support"))
-  console.log("✅ Chat-support routes loaded")
+  console.log("Chat-support routes loaded")
 } catch (error) {
-  console.error("❌ Error loading chat-support routes:", error.message)
+  console.error("Error loading chat-support routes:", error.message)
   process.exit(1)
 }
 
 try {
   console.log("Loading dashboard routes...")
   app.use("/api/dashboard", dashboardLimiter, require("./src/routes/dashboard"))
-  console.log("✅ Dashboard routes loaded")
+  console.log("Dashboard routes loaded")
 } catch (error) {
-  console.error("❌ Error loading dashboard routes:", error.message)
+  console.error("Error loading dashboard routes:", error.message)
   process.exit(1)
 }
 
-console.log("✅ All routes loaded successfully")
+try {
+  console.log("Loading SSG election routes...")
+  app.use("/api/ssgElections", require("./src/routes/ssgElection"))
+  console.log("SSG election routes loaded")
+} catch (error) {
+  console.error("âŒ Error loading SSG election routes:", error.message)
+  process.exit(1)
+}
+
+try {
+  console.log("Loading departmental election routes...")
+  app.use("/api/departmentalElections", require("./src/routes/departmentalElection"))
+  console.log(" Departmental election routes loaded")
+} catch (error) {
+  console.error("Error loading departmental election routes:", error.message)
+  process.exit(1)
+}
+
+console.log("All routes loaded successfully")
 
 /* ---------------- ERROR HANDLERS ---------------- */
 app.use(errorHandler)
@@ -204,9 +222,9 @@ app.use((req, res) => {
 /* ---------------- SERVER START ---------------- */
 const PORT = process.env.PORT || 5000
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`)
-  console.log(`🏥 Health check: http://localhost:${PORT}/api/health`)
-  console.log(`📋 Available routes:`)
+  console.log(` Server running on port ${PORT}`)
+  console.log(` Health check: http://localhost:${PORT}/api/health`)
+  console.log(` Available routes:`)
   console.log(`   - POST http://localhost:${PORT}/api/auth/login`)
   console.log(`   - POST http://localhost:${PORT}/api/auth/voter-login`)
   console.log(`   - POST http://localhost:${PORT}/api/auth/pre-register-step1`)
@@ -227,10 +245,10 @@ app.listen(PORT, () => {
   console.log(`   - GET  http://localhost:${PORT}/api/dashboard/committee (Protected - Committee)`)
   console.log(`   - GET  http://localhost:${PORT}/api/dashboard/sao (Protected - SAO)`)
   console.log(`   - GET  http://localhost:${PORT}/api/dashboard/voter (Protected - Voter)`)
-  console.log(`   - POST http://localhost:${PORT}/api/election-participation/confirm (Protected - Voters)`)
-  console.log(`   - POST http://localhost:${PORT}/api/election-participation/withdraw (Protected - Voters)`)
-  console.log(`   - GET  http://localhost:${PORT}/api/election-participation/election/:id/participants (Protected - Admin)`)
-  console.log(`   - GET  http://localhost:${PORT}/api/election-participation/election/:id/stats (Protected - Admin)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/ssgElections (Protected - Admin/Committee/SAO)`)
+  console.log(`   - POST http://localhost:${PORT}/api/ssgElections (Protected - Admin/Committee)`)
+  console.log(`   - GET  http://localhost:${PORT}/api/departmentalElections (Protected - Admin/Committee/SAO/Voters)`)
+  console.log(`   - POST http://localhost:${PORT}/api/departmentalElections (Protected - Admin/Committee)`)
 })
 
 module.exports = app

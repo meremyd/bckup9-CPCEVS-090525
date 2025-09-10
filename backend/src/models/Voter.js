@@ -4,7 +4,7 @@ const bcrypt = require("bcryptjs")
 const voterSchema = new mongoose.Schema(
   {
     schoolId: {
-      type: Number, // Keep as Number for consistency
+      type: Number, 
       required: true,
       unique: true,
     },
@@ -27,10 +27,22 @@ const voterSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
-    degreeId: {
+    departmentId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Degree",
+      ref: "Department",
       required: true,
+    },
+    yearLevel: {
+      type: Number,
+      required: true,
+      min: 1,
+      max: 4,
+      validate: {
+        validator: function(v) {
+          return Number.isInteger(v) && v >= 1 && v <= 4;
+        },
+        message: 'Year level must be an integer between 1 and 4'
+      }
     },
     email: {
       type: String,
@@ -86,8 +98,13 @@ const voterSchema = new mongoose.Schema(
 // Indexes for better query performance
 voterSchema.index({ schoolId: 1 })
 voterSchema.index({ email: 1 })
-voterSchema.index({ degreeId: 1 })
+voterSchema.index({ departmentId: 1 })
 voterSchema.index({ isRegistered: 1 })
+voterSchema.index({ yearLevel: 1 })
+
+// Compound indexes for common queries
+voterSchema.index({ departmentId: 1, yearLevel: 1 })
+voterSchema.index({ isActive: 1, isRegistered: 1 })
 
 // Simplified password handling - only hash when password is modified and not already hashed
 voterSchema.pre('save', async function(next) {
@@ -138,5 +155,20 @@ voterSchema.virtual('fullName').get(function() {
   const middle = this.middleName ? ` ${this.middleName}` : '';
   return `${this.firstName}${middle} ${this.lastName}`;
 });
+
+// Virtual for year level display
+voterSchema.virtual('yearLevelDisplay').get(function() {
+  const yearNames = {
+    1: '1st Year',
+    2: '2nd Year', 
+    3: '3rd Year',
+    4: '4th Year'
+  };
+  return yearNames[this.yearLevel] || `${this.yearLevel} Year`;
+});
+
+// Ensure virtual fields are serialized
+voterSchema.set('toJSON', { virtuals: true });
+voterSchema.set('toObject', { virtuals: true });
 
 module.exports = mongoose.model("Voter", voterSchema)

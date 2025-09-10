@@ -1,4 +1,3 @@
-// backend/src/models/ElectionParticipation.js (UPDATED - REMOVED yearLevelRestriction)
 const mongoose = require("mongoose")
 
 const electionParticipationSchema = new mongoose.Schema(
@@ -8,10 +7,15 @@ const electionParticipationSchema = new mongoose.Schema(
       ref: "Voter",
       required: true,
     },
-    electionId: {
+    deptElectionId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Election", 
-      required: true,
+      ref: "DepartmentalElection",
+      default: null,
+    },
+    ssgElectionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "SSGElection",
+      default: null,
     },
     confirmedAt: {
       type: Date,
@@ -26,10 +30,10 @@ const electionParticipationSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-    confirmationSource: {
-      type: String,
-      enum: ["web", "mobile", "admin", "import"],
-      default: "web",
+    departmentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Department",
+      required: true,
     },
     eligibilityCheckedAt: {
       type: Date,
@@ -51,14 +55,17 @@ const electionParticipationSchema = new mongoose.Schema(
 )
 
 // Compound index to ensure a voter can only confirm once per election
-electionParticipationSchema.index({ voterId: 1, electionId: 1 }, { unique: true })
+electionParticipationSchema.index({ voterId: 1, deptElectionId: 1 }, { unique: true, sparse: true })
+electionParticipationSchema.index({ voterId: 1, ssgElectionId: 1 }, { unique: true, sparse: true })
 
 // Indexes for better query performance
-electionParticipationSchema.index({ electionId: 1, status: 1 })
+electionParticipationSchema.index({ deptElectionId: 1, status: 1 })
+electionParticipationSchema.index({ ssgElectionId: 1, status: 1 })
 electionParticipationSchema.index({ voterId: 1 })
 electionParticipationSchema.index({ confirmedAt: 1 })
 electionParticipationSchema.index({ hasVoted: 1 })
 electionParticipationSchema.index({ departmentRestriction: 1 })
+electionParticipationSchema.index({ departmentId: 1 })
 
 // Method to mark as voted
 electionParticipationSchema.methods.markAsVoted = function() {
@@ -75,9 +82,13 @@ electionParticipationSchema.methods.withdraw = function() {
 }
 
 // Static method to get participation stats for an election
-electionParticipationSchema.statics.getElectionStats = async function(electionId) {
+electionParticipationSchema.statics.getElectionStats = async function(electionId, electionType) {
+  const matchCondition = electionType === 'departmental' 
+    ? { deptElectionId: new mongoose.Types.ObjectId(electionId) }
+    : { ssgElectionId: new mongoose.Types.ObjectId(electionId) }
+    
   const stats = await this.aggregate([
-    { $match: { electionId: new mongoose.Types.ObjectId(electionId) } },
+    { $match: matchCondition },
     {
       $group: {
         _id: null,
@@ -106,9 +117,13 @@ electionParticipationSchema.statics.getElectionStats = async function(electionId
 }
 
 // Static method to get participation stats by department
-electionParticipationSchema.statics.getElectionStatsByDepartment = async function(electionId) {
+electionParticipationSchema.statics.getElectionStatsByDepartment = async function(electionId, electionType) {
+  const matchCondition = electionType === 'departmental' 
+    ? { deptElectionId: new mongoose.Types.ObjectId(electionId) }
+    : { ssgElectionId: new mongoose.Types.ObjectId(electionId) }
+    
   const stats = await this.aggregate([
-    { $match: { electionId: new mongoose.Types.ObjectId(electionId) } },
+    { $match: matchCondition },
     {
       $lookup: {
         from: 'voters',

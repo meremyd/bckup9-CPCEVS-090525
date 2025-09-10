@@ -2,10 +2,20 @@ const mongoose = require("mongoose")
 
 const ballotSchema = new mongoose.Schema(
   {
-    electionId: {
+    deptElectionId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Election",
-      required: true,
+      ref: "DepartmentalElection",
+      default: null,
+    },
+    ssgElectionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "SSGElection",
+      default: null,
+    },
+    currentPositionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Position",
+      default: null, // Only used for departmental elections
     },
     voterId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -39,4 +49,8 @@ const ballotSchema = new mongoose.Schema(
   },
 )
 
+// Compound index to ensure unique ballot per voter per position in departmental elections
+ballotSchema.index({ deptElectionId: 1, voterId: 1, currentPositionId: 1 }, { unique: true, sparse: true })
+// Index for SSG elections (one ballot per voter per election)
+ballotSchema.index({ ssgElectionId: 1, voterId: 1 }, { unique: true, sparse: true })
 module.exports = mongoose.model("Ballot", ballotSchema)

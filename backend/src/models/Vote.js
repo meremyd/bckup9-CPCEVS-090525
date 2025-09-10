@@ -20,11 +20,17 @@ const voteSchema = new mongoose.Schema(
       required: true,
       index: true // Add index for position-based queries
     },
-    // Add election reference for easier querying
-    electionId: {
+    // Add election references for easier querying
+    deptElectionId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Election",
-      required: true,
+      ref: "DepartmentalElection",
+      default: null,
+      index: true
+    },
+    ssgElectionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "SSGElection",
+      default: null,
       index: true
     },
     voteTimestamp: {
@@ -47,16 +53,19 @@ const voteSchema = new mongoose.Schema(
 
 // Compound indexes for preventing duplicate votes and improving performance
 voteSchema.index({ ballotId: 1, positionId: 1 }, { unique: true }) // Prevent multiple votes for same position in same ballot
-voteSchema.index({ electionId: 1, candidateId: 1 }) // For candidate vote counting
-voteSchema.index({ electionId: 1, positionId: 1 }) // For position-based analytics
+voteSchema.index({ deptElectionId: 1, candidateId: 1 }) // For candidate vote counting
+voteSchema.index({ ssgElectionId: 1, candidateId: 1 }) // For candidate vote counting
+voteSchema.index({ deptElectionId: 1, positionId: 1 }) // For position-based analytics
+voteSchema.index({ ssgElectionId: 1, positionId: 1 }) // For position-based analytics
 
-// Pre-save middleware to auto-populate electionId from candidate
+// Pre-save middleware to auto-populate election references from candidate
 voteSchema.pre('save', async function(next) {
-  if (this.isNew && !this.electionId) {
+  if (this.isNew && !this.deptElectionId && !this.ssgElectionId) {
     try {
       const candidate = await mongoose.model('Candidate').findById(this.candidateId)
       if (candidate) {
-        this.electionId = candidate.electionId
+        this.deptElectionId = candidate.deptElectionId
+        this.ssgElectionId = candidate.ssgElectionId
       }
     } catch (error) {
       return next(error)
@@ -86,7 +95,10 @@ voteSchema.methods.verifyVoteIntegrity = async function() {
     }
 
     // Check if election matches
-    if (!candidate.electionId.equals(this.electionId)) {
+    const electionMatches = (candidate.deptElectionId && this.deptElectionId && candidate.deptElectionId.equals(this.deptElectionId)) ||
+                           (candidate.ssgElectionId && this.ssgElectionId && candidate.ssgElectionId.equals(this.ssgElectionId))
+    
+    if (!electionMatches) {
       return { valid: false, reason: 'Election mismatch' }
     }
 
@@ -97,9 +109,13 @@ voteSchema.methods.verifyVoteIntegrity = async function() {
 }
 
 // Static method to get vote counts for an election
-voteSchema.statics.getElectionResults = async function(electionId) {
+voteSchema.statics.getElectionResults = async function(electionId, electionType) {
+  const matchCondition = electionType === 'departmental' 
+    ? { deptElectionId: new mongoose.Types.ObjectId(electionId) }
+    : { ssgElectionId: new mongoose.Types.ObjectId(electionId) }
+    
   return await this.aggregate([
-    { $match: { electionId: new mongoose.Types.ObjectId(electionId) } },
+    { $match: matchCondition },
     {
       $group: {
         _id: {
@@ -142,8 +158,12 @@ voteSchema.statics.hasVotedForPosition = async function(ballotId, positionId) {
 }
 
 // Static method to get total votes cast in an election
-voteSchema.statics.getTotalVotesInElection = async function(electionId) {
-  return await this.countDocuments({ electionId })
+voteSchema.statics.getTotalVotesInElection = async function(electionId, electionType) {
+  const matchCondition = electionType === 'departmental' 
+    ? { deptElectionId: electionId }
+    : { ssgElectionId: electionId }
+    
+  return await this.countDocuments(matchCondition)
 }
 
 module.exports = mongoose.model("Vote", voteSchema)

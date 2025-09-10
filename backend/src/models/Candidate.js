@@ -7,10 +7,15 @@ const candidateSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-    electionId: {
+    deptElectionId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Election",
-      required: true,
+      ref: "DepartmentalElection",
+      default: null,
+    },
+    ssgElectionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "SSGElection",
+      default: null,
     },
     voterId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -54,7 +59,9 @@ const candidateSchema = new mongoose.Schema(
 )
 
 // Compound index to ensure unique candidate per position per election
-candidateSchema.index({ electionId: 1, positionId: 1, candidateNumber: 1 }, { unique: true })
-candidateSchema.index({ electionId: 1, voterId: 1 }, { unique: true })
+candidateSchema.index({ deptElectionId: 1, positionId: 1, candidateNumber: 1 }, { unique: true, sparse: true })
+candidateSchema.index({ ssgElectionId: 1, positionId: 1, candidateNumber: 1 }, { unique: true, sparse: true })
+candidateSchema.index({ deptElectionId: 1, voterId: 1 }, { unique: true, sparse: true })
+candidateSchema.index({ ssgElectionId: 1, voterId: 1 }, { unique: true, sparse: true })
 
 module.exports = mongoose.model("Candidate", candidateSchema)
