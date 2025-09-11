@@ -2,11 +2,6 @@ const mongoose = require("mongoose")
 
 const candidateSchema = new mongoose.Schema(
   {
-    candidateId: {
-      type: String,
-      required: true,
-      unique: true,
-    },
     deptElectionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "DepartmentalElection",
@@ -58,10 +53,337 @@ const candidateSchema = new mongoose.Schema(
   },
 )
 
-// Compound index to ensure unique candidate per position per election
+// Compound indexes to ensure unique candidate per position per election
 candidateSchema.index({ deptElectionId: 1, positionId: 1, candidateNumber: 1 }, { unique: true, sparse: true })
 candidateSchema.index({ ssgElectionId: 1, positionId: 1, candidateNumber: 1 }, { unique: true, sparse: true })
 candidateSchema.index({ deptElectionId: 1, voterId: 1 }, { unique: true, sparse: true })
 candidateSchema.index({ ssgElectionId: 1, voterId: 1 }, { unique: true, sparse: true })
+
+// Additional indexes for performance
+candidateSchema.index({ isActive: 1 })
+candidateSchema.index({ candidateNumber: 1 })
+
+// Validation: Must belong to either SSG or Departmental election, not both
+candidateSchema.pre('validate', function(next) {
+  if (!this.ssgElectionId && !this.deptElectionId) {
+    return next(new Error('Candidate must belong to either SSG or Departmental election'))
+  }
+  if (this.ssgElectionId && this.deptElectionId) {
+    return next(new Error('Candidate cannot belong to both SSG and Departmental elections'))
+  }
+  next()
+})
+
+// Validation: Partylists only for SSG candidates
+candidateSchema.pre('validate', function(next) {
+  if (this.partylistId && this.deptElectionId) {
+    return next(new Error('Partylists are only available for SSG candidates'))
+  }
+  next()
+})
+
+// Virtual for election type
+candidateSchema.virtual('electionType').get(function() {
+  return this.ssgElectionId ? 'ssg' : 'departmental'
+})
+
+// Virtual for full name
+candidateSchema.virtual('fullName').get(function() {
+  if (this.populated('voterId') && this.voterId) {
+    const voter = this.voterId
+    const middle = voter.middleName ? ` ${voter.middleName}` : ''
+    return `${voter.firstName}${middle} ${voter.lastName}`
+  }
+  return null
+})
+
+// Ensure virtual fields are serialized
+candidateSchema.set('toJSON', { virtuals: true })
+candidateSchema.set('toObject', { virtuals: true })
+
+// INSTANCE METHODS
+
+// Check if candidate has campaign picture
+candidateSchema.methods.hasCampaignPicture = function() {
+  return this.campaignPicture && this.campaignPicture.length > 0
+}
+
+// Get candidate display name
+candidateSchema.methods.getDisplayName = function() {
+  if (this.populated('voterId') && this.voterId) {
+    const voter = this.voterId
+    const middle = voter.middleName ? ` ${voter.middleName}` : ''
+    return `${voter.firstName}${middle} ${voter.lastName}`
+  }
+  return null
+}
+
+// Get candidate full info for display
+candidateSchema.methods.getDisplayInfo = function() {
+  if (!this.populated('voterId') || !this.voterId) {
+    return null
+  }
+
+  const voter = this.voterId
+  const department = voter.departmentId
+  
+  return {
+    name: this.getDisplayName(),
+    schoolId: voter.schoolId,
+    department: department ? `${department.departmentCode} - ${department.degreeProgram}` : 'Unknown Department',
+    college: department ? department.college : 'Unknown College',
+    yearLevel: `${voter.yearLevel}${voter.yearLevel === 1 ? 'st' : voter.yearLevel === 2 ? 'nd' : voter.yearLevel === 3 ? 'rd' : 'th'} Year`,
+    candidateNumber: this.candidateNumber,
+    position: this.populated('positionId') ? this.positionId.positionName : 'Unknown Position',
+    partylist: this.populated('partylistId') && this.partylistId ? this.partylistId.partylistName : 'Independent',
+    platform: this.platform,
+    isActive: this.isActive,
+    electionType: this.electionType
+  }
+}
+
+// Format candidate for display (simplified)
+candidateSchema.methods.formatForDisplay = function() {
+  return {
+    id: this._id,
+    candidateNumber: this.candidateNumber,
+    name: this.getDisplayName(),
+    schoolId: this.populated('voterId') ? this.voterId.schoolId : null,
+    position: this.populated('positionId') ? this.positionId.positionName : null,
+    positionOrder: this.populated('positionId') ? this.positionId.positionOrder : null,
+    partylist: this.populated('partylistId') && this.partylistId ? this.partylistId.partylistName : null,
+    platform: this.platform,
+    department: this.populated('voterId') && this.voterId.departmentId ? this.voterId.departmentId.departmentCode : null,
+    yearLevel: this.populated('voterId') ? this.voterId.yearLevel : null,
+    electionType: this.electionType,
+    isActive: this.isActive,
+    hasCampaignPicture: this.hasCampaignPicture()
+  }
+}
+
+// STATIC METHODS
+
+// Validate candidate data
+candidateSchema.statics.validateCandidateData = function(candidateData) {
+  const errors = []
+
+  if (!candidateData.voterId) {
+    errors.push('Voter ID is required')
+  }
+
+  if (!candidateData.positionId) {
+    errors.push('Position ID is required')
+  }
+
+  if (!candidateData.ssgElectionId && !candidateData.deptElectionId) {
+    errors.push('Either SSG Election ID or Departmental Election ID is required')
+  }
+
+  if (candidateData.ssgElectionId && candidateData.deptElectionId) {
+    errors.push('Cannot specify both SSG Election ID and Departmental Election ID')
+  }
+
+  if (candidateData.candidateNumber && candidateData.candidateNumber < 1) {
+    errors.push('Candidate number must be positive')
+  }
+
+  // Partylist can only be assigned to SSG candidates
+  if (candidateData.partylistId && candidateData.deptElectionId) {
+    errors.push('Partylists are only available for SSG candidates')
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  }
+}
+
+// Group candidates by position
+candidateSchema.statics.groupByPosition = function(candidates) {
+  return candidates.reduce((acc, candidate) => {
+    const positionId = candidate.positionId._id || candidate.positionId
+    if (!acc[positionId]) {
+      acc[positionId] = {
+        position: candidate.positionId,
+        candidates: []
+      }
+    }
+    acc[positionId].candidates.push(candidate)
+    return acc
+  }, {})
+}
+
+// Filter candidates by partylist
+candidateSchema.statics.filterByPartylist = function(candidates, partylistId) {
+  if (!partylistId) return candidates
+  return candidates.filter(candidate => 
+    candidate.partylistId && (candidate.partylistId._id || candidate.partylistId).toString() === partylistId
+  )
+}
+
+// Filter candidates by election type
+candidateSchema.statics.filterByType = function(candidates, type) {
+  if (!type) return candidates
+  if (type === 'ssg') {
+    return candidates.filter(candidate => candidate.ssgElectionId)
+  } else if (type === 'departmental') {
+    return candidates.filter(candidate => candidate.deptElectionId)
+  }
+  return candidates
+}
+
+// Get candidates statistics
+candidateSchema.statics.getStatistics = function(candidates) {
+  const stats = {
+    total: candidates.length,
+    active: 0,
+    inactive: 0,
+    ssg: 0,
+    departmental: 0,
+    byPosition: {},
+    byPartylist: {},
+    byDepartment: {},
+    byYearLevel: {}
+  }
+
+  candidates.forEach(candidate => {
+    // Active/Inactive count
+    if (candidate.isActive) {
+      stats.active++
+    } else {
+      stats.inactive++
+    }
+
+    // Election type count
+    if (candidate.ssgElectionId) {
+      stats.ssg++
+    } else if (candidate.deptElectionId) {
+      stats.departmental++
+    }
+
+    // By position (handle both populated and unpopulated)
+    const positionName = candidate.positionId?.positionName || 'Unknown Position'
+    stats.byPosition[positionName] = (stats.byPosition[positionName] || 0) + 1
+
+    // By partylist
+    const partylistName = candidate.partylistId?.partylistName || 'Independent'
+    stats.byPartylist[partylistName] = (stats.byPartylist[partylistName] || 0) + 1
+
+    // By department (handle nested population)
+    if (candidate.voterId?.departmentId) {
+      const departmentCode = candidate.voterId.departmentId.departmentCode || 'Unknown Department'
+      stats.byDepartment[departmentCode] = (stats.byDepartment[departmentCode] || 0) + 1
+    }
+
+    // By year level
+    if (candidate.voterId?.yearLevel) {
+      const yearLevel = `${candidate.voterId.yearLevel}${candidate.voterId.yearLevel === 1 ? 'st' : candidate.voterId.yearLevel === 2 ? 'nd' : candidate.voterId.yearLevel === 3 ? 'rd' : 'th'} Year`
+      stats.byYearLevel[yearLevel] = (stats.byYearLevel[yearLevel] || 0) + 1
+    }
+  })
+
+  return stats
+}
+
+// Sort candidates by position order and candidate number
+candidateSchema.statics.sortCandidates = function(candidates) {
+  return [...candidates].sort((a, b) => {
+    // First sort by position order
+    const aOrder = a.positionId?.positionOrder || 0
+    const bOrder = b.positionId?.positionOrder || 0
+    if (aOrder !== bOrder) {
+      return aOrder - bOrder
+    }
+    // Then sort by candidate number
+    return a.candidateNumber - b.candidateNumber
+  })
+}
+
+// Check voting eligibility for voter
+candidateSchema.statics.checkVotingEligibility = function(voter, election, electionType) {
+  const eligibility = {
+    canVote: false,
+    canViewResults: voter.isRegistered,
+    message: '',
+    reasons: []
+  }
+
+  if (!voter.isRegistered || !voter.isPasswordActive) {
+    eligibility.reasons.push('Must be a registered voter')
+    eligibility.message = 'You must be a registered voter to participate in elections'
+    return eligibility
+  }
+
+  if (electionType === 'ssg') {
+    // SSG: Only registered voters can vote
+    eligibility.canVote = true
+    eligibility.message = 'You are eligible to vote in this SSG election'
+  } else if (electionType === 'departmental') {
+    // Departmental: Only registered class officers from the same department can vote
+    const departmentMatch = voter.departmentId._id.toString() === election.departmentId._id.toString()
+    
+    if (!departmentMatch) {
+      eligibility.reasons.push('Must be from the same department')
+      eligibility.message = 'You can only vote in elections for your department'
+    } else if (!voter.isClassOfficer) {
+      eligibility.reasons.push('Must be a class officer')
+      eligibility.message = 'Only registered class officers can vote in departmental elections. You can view statistics and results.'
+    } else {
+      eligibility.canVote = true
+      eligibility.message = 'You are eligible to vote in this departmental election'
+    }
+  }
+
+  return eligibility
+}
+
+// Get next available candidate number for position
+candidateSchema.statics.getNextCandidateNumber = async function(positionId) {
+  const lastCandidate = await this.findOne({
+    positionId
+  }).sort({ candidateNumber: -1 })
+  
+  return lastCandidate ? lastCandidate.candidateNumber + 1 : 1
+}
+
+// Check if candidate number is available for position
+candidateSchema.statics.isCandidateNumberAvailable = async function(positionId, candidateNumber, excludeCandidateId = null) {
+  const query = {
+    positionId,
+    candidateNumber
+  }
+  
+  if (excludeCandidateId) {
+    query._id = { $ne: excludeCandidateId }
+  }
+  
+  const existingCandidate = await this.findOne(query)
+  return !existingCandidate
+}
+
+// Get candidates by election with full population
+candidateSchema.statics.getByElectionWithDetails = async function(electionId, electionType, filters = {}) {
+  const query = { isActive: true }
+  
+  if (electionType === 'ssg') {
+    query.ssgElectionId = electionId
+    query.deptElectionId = null
+  } else {
+    query.deptElectionId = electionId
+    query.ssgElectionId = null
+  }
+  
+  // Apply additional filters
+  if (filters.positionId) query.positionId = filters.positionId
+  if (filters.partylistId) query.partylistId = filters.partylistId
+  if (filters.status !== undefined) query.isActive = filters.status === 'active'
+  
+  return await this.find(query)
+    .populate('voterId', 'schoolId firstName middleName lastName departmentId yearLevel')
+    .populate('voterId.departmentId', 'departmentCode degreeProgram college')
+    .populate('positionId', 'positionName positionOrder maxVotes')
+    .populate('partylistId', 'partylistName description')
+    .sort({ 'positionId.positionOrder': 1, candidateNumber: 1 })
+}
 
 module.exports = mongoose.model("Candidate", candidateSchema)

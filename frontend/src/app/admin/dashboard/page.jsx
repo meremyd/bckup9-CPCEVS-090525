@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Building2, Users, CheckCircle, GraduationCap, User, MessageCircle, FileText, LogOut, ChevronRight, Loader2 } from "lucide-react"
-import { logout } from "../../../lib/auth"
+import { logout, getUserFromToken } from "../../../lib/auth"
 import { dashboardAPI } from '@/lib/api/dashboard'
 
 export default function AdminDashboard() {
@@ -16,27 +16,33 @@ export default function AdminDashboard() {
   useEffect(() => {
     const initializeDashboard = async () => {
       const token = localStorage.getItem("token")
-      const userDataFromStorage = localStorage.getItem("user")
-
-      if (!token || !userDataFromStorage) {
+      
+      if (!token) {
         router.push("/adminlogin")
         return
       }
 
       try {
-        const parsedUser = JSON.parse(userDataFromStorage)
-        setUser(parsedUser)
+        // Use getUserFromToken for better token validation
+        const userFromToken = getUserFromToken()
+        if (!userFromToken) {
+          router.push("/adminlogin")
+          return
+        }
 
-        if (parsedUser.userType !== "admin") {
+        setUser(userFromToken)
+
+        // Check if user is admin
+        if (userFromToken.userType !== "admin") {
           console.warn("Unauthorized access: User is not an admin")
           logout()
           router.push("/adminlogin")
           return
         }
 
-        fetchDashboardData(token)
-      } catch (parseError) {
-        console.error("Error parsing user data:", parseError)
+        await fetchDashboardData()
+      } catch (error) {
+        console.error("Error initializing dashboard:", error)
         logout()
         router.push("/adminlogin")
       }
@@ -45,11 +51,13 @@ export default function AdminDashboard() {
     initializeDashboard()
   }, [router])
 
-  const fetchDashboardData = async (token) => {
+  const fetchDashboardData = async () => {
     try {
+      setLoading(true)
       const data = await dashboardAPI.getAdminDashboard()
-      console.log("[v0] Dashboard data received:", data)
+      console.log("Dashboard data received:", data)
       setDashboardData(data)
+      setError("") // Clear any previous errors
     } catch (error) {
       console.error("Dashboard error:", error)
       if (error.response?.status === 401 || error.response?.status === 403) {
@@ -57,7 +65,18 @@ export default function AdminDashboard() {
         logout()
         router.push("/adminlogin")
       } else {
-        setError(error.message || "Network error - please check if the server is running")
+        // More specific error handling based on error type
+        let errorMessage = "Failed to load dashboard data"
+        
+        if (error.code === 'NETWORK_ERROR' || error.message?.includes('Network Error')) {
+          errorMessage = "Network error - please check if the server is running"
+        } else if (error.response?.status >= 500) {
+          errorMessage = "Server error - please try again later"
+        } else if (error.message) {
+          errorMessage = error.message
+        }
+        
+        setError(errorMessage)
       }
     } finally {
       setLoading(false)
@@ -71,6 +90,11 @@ export default function AdminDashboard() {
 
   const handleCardClick = (path) => {
     router.push(path)
+  }
+
+  const handleRetry = () => {
+    setError("")
+    fetchDashboardData()
   }
 
   if (loading) {
@@ -88,12 +112,12 @@ export default function AdminDashboard() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md mx-auto">
-          <div className="text-red-500 text-6xl mb-4">⚠️</div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">Error</h2>
-          <p className="text-gray-600 mb-4">{error}</p>
+          <div className="text-red-500 text-6xl mb-4 text-center">⚠️</div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2 text-center">Error</h2>
+          <p className="text-gray-600 mb-4 text-center">{error}</p>
           <div className="space-y-2">
             <button
-              onClick={() => window.location.reload()}
+              onClick={handleRetry}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors"
             >
               Retry
@@ -126,29 +150,29 @@ export default function AdminDashboard() {
       icon: <CheckCircle className="w-8 h-8 sm:w-10 md:w-12" />
     },
     {
-      title: "Degrees",
-      value: dashboardData?.totalDegrees || 0,
+      title: "Departments",
+      value: dashboardData?.totalDepartments || dashboardData?.totalDegrees || 0,
       color: "indigo",
-      path: "/admin/degrees",
+      path: "/admin/departments",
       icon: <GraduationCap className="w-8 h-8 sm:w-10 md:w-12" />
     },
     {
       title: "System Users",
-      value: dashboardData?.systemUsers || 0,
+      value: dashboardData?.systemUsers || dashboardData?.totalUsers || 0,
       color: "orange",
       path: "/admin/users",
       icon: <User className="w-8 h-8 sm:w-10 md:w-12" />
     },
     {
-      title: "Messages",
-      value: dashboardData?.totalMessages || dashboardData?.supportRequests || 0,
+      title: "Support Messages",
+      value: dashboardData?.totalMessages || dashboardData?.supportRequests || dashboardData?.totalSupportRequests || 0,
       color: "pink",
-      path: "/admin/messages",
+      path: "/admin/support",
       icon: <MessageCircle className="w-8 h-8 sm:w-10 md:w-12" />
     },
     {
       title: "Audit Logs",
-      value: dashboardData?.auditLogs || 0,
+      value: dashboardData?.auditLogs || dashboardData?.totalAuditLogs || 0,
       color: "purple",
       path: "/admin/audit-logs",
       icon: <FileText className="w-8 h-8 sm:w-10 md:w-12" />
@@ -160,32 +184,38 @@ export default function AdminDashboard() {
       blue: {
         text: "text-blue-600",
         bg: "bg-blue-100",
-        hover: "hover:bg-blue-50"
+        hover: "hover:bg-blue-50",
+        border: "border-blue-200"
       },
       green: {
         text: "text-green-600",
         bg: "bg-green-100",
-        hover: "hover:bg-green-50"
+        hover: "hover:bg-green-50",
+        border: "border-green-200"
       },
       orange: {
         text: "text-orange-600",
         bg: "bg-orange-100",
-        hover: "hover:bg-orange-50"
+        hover: "hover:bg-orange-50",
+        border: "border-orange-200"
       },
       purple: {
         text: "text-purple-600",
         bg: "bg-purple-100",
-        hover: "hover:bg-purple-50"
+        hover: "hover:bg-purple-50",
+        border: "border-purple-200"
       },
       indigo: {
         text: "text-indigo-600",
         bg: "bg-indigo-100",
-        hover: "hover:bg-indigo-50"
+        hover: "hover:bg-indigo-50",
+        border: "border-indigo-200"
       },
       pink: {
         text: "text-pink-600",
         bg: "bg-pink-100",
-        hover: "hover:bg-pink-50"
+        hover: "hover:bg-pink-50",
+        border: "border-pink-200"
       }
     }
     return colorMap[color] || colorMap.blue
@@ -200,16 +230,22 @@ export default function AdminDashboard() {
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center mr-3">
               <Building2 className="w-5 h-5 text-white" />
             </div>
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Admin Dashboard</h1>
+            <div>
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Admin Dashboard</h1>
+              <p className="text-xs sm:text-sm text-gray-500">Student Government Election System</p>
+            </div>
           </div>
           <div className="flex items-center space-x-2 sm:space-x-4">
-            <span className="text-xs sm:text-sm text-gray-600 hidden sm:block">Welcome, {user?.username}</span>
+            <div className="text-right hidden sm:block">
+              <p className="text-xs text-gray-500">Welcome back,</p>
+              <p className="text-sm font-medium text-gray-700">{user?.username}</p>
+            </div>
             <button
               onClick={handleLogout}
-              className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-200"
             >
               <LogOut className="w-4 h-4 mr-1 sm:mr-2" />
-              Logout
+              <span className="hidden sm:inline">Logout</span>
             </button>
           </div>
         </div>
@@ -218,6 +254,7 @@ export default function AdminDashboard() {
       {/* Main Content */}
       <div className="p-4 sm:p-6 lg:p-8">
         <div className="max-w-7xl mx-auto">
+          {/* Dashboard Stats Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
             {dashboardCards.map((card, index) => {
               const colors = getColorClasses(card.color)
@@ -225,7 +262,7 @@ export default function AdminDashboard() {
                 <div
                   key={index}
                   onClick={() => handleCardClick(card.path)}
-                  className={`bg-white rounded-xl shadow-lg cursor-pointer transform hover:scale-105 transition-all duration-200 hover:shadow-xl ${colors.hover} h-48 lg:h-56 flex flex-col justify-center`}
+                  className={`bg-white rounded-xl shadow-lg cursor-pointer transform hover:scale-105 transition-all duration-200 hover:shadow-xl ${colors.hover} border ${colors.border} h-48 lg:h-56 flex flex-col justify-center`}
                 >
                   <div className="p-3 sm:p-4 lg:p-5 text-center h-full flex flex-col justify-center">
                     {/* Icon */}
@@ -241,7 +278,7 @@ export default function AdminDashboard() {
                         {card.title}
                       </p>
                       <p className={`text-2xl sm:text-3xl lg:text-4xl font-bold ${colors.text} mb-4`}>
-                        {card.value}
+                        {typeof card.value === 'number' ? card.value.toLocaleString() : card.value}
                       </p>
                     </div>
 
@@ -256,6 +293,8 @@ export default function AdminDashboard() {
               )
             })}
           </div>
+
+
         </div>
       </div>
     </div>

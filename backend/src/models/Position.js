@@ -46,7 +46,7 @@ const positionSchema = new mongoose.Schema(
   },
 )
 
-// Compound index to ensure unique position per election
+
 positionSchema.index({ deptElectionId: 1, positionName: 1 }, { unique: true, sparse: true })
 positionSchema.index({ ssgElectionId: 1, positionName: 1 }, { unique: true, sparse: true })
 positionSchema.index({ deptElectionId: 1, positionOrder: 1 })

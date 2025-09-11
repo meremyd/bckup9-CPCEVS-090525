@@ -3,7 +3,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { X, Loader2 } from "lucide-react"
-import { authAPI } from '../../lib/api/auth'
+import { login } from '../../lib/auth'
 
 export default function AdminLogin() {
   const router = useRouter()
@@ -22,44 +22,24 @@ export default function AdminLogin() {
     setError("")
 
     try {
-      const data = await authAPI.login({
-        username: form.username,
-        password: form.password,
-      })
-      
-      localStorage.setItem("token", data.token)
-      localStorage.setItem("user", JSON.stringify(data.user))
-
-      console.log("Login successful, user type:", data.user.userType)
-
-      switch (data.user.userType) {
-        case "admin":
-          router.push("/admin/dashboard")
-          break
-        case "election_committee":
-          router.push("/ecommittee/dashboard")
-          break
-        case "sao":
-          router.push("/sao/dashboard")
-          break
-        default:
-          router.push("/admin/dashboard")
-      }
+      // Use the login function from auth.js which handles token storage and redirects
+      await login(form.username, form.password)
+      // The login function will handle the redirect automatically
     } catch (error) {
       console.error("Login error:", error)
       
-      let errorMessage = "Login failed. Please try again."
+      // The error messages are already processed by the API interceptors
+      let errorMessage = error.message || "Login failed. Please try again."
       
-      if (error.message) {
-        if (error.message.includes("Invalid credentials")) {
-          errorMessage = "Invalid username or password. Please check your credentials and try again."
-        } else if (error.message.includes("Too many")) {
-          errorMessage = "Too many login attempts. Please wait 15 minutes before trying again."
-        } else if (error.message.includes("Network Error")) {
-          errorMessage = "Connection error. Please check your internet connection and try again."
-        } else {
-          errorMessage = error.message
-        }
+      // Additional client-side error handling for specific cases
+      if (error.name === 'NetworkError' || error.code === 'NETWORK_ERROR') {
+        errorMessage = "Connection error. Please check your internet connection and try again."
+      } else if (error.response?.status === 429) {
+        errorMessage = "Too many login attempts. Please wait 15 minutes before trying again."
+      } else if (error.response?.status === 401) {
+        errorMessage = "Invalid username or password. Please check your credentials and try again."
+      } else if (error.response?.status >= 500) {
+        errorMessage = "Server error. Please try again later or contact support."
       }
       
       setError(errorMessage)
@@ -108,6 +88,7 @@ export default function AdminLogin() {
                 placeholder="Enter your username"
                 required
                 disabled={loading}
+                autoComplete="username"
               />
             </div>
           </div>
@@ -127,6 +108,7 @@ export default function AdminLogin() {
                 placeholder="Enter your password"
                 required
                 disabled={loading}
+                autoComplete="current-password"
               />
             </div>
           </div>
@@ -146,6 +128,7 @@ export default function AdminLogin() {
             )}
           </button>
         </form>
+
       </div>
     </div>
   )

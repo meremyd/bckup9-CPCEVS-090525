@@ -88,6 +88,208 @@ class BallotController {
     }
   }
 
+  static async getAllBallots(req, res, next) {
+  try {
+    const { page = 1, limit = 10, type = 'all', status, electionId } = req.query
+    
+    const pageNum = parseInt(page)
+    const limitNum = parseInt(limit)
+    
+    let ssgBallots = []
+    let departmentalBallots = []
+    
+    // Get SSG ballots if requested
+    if (type === 'all' || type === 'ssg') {
+      const ssgQuery = { ssgElectionId: { $ne: null } }
+      if (electionId) ssgQuery.ssgElectionId = electionId
+      if (status === 'submitted') ssgQuery.isSubmitted = true
+      if (status === 'pending') ssgQuery.isSubmitted = false
+
+      ssgBallots = await Ballot.find(ssgQuery)
+        .populate('ssgElectionId', 'title electionDate status')
+        .populate('voterId', 'schoolId firstName lastName departmentId yearLevel')
+        .populate('voterId.departmentId', 'departmentCode degreeProgram college')
+        .sort({ createdAt: -1 })
+        .lean()
+    }
+    
+    // Get Departmental ballots if requested
+    if (type === 'all' || type === 'departmental') {
+      const deptQuery = { deptElectionId: { $ne: null } }
+      if (electionId) deptQuery.deptElectionId = electionId
+      if (status === 'submitted') deptQuery.isSubmitted = true
+      if (status === 'pending') deptQuery.isSubmitted = false
+
+      departmentalBallots = await Ballot.find(deptQuery)
+        .populate('deptElectionId', 'title electionDate status departmentId')
+        .populate('deptElectionId.departmentId', 'departmentCode degreeProgram college')
+        .populate('voterId', 'schoolId firstName lastName departmentId yearLevel')
+        .populate('voterId.departmentId', 'departmentCode degreeProgram college')
+        .populate('currentPositionId', 'positionName positionOrder')
+        .sort({ createdAt: -1 })
+        .lean()
+    }
+
+    // Combine and mark ballot types
+    const allBallots = [
+      ...ssgBallots.map(ballot => ({ ...ballot, ballotType: 'SSG' })),
+      ...departmentalBallots.map(ballot => ({ ...ballot, ballotType: 'Departmental' }))
+    ]
+
+    // Sort combined results by creation date
+    allBallots.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+
+    // Apply pagination
+    const startIndex = (pageNum - 1) * limitNum
+    const endIndex = startIndex + limitNum
+    const paginatedBallots = allBallots.slice(startIndex, endIndex)
+
+    const totalPages = Math.ceil(allBallots.length / limitNum)
+
+    await AuditLog.logUserAction(
+      "DATA_EXPORT",
+      req.user,
+      `Retrieved ${paginatedBallots.length} combined ballots (type: ${type})`,
+      req
+    )
+
+    res.json({
+      ballots: paginatedBallots,
+      totalPages,
+      currentPage: pageNum,
+      total: allBallots.length,
+      totalSSG: ssgBallots.length,
+      totalDepartmental: departmentalBallots.length
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// Get combined ballot statistics
+static async getBallotStatistics(req, res, next) {
+  try {
+    const { type = 'all', electionId } = req.query
+
+    let stats = {
+      totalBallots: 0,
+      submittedBallots: 0,
+      pendingBallots: 0,
+      turnoutRate: 0,
+      ssgStats: null,
+      departmentalStats: null
+    }
+
+    // Get SSG statistics
+    if (type === 'all' || type === 'ssg') {
+      const ssgQuery = { ssgElectionId: { $ne: null } }
+      if (electionId) ssgQuery.ssgElectionId = electionId
+
+      const ssgTotal = await Ballot.countDocuments(ssgQuery)
+      const ssgSubmitted = await Ballot.countDocuments({ ...ssgQuery, isSubmitted: true })
+      const ssgPending = ssgTotal - ssgSubmitted
+
+      stats.ssgStats = {
+        totalBallots: ssgTotal,
+        submittedBallots: ssgSubmitted,
+        pendingBallots: ssgPending,
+        turnoutRate: ssgTotal > 0 ? Math.round((ssgSubmitted / ssgTotal) * 100) : 0
+      }
+
+      if (type === 'ssg') {
+        stats.totalBallots = ssgTotal
+        stats.submittedBallots = ssgSubmitted
+        stats.pendingBallots = ssgPending
+        stats.turnoutRate = stats.ssgStats.turnoutRate
+      }
+    }
+
+    // Get Departmental statistics
+    if (type === 'all' || type === 'departmental') {
+      const deptQuery = { deptElectionId: { $ne: null } }
+      if (electionId) deptQuery.deptElectionId = electionId
+
+      const deptTotal = await Ballot.countDocuments(deptQuery)
+      const deptSubmitted = await Ballot.countDocuments({ ...deptQuery, isSubmitted: true })
+      const deptPending = deptTotal - deptSubmitted
+
+      stats.departmentalStats = {
+        totalBallots: deptTotal,
+        submittedBallots: deptSubmitted,
+        pendingBallots: deptPending,
+        turnoutRate: deptTotal > 0 ? Math.round((deptSubmitted / deptTotal) * 100) : 0
+      }
+
+      if (type === 'departmental') {
+        stats.totalBallots = deptTotal
+        stats.submittedBallots = deptSubmitted
+        stats.pendingBallots = deptPending
+        stats.turnoutRate = stats.departmentalStats.turnoutRate
+      }
+    }
+
+    // Combine statistics if type is 'all'
+    if (type === 'all' && stats.ssgStats && stats.departmentalStats) {
+      stats.totalBallots = stats.ssgStats.totalBallots + stats.departmentalStats.totalBallots
+      stats.submittedBallots = stats.ssgStats.submittedBallots + stats.departmentalStats.submittedBallots
+      stats.pendingBallots = stats.ssgStats.pendingBallots + stats.departmentalStats.pendingBallots
+      stats.turnoutRate = stats.totalBallots > 0 ? Math.round((stats.submittedBallots / stats.totalBallots) * 100) : 0
+    }
+
+    // Get ballot counts by election type for dashboard
+    const ballotsByType = await Ballot.aggregate([
+      {
+        $group: {
+          _id: null,
+          ssgBallots: {
+            $sum: { $cond: [{ $ne: ['$ssgElectionId', null] }, 1, 0] }
+          },
+          departmentalBallots: {
+            $sum: { $cond: [{ $ne: ['$deptElectionId', null] }, 1, 0] }
+          },
+          ssgSubmitted: {
+            $sum: {
+              $cond: [
+                { $and: [{ $ne: ['$ssgElectionId', null] }, '$isSubmitted'] },
+                1,
+                0
+              ]
+            }
+          },
+          departmentalSubmitted: {
+            $sum: {
+              $cond: [
+                { $and: [{ $ne: ['$deptElectionId', null] }, '$isSubmitted'] },
+                1,
+                0
+              ]
+            }
+          }
+        }
+      }
+    ])
+
+    await AuditLog.logUserAction(
+      "DATA_EXPORT",
+      req.user,
+      `Retrieved combined ballot statistics (type: ${type})`,
+      req
+    )
+
+    res.json({
+      ...stats,
+      breakdown: ballotsByType[0] || {
+        ssgBallots: 0,
+        departmentalBallots: 0,
+        ssgSubmitted: 0,
+        departmentalSubmitted: 0
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
   // Get ballot by ID
   static async getBallotById(req, res, next) {
     try {
@@ -1152,6 +1354,10 @@ class BallotController {
       next(error)
     }
   }
+
+  
+
+  
 }
 
 module.exports = BallotController

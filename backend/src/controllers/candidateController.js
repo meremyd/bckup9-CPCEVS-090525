@@ -154,7 +154,7 @@ class CandidateController {
       await AuditLog.logUserAction(
         "SYSTEM_ACCESS",
         req.user,
-        `Retrieved candidate ${id} - ${candidate.voterId.firstName} ${candidate.voterId.lastName}`,
+        `Retrieved candidate ${id} - ${candidate.getDisplayName()}`,
         req
       )
 
@@ -193,50 +193,43 @@ class CandidateController {
         isActive = true
       } = req.body
 
-      // Validation
-      if (!voterId || !positionId) {
+      // Use model validation
+      const validation = Candidate.validateCandidateData(req.body)
+      if (!validation.isValid) {
         await AuditLog.logUserAction(
           'UNAUTHORIZED_ACCESS_ATTEMPT',
           req.user || {},
-          `Invalid candidate creation attempt - missing required fields`,
+          `Invalid candidate creation attempt: ${validation.errors.join(', ')}`,
           req
         )
         
-        const error = new Error("Voter ID and Position ID are required")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      // Must specify either SSG or Departmental election, not both
-      if ((!ssgElectionId && !deptElectionId) || (ssgElectionId && deptElectionId)) {
-        await AuditLog.logUserAction(
-          'UNAUTHORIZED_ACCESS_ATTEMPT',
-          req.user || {},
-          `Invalid candidate creation attempt - must specify either SSG or Departmental election`,
-          req
-        )
-        
-        const error = new Error("Must specify either SSG Election or Departmental Election, not both")
+        const error = new Error(validation.errors.join(', '))
         error.statusCode = 400
         return next(error)
       }
 
       // Validate ObjectIds
-      if (!mongoose.Types.ObjectId.isValid(voterId) ||
-          !mongoose.Types.ObjectId.isValid(positionId) ||
-          (ssgElectionId && !mongoose.Types.ObjectId.isValid(ssgElectionId)) ||
-          (deptElectionId && !mongoose.Types.ObjectId.isValid(deptElectionId)) ||
-          (partylistId && !mongoose.Types.ObjectId.isValid(partylistId))) {
-        await AuditLog.logUserAction(
-          'UNAUTHORIZED_ACCESS_ATTEMPT',
-          req.user || {},
-          `Invalid candidate creation attempt - invalid ID formats`,
-          req
-        )
-        
-        const error = new Error("Invalid ID format")
-        error.statusCode = 400
-        return next(error)
+      const ids = [
+        { id: voterId, name: 'voterId' },
+        { id: positionId, name: 'positionId' },
+        { id: ssgElectionId, name: 'ssgElectionId' },
+        { id: deptElectionId, name: 'deptElectionId' },
+        { id: partylistId, name: 'partylistId' }
+      ]
+
+      for (const { id, name } of ids) {
+        if (id && !mongoose.Types.ObjectId.isValid(id)) {
+          await AuditLog.logUserAction(
+            'UNAUTHORIZED_ACCESS_ATTEMPT',
+            req.user || {},
+            `Invalid ${name} format: ${id}`,
+            req
+          )
+          
+          const error = new Error(`Invalid ${name} format`)
+          error.statusCode = 400
+          return next(error)
+        }
       }
 
       // Verify voter exists and is registered
@@ -369,7 +362,7 @@ class CandidateController {
         return next(error)
       }
 
-      // Verify partylist if provided
+      // Verify partylist if provided (using model validation logic)
       if (partylistId) {
         const partylist = await Partylist.findOne({
           _id: partylistId,
@@ -389,34 +382,28 @@ class CandidateController {
         }
       }
 
-      // Generate candidate number if not provided
+      // Use model method to get next candidate number if not provided
       let finalCandidateNumber = candidateNumber
       if (!finalCandidateNumber) {
-        const lastCandidate = await Candidate.findOne({
-          positionId
-        }).sort({ candidateNumber: -1 })
-        finalCandidateNumber = lastCandidate ? lastCandidate.candidateNumber + 1 : 1
+        finalCandidateNumber = await Candidate.getNextCandidateNumber(positionId)
+      } else {
+        // Check if candidate number is available using model method
+        const isAvailable = await Candidate.isCandidateNumberAvailable(positionId, finalCandidateNumber)
+        if (!isAvailable) {
+          await AuditLog.logUserAction(
+            'UNAUTHORIZED_ACCESS_ATTEMPT',
+            req.user || {},
+            `Attempted to use duplicate candidate number ${finalCandidateNumber} for position ${position.positionName}`,
+            req
+          )
+          
+          const error = new Error("Candidate number already exists for this position")
+          error.statusCode = 400
+          return next(error)
+        }
       }
 
-      // Check if candidate number is already taken for this position
-      const existingNumber = await Candidate.findOne({
-        positionId,
-        candidateNumber: finalCandidateNumber
-      })
-      if (existingNumber) {
-        await AuditLog.logUserAction(
-          'UNAUTHORIZED_ACCESS_ATTEMPT',
-          req.user || {},
-          `Attempted to use duplicate candidate number ${finalCandidateNumber} for position ${position.positionName}`,
-          req
-        )
-        
-        const error = new Error("Candidate number already exists for this position")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      // Create candidate
+      // Create candidate (model validation will be triggered)
       const candidate = new Candidate({
         voterId,
         ssgElectionId,
@@ -443,7 +430,7 @@ class CandidateController {
       await AuditLog.logUserAction(
         "CREATE_CANDIDATE",
         req.user,
-        `Created ${electionType} candidate: ${voter.firstName} ${voter.lastName} (${voter.schoolId}) for position ${position.positionName}`,
+        `Created ${electionType} candidate: ${candidate.getDisplayName()} (${voter.schoolId}) for position ${position.positionName}`,
         req
       )
 
@@ -454,6 +441,22 @@ class CandidateController {
       })
     } catch (error) {
       console.error("Error creating candidate:", error)
+      
+      // Handle validation errors from model
+      if (error.name === 'ValidationError') {
+        const validationErrors = Object.values(error.errors).map(err => err.message)
+        
+        await AuditLog.logUserAction(
+          'UNAUTHORIZED_ACCESS_ATTEMPT',
+          req.user || {},
+          `Candidate validation failed: ${validationErrors.join(', ')}`,
+          req
+        )
+        
+        const err = new Error(`Validation failed: ${validationErrors.join(', ')}`)
+        err.statusCode = 400
+        return next(err)
+      }
       
       // Handle duplicate key errors
       if (error.code === 11000) {
@@ -621,14 +624,15 @@ class CandidateController {
         updateData.partylistId = partylistId || null
       }
 
-      // If updating candidate number, check for conflicts
+      // If updating candidate number, use model method to check availability
       if (candidateNumber && candidateNumber !== candidate.candidateNumber) {
-        const existingNumber = await Candidate.findOne({
-          positionId: updateData.positionId || candidate.positionId,
-          candidateNumber,
-          _id: { $ne: candidate._id }
-        })
-        if (existingNumber) {
+        const isAvailable = await Candidate.isCandidateNumberAvailable(
+          updateData.positionId || candidate.positionId, 
+          candidateNumber, 
+          candidate._id
+        )
+        
+        if (!isAvailable) {
           await AuditLog.logUserAction(
             'UNAUTHORIZED_ACCESS_ATTEMPT',
             req.user || {},
@@ -665,7 +669,7 @@ class CandidateController {
       await AuditLog.logUserAction(
         "UPDATE_CANDIDATE",
         req.user,
-        `Updated ${electionType} candidate: ${candidate.voterId.firstName} ${candidate.voterId.lastName} (${candidate.voterId.schoolId})`,
+        `Updated ${electionType} candidate: ${updatedCandidate.getDisplayName()} (${candidate.voterId.schoolId})`,
         req
       )
 
@@ -676,6 +680,22 @@ class CandidateController {
       })
     } catch (error) {
       console.error("Error updating candidate:", error)
+
+      // Handle validation errors from model
+      if (error.name === 'ValidationError') {
+        const validationErrors = Object.values(error.errors).map(err => err.message)
+        
+        await AuditLog.logUserAction(
+          'UNAUTHORIZED_ACCESS_ATTEMPT',
+          req.user || {},
+          `Candidate update validation failed: ${validationErrors.join(', ')}`,
+          req
+        )
+        
+        const err = new Error(`Validation failed: ${validationErrors.join(', ')}`)
+        err.statusCode = 400
+        return next(err)
+      }
 
       if (error.code === 11000) {
         const field = Object.keys(error.keyValue)[0]
@@ -764,7 +784,7 @@ class CandidateController {
         await AuditLog.logUserAction(
           'UNAUTHORIZED_ACCESS_ATTEMPT',
           req.user || {},
-          `Attempted to delete candidate with votes: ${candidate.voterId.firstName} ${candidate.voterId.lastName} (${voteCount} votes)`,
+          `Attempted to delete candidate with votes: ${candidate.getDisplayName()} (${voteCount} votes)`,
           req
         )
         
@@ -779,7 +799,7 @@ class CandidateController {
       await AuditLog.logUserAction(
         "DELETE_CANDIDATE",
         req.user,
-        `Deleted ${electionType} candidate: ${candidate.voterId.firstName} ${candidate.voterId.lastName} (${candidate.voterId.schoolId}) from position ${candidate.positionId.positionName}`,
+        `Deleted ${electionType} candidate: ${candidate.getDisplayName()} (${candidate.voterId.schoolId}) from position ${candidate.positionId.positionName}`,
         req
       )
 
@@ -915,7 +935,7 @@ class CandidateController {
       await AuditLog.logUserAction(
         "CAMPAIGN_PICTURE_UPDATE",
         req.user,
-        `Updated campaign picture for SSG candidate: ${candidate.voterId.firstName} ${candidate.voterId.lastName} (${candidate.voterId.schoolId})`,
+        `Updated campaign picture for SSG candidate: ${candidate.getDisplayName()} (${candidate.voterId.schoolId})`,
         req
       )
 
@@ -924,7 +944,7 @@ class CandidateController {
         data: {
           _id: candidate._id,
           candidateNumber: candidate.candidateNumber,
-          hasCampaignPicture: true
+          hasCampaignPicture: candidate.hasCampaignPicture()
         },
         message: "Campaign picture uploaded successfully"
       })
@@ -944,7 +964,7 @@ class CandidateController {
     }
   }
 
-  // Get candidates by election (SSG and Departmental)
+  // Get candidates by election (SSG and Departmental) - Using model method
   static async getCandidatesByElection(req, res, next) {
     try {
       const { electionId } = req.params
@@ -978,16 +998,10 @@ class CandidateController {
 
       // Verify election exists
       let election
-      const query = { isActive: true }
-      
       if (type === 'ssg') {
         election = await SSGElection.findById(electionId)
-        query.ssgElectionId = electionId
-        query.deptElectionId = null
       } else {
         election = await DepartmentalElection.findById(electionId).populate('departmentId')
-        query.deptElectionId = electionId
-        query.ssgElectionId = null
       }
 
       if (!election) {
@@ -1003,7 +1017,8 @@ class CandidateController {
         return next(error)
       }
 
-      // Additional filters
+      // Use model method to get candidates with details
+      const filters = {}
       if (positionId) {
         if (!mongoose.Types.ObjectId.isValid(positionId)) {
           await AuditLog.logUserAction(
@@ -1017,7 +1032,7 @@ class CandidateController {
           error.statusCode = 400
           return next(error)
         }
-        query.positionId = positionId
+        filters.positionId = positionId
       }
       if (partylistId) {
         if (!mongoose.Types.ObjectId.isValid(partylistId)) {
@@ -1032,29 +1047,14 @@ class CandidateController {
           error.statusCode = 400
           return next(error)
         }
-        query.partylistId = partylistId
+        filters.partylistId = partylistId
       }
-      if (status) query.isActive = status === 'active'
+      if (status) filters.status = status
 
-      const candidates = await Candidate.find(query)
-        .populate('voterId', 'schoolId firstName middleName lastName departmentId yearLevel')
-        .populate('voterId.departmentId', 'departmentCode degreeProgram college')
-        .populate('positionId', 'positionName positionOrder maxVotes')
-        .populate('partylistId', 'partylistName description')
-        .sort({ 'positionId.positionOrder': 1, candidateNumber: 1 })
+      const candidates = await Candidate.getByElectionWithDetails(electionId, type, filters)
 
-      // Group candidates by position for better organization
-      const candidatesByPosition = candidates.reduce((acc, candidate) => {
-        const positionId = candidate.positionId._id.toString()
-        if (!acc[positionId]) {
-          acc[positionId] = {
-            position: candidate.positionId,
-            candidates: []
-          }
-        }
-        acc[positionId].candidates.push(candidate)
-        return acc
-      }, {})
+      // Group candidates by position using model method
+      const candidatesByPosition = Candidate.groupByPosition(candidates)
 
       await AuditLog.logUserAction(
         "SYSTEM_ACCESS",
@@ -1100,7 +1100,7 @@ class CandidateController {
     }
   }
 
-  // Get candidates for voter view (with voting eligibility check)
+  // Get candidates for voter view (with voting eligibility check) - Using model method
   static async getCandidatesForVoter(req, res, next) {
     try {
       const { electionId } = req.params
@@ -1148,11 +1148,8 @@ class CandidateController {
         return next(error)
       }
 
-      // Verify election exists and check voting eligibility
+      // Verify election exists and check voting eligibility using model method
       let election
-      let canVote = false
-      let eligibilityMessage = ""
-      
       if (type === 'ssg') {
         election = await SSGElection.findById(electionId)
         if (!election) {
@@ -1167,11 +1164,6 @@ class CandidateController {
           error.statusCode = 404
           return next(error)
         }
-        // Only registered voters can vote in SSG elections
-        canVote = voter.isRegistered && voter.isPasswordActive
-        eligibilityMessage = canVote ? 
-          "You are eligible to vote in this SSG election" : 
-          "You must be a registered voter to participate in SSG elections"
       } else {
         election = await DepartmentalElection.findById(electionId).populate('departmentId')
         if (!election) {
@@ -1186,56 +1178,21 @@ class CandidateController {
           error.statusCode = 404
           return next(error)
         }
-        // For departmental elections: registered voters and class officers can vote
-        // Others can only view statistics and results
-        const departmentMatch = voter.departmentId._id.toString() === election.departmentId._id.toString()
-        canVote = voter.isRegistered && voter.isPasswordActive && voter.isClassOfficer && departmentMatch
-        
-        if (!voter.isRegistered) {
-          eligibilityMessage = "You must be a registered voter to access departmental elections"
-        } else if (!voter.isClassOfficer) {
-          eligibilityMessage = "Only registered class officers can vote in departmental elections. You can view statistics and results."
-        } else if (!departmentMatch) {
-          eligibilityMessage = "You can only vote in elections for your department"
-        } else {
-          eligibilityMessage = "You are eligible to vote in this departmental election"
-        }
       }
 
-      // Get candidates
-      const query = { isActive: true }
-      if (type === 'ssg') {
-        query.ssgElectionId = electionId
-        query.deptElectionId = null
-      } else {
-        query.deptElectionId = electionId
-        query.ssgElectionId = null
-      }
+      // Use model method to check voting eligibility
+      const eligibility = Candidate.checkVotingEligibility(voter, election, type)
 
-      const candidates = await Candidate.find(query)
-        .populate('voterId', 'schoolId firstName middleName lastName departmentId yearLevel')
-        .populate('voterId.departmentId', 'departmentCode degreeProgram college')
-        .populate('positionId', 'positionName positionOrder maxVotes')
-        .populate('partylistId', 'partylistName description')
-        .sort({ 'positionId.positionOrder': 1, candidateNumber: 1 })
+      // Get candidates using model method
+      const candidates = await Candidate.getByElectionWithDetails(electionId, type)
 
-      // Group candidates by position
-      const candidatesByPosition = candidates.reduce((acc, candidate) => {
-        const positionId = candidate.positionId._id.toString()
-        if (!acc[positionId]) {
-          acc[positionId] = {
-            position: candidate.positionId,
-            candidates: []
-          }
-        }
-        acc[positionId].candidates.push(candidate)
-        return acc
-      }, {})
+      // Group candidates by position using model method
+      const candidatesByPosition = Candidate.groupByPosition(candidates)
 
       await AuditLog.logVoterAction(
         "BALLOT_ACCESSED",
         voter,
-        `Viewed candidates for ${type.toUpperCase()} election: ${election.title} - Can vote: ${canVote}`,
+        `Viewed candidates for ${type.toUpperCase()} election: ${election.title} - Can vote: ${eligibility.canVote}`,
         req
       )
 
@@ -1258,14 +1215,15 @@ class CandidateController {
           candidatesByPosition: Object.values(candidatesByPosition),
           totalCandidates: candidates.length,
           voterEligibility: {
-            canVote,
-            canViewResults: true, // All registered voters can view results
+            canVote: eligibility.canVote,
+            canViewResults: eligibility.canViewResults,
             isRegistered: voter.isRegistered,
             isClassOfficer: voter.isClassOfficer,
             departmentMatch: type === 'departmental' ? 
               voter.departmentId._id.toString() === election.departmentId._id.toString() : 
               true,
-            message: eligibilityMessage
+            message: eligibility.message,
+            reasons: eligibility.reasons
           }
         },
         message: "Candidates retrieved successfully"
@@ -1281,6 +1239,116 @@ class CandidateController {
       )
 
       const err = new Error("Failed to fetch candidates")
+      err.statusCode = 500
+      next(err)
+    }
+  }
+
+  // Export candidates data (new method using model statistics)
+  static async exportCandidates(req, res, next) {
+    try {
+      const { type, electionId, format = 'csv' } = req.query
+      
+      // Build query
+      const query = {}
+      if (type === 'ssg') {
+        query.ssgElectionId = { $ne: null }
+        query.deptElectionId = null
+      } else if (type === 'departmental') {
+        query.deptElectionId = { $ne: null }
+        query.ssgElectionId = null
+      }
+      
+      if (electionId) {
+        if (!mongoose.Types.ObjectId.isValid(electionId)) {
+          const error = new Error("Invalid election ID format")
+          error.statusCode = 400
+          return next(error)
+        }
+        
+        if (type === 'ssg') {
+          query.ssgElectionId = electionId
+        } else if (type === 'departmental') {
+          query.deptElectionId = electionId
+        }
+      }
+
+      const candidates = await Candidate.find(query)
+        .populate('voterId', 'schoolId firstName middleName lastName departmentId yearLevel')
+        .populate('voterId.departmentId', 'departmentCode degreeProgram college')
+        .populate('positionId', 'positionName positionOrder')
+        .populate('partylistId', 'partylistName')
+        .populate('ssgElectionId', 'title electionDate')
+        .populate('deptElectionId', 'title electionDate')
+        .sort({ candidateNumber: 1 })
+
+      if (format === 'csv') {
+        const csvData = candidates.map(candidate => ({
+          'Candidate Number': candidate.candidateNumber,
+          'Name': candidate.getDisplayName(),
+          'School ID': candidate.voterId.schoolId,
+          'Position': candidate.positionId.positionName,
+          'Election Type': candidate.electionType.toUpperCase(),
+          'Election Title': candidate.ssgElectionId?.title || candidate.deptElectionId?.title,
+          'Department': candidate.voterId.departmentId?.departmentCode || 'N/A',
+          'Year Level': candidate.voterId.yearLevel,
+          'Partylist': candidate.partylistId?.partylistName || 'Independent',
+          'Platform': candidate.platform || 'No platform',
+          'Status': candidate.isActive ? 'Active' : 'Inactive',
+          'Has Campaign Picture': candidate.hasCampaignPicture() ? 'Yes' : 'No'
+        }))
+
+        // Convert to CSV format (simplified)
+        const csvHeader = Object.keys(csvData[0] || {}).join(',')
+        const csvRows = csvData.map(row => 
+          Object.values(row).map(value => 
+            typeof value === 'string' && value.includes(',') 
+              ? `"${value.replace(/"/g, '""')}"` 
+              : value
+          ).join(',')
+        )
+        const csvContent = [csvHeader, ...csvRows].join('\n')
+
+        res.setHeader('Content-Type', 'text/csv')
+        res.setHeader('Content-Disposition', `attachment; filename="candidates_${type || 'all'}_${new Date().toISOString().split('T')[0]}.csv"`)
+        res.send(csvContent)
+      } else {
+        // JSON format with statistics
+        const statistics = Candidate.getStatistics(candidates)
+        
+        res.json({
+          success: true,
+          data: {
+            candidates: candidates.map(c => c.formatForDisplay()),
+            statistics,
+            exportInfo: {
+              exportedAt: new Date(),
+              totalRecords: candidates.length,
+              filters: { type, electionId, format }
+            }
+          },
+          message: "Candidates exported successfully"
+        })
+      }
+
+      await AuditLog.logUserAction(
+        "DATA_EXPORT",
+        req.user,
+        `Exported ${candidates.length} candidates (type: ${type || 'all'}, format: ${format})`,
+        req
+      )
+
+    } catch (error) {
+      console.error("Error exporting candidates:", error)
+      
+      await AuditLog.logUserAction(
+        'DATA_EXPORT',
+        req.user || {},
+        `Failed to export candidates: ${error.message}`,
+        req
+      )
+      
+      const err = new Error("Failed to export candidates")
       err.statusCode = 500
       next(err)
     }

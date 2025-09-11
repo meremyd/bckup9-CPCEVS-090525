@@ -1,6 +1,55 @@
 import api from '../api'
 
 export const ballotAPI = {
+  // General Ballot APIs (NEW)
+  
+  // Get all ballots (combined SSG and Departmental)
+  getAllBallots: async (params = {}) => {
+    const { page = 1, limit = 10, type = 'all', status, electionId } = params
+    const queryParams = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+      ...(type !== 'all' && { type }),
+      ...(status && { status }),
+      ...(electionId && { electionId })
+    })
+    
+    const response = await api.get(`/ballots/?${queryParams}`)
+    return response.data
+  },
+
+  // Get combined ballot statistics
+  getBallotStatistics: async (params = {}) => {
+    const { type = 'all', electionId } = params
+    const queryParams = new URLSearchParams({
+      ...(type !== 'all' && { type }),
+      ...(electionId && { electionId })
+    })
+    
+    const response = await api.get(`/ballots/statistics?${queryParams}`)
+    return response.data
+  },
+
+  // Timeout Management APIs (NEW)
+  
+  // Check and process expired ballots (Admin/Committee/SAO)
+  checkExpiredBallots: async () => {
+    const response = await api.get('/ballots/expired/check')
+    return response.data
+  },
+
+  // Get ballot timeout status
+  getBallotTimeoutStatus: async (ballotId) => {
+    const response = await api.get(`/ballots/${ballotId}/timeout-status`)
+    return response.data
+  },
+
+  // Extend ballot timeout (Admin/Committee)
+  extendBallotTimeout: async (ballotId, additionalMinutes = 15) => {
+    const response = await api.put(`/ballots/${ballotId}/extend-timeout`, { additionalMinutes })
+    return response.data
+  },
+
   // SSG Ballot APIs
   
   // Admin/Committee/SAO - Get all SSG ballots with pagination and filtering
@@ -33,6 +82,12 @@ export const ballotAPI = {
   // Voter - Start new SSG ballot for election
   startSSGBallot: async (electionId) => {
     const response = await api.post('/ballots/ssg/start', { electionId })
+    return response.data
+  },
+
+  // Voter - Start new SSG ballot with timeout (NEW)
+  startSSGBallotWithTimeout: async (electionId) => {
+    const response = await api.post('/ballots/ssg/start-with-timeout', { electionId })
     return response.data
   },
 
@@ -227,85 +282,87 @@ export const ballotAPI = {
     }
   },
 
-  // Get all ballots for admin dashboard (combined)
-  getAllBallots: async (params = {}) => {
-    const { page = 1, limit = 10, type = 'all', status, electionId } = params
-    
+  // Enhanced utility functions with timeout support (NEW)
+  
+  // Get ballot with timeout information
+  getBallotWithTimeout: async (ballotId) => {
     try {
-      let ssgBallots = []
-      let departmentalBallots = []
-      
-      if (type === 'all' || type === 'ssg') {
-        const ssgResult = await ballotAPI.getAllSSGBallots({ page, limit, electionId, status })
-        ssgBallots = ssgResult.ballots.map(ballot => ({ ...ballot, type: 'SSG' }))
-      }
-      
-      if (type === 'all' || type === 'departmental') {
-        const deptResult = await ballotAPI.getAllDepartmentalBallots({ page, limit, electionId, status })
-        departmentalBallots = deptResult.ballots.map(ballot => ({ ...ballot, type: 'Departmental' }))
-      }
-      
-      const allBallots = [...ssgBallots, ...departmentalBallots]
+      const [ballot, timeoutStatus] = await Promise.all([
+        ballotAPI.getBallotById(ballotId),
+        ballotAPI.getBallotTimeoutStatus(ballotId)
+      ])
       
       return {
-        ballots: allBallots,
-        total: allBallots.length,
-        totalPages: Math.ceil(allBallots.length / limit),
-        currentPage: page
+        ...ballot,
+        timeout: timeoutStatus
       }
     } catch (error) {
+      console.error('Error getting ballot with timeout:', error)
+      return null
+    }
+  },
+
+  // Check if ballot is about to expire (less than 5 minutes remaining)
+  isBallotAboutToExpire: async (ballotId) => {
+    try {
+      const timeoutStatus = await ballotAPI.getBallotTimeoutStatus(ballotId)
+      return timeoutStatus.remainingTimeSeconds > 0 && timeoutStatus.remainingTimeSeconds <= 300 // 5 minutes
+    } catch (error) {
+      console.error('Error checking ballot expiration:', error)
+      return false
+    }
+  },
+
+  // Auto-extend ballot if user is active (Admin/Committee only)
+  autoExtendBallot: async (ballotId, additionalMinutes = 10) => {
+    try {
+      const timeoutStatus = await ballotAPI.getBallotTimeoutStatus(ballotId)
+      if (timeoutStatus.remainingTimeSeconds <= 300 && !timeoutStatus.isExpired) { // Less than 5 minutes
+        return await ballotAPI.extendBallotTimeout(ballotId, additionalMinutes)
+      }
+      return null
+    } catch (error) {
+      console.error('Error auto-extending ballot:', error)
+      return null
+    }
+  },
+
+  // Format remaining time for display
+  formatRemainingTime: (seconds) => {
+    if (seconds <= 0) return "00:00"
+    
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
+  },
+
+  // Previous combined functions (updated to use new endpoints)
+  
+  // Get all ballots for admin dashboard (UPDATED to use new endpoint)
+  getAllBallotsForDashboard: async (params = {}) => {
+    try {
+      // Use the new dedicated endpoint instead of combining frontend calls
+      return await ballotAPI.getAllBallots(params)
+    } catch (error) {
       console.error('Error getting all ballots:', error)
+      const { page = 1, limit = 10 } = params
       return {
         ballots: [],
         total: 0,
         totalPages: 0,
-        currentPage: page
+        currentPage: page,
+        totalSSG: 0,
+        totalDepartmental: 0
       }
     }
   },
 
-  // Get combined ballot statistics for dashboard
-  getBallotStatistics: async (type = 'all', electionId = null) => {
+  // Get combined ballot statistics for dashboard (UPDATED to use new endpoint)
+  getCombinedBallotStatistics: async (type = 'all', electionId = null) => {
     try {
-      let stats = {
-        totalBallots: 0,
-        submittedBallots: 0,
-        pendingBallots: 0,
-        turnoutRate: 0,
-        ssgStats: null,
-        departmentalStats: null
-      }
-      
-      if (type === 'all' || type === 'ssg') {
-        const ssgStats = await ballotAPI.getSSGBallotStatistics(electionId)
-        stats.ssgStats = ssgStats
-        if (type === 'ssg') {
-          stats.totalBallots = ssgStats.totalBallots
-          stats.submittedBallots = ssgStats.submittedBallots
-          stats.pendingBallots = ssgStats.pendingBallots
-          stats.turnoutRate = ssgStats.turnoutRate
-        }
-      }
-      
-      if (type === 'all' || type === 'departmental') {
-        const deptStats = await ballotAPI.getDepartmentalBallotStatistics(electionId)
-        stats.departmentalStats = deptStats
-        if (type === 'departmental') {
-          stats.totalBallots = deptStats.totalBallots
-          stats.submittedBallots = deptStats.submittedBallots
-          stats.pendingBallots = deptStats.pendingBallots
-          stats.turnoutRate = deptStats.turnoutRate
-        }
-      }
-      
-      if (type === 'all' && stats.ssgStats && stats.departmentalStats) {
-        stats.totalBallots = stats.ssgStats.totalBallots + stats.departmentalStats.totalBallots
-        stats.submittedBallots = stats.ssgStats.submittedBallots + stats.departmentalStats.submittedBallots
-        stats.pendingBallots = stats.ssgStats.pendingBallots + stats.departmentalStats.pendingBallots
-        stats.turnoutRate = stats.totalBallots > 0 ? Math.round((stats.submittedBallots / stats.totalBallots) * 100) : 0
-      }
-      
-      return stats
+      // Use the new dedicated endpoint instead of combining frontend calls
+      return await ballotAPI.getBallotStatistics({ type, electionId })
     } catch (error) {
       console.error('Error getting ballot statistics:', error)
       return {
@@ -314,7 +371,13 @@ export const ballotAPI = {
         pendingBallots: 0,
         turnoutRate: 0,
         ssgStats: null,
-        departmentalStats: null
+        departmentalStats: null,
+        breakdown: {
+          ssgBallots: 0,
+          departmentalBallots: 0,
+          ssgSubmitted: 0,
+          departmentalSubmitted: 0
+        }
       }
     }
   },

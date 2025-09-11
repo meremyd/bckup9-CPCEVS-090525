@@ -51,7 +51,6 @@ class AuditLogController {
         "CREATE_PARTYLIST",
         "UPDATE_PARTYLIST",
         "DELETE_PARTYLIST",
-        "UPDATE_PASSWORD",
         "VOTED",
         "VOTE_SUBMITTED",
         "BALLOT_ACCESSED",

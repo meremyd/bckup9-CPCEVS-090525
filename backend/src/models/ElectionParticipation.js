@@ -41,7 +41,7 @@ const electionParticipationSchema = new mongoose.Schema(
     },
     departmentRestriction: {
       type: String,
-      default: null, // Only students from specific department can participate (e.g., "Computer Science", "Engineering")
+      default: null, 
     },
     status: {
       type: String,
@@ -67,7 +67,6 @@ electionParticipationSchema.index({ hasVoted: 1 })
 electionParticipationSchema.index({ departmentRestriction: 1 })
 electionParticipationSchema.index({ departmentId: 1 })
 
-// Method to mark as voted
 electionParticipationSchema.methods.markAsVoted = function() {
   this.hasVoted = true
   this.votedAt = new Date()
@@ -75,13 +74,11 @@ electionParticipationSchema.methods.markAsVoted = function() {
   return this.save()
 }
 
-// Method to withdraw participation
 electionParticipationSchema.methods.withdraw = function() {
   this.status = "withdrawn"
   return this.save()
 }
 
-// Static method to get participation stats for an election
 electionParticipationSchema.statics.getElectionStats = async function(electionId, electionType) {
   const matchCondition = electionType === 'departmental' 
     ? { deptElectionId: new mongoose.Types.ObjectId(electionId) }
@@ -116,7 +113,6 @@ electionParticipationSchema.statics.getElectionStats = async function(electionId
   }
 }
 
-// Static method to get participation stats by department
 electionParticipationSchema.statics.getElectionStatsByDepartment = async function(electionId, electionType) {
   const matchCondition = electionType === 'departmental' 
     ? { deptElectionId: new mongoose.Types.ObjectId(electionId) }
@@ -164,7 +160,6 @@ electionParticipationSchema.statics.getElectionStatsByDepartment = async functio
   return stats
 }
 
-// Static method to get voter's participation history
 electionParticipationSchema.statics.getVoterHistory = async function(voterId) {
   return await this.find({ voterId })
     .populate('electionId', 'title electionYear electionType electionDate status')
