@@ -2,14 +2,14 @@ const rateLimit = require("express-rate-limit")
 
 // Global limiter - applies to all routes by default
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000, 
   max: 100, // Reduced from 200 for better security
   message: {
     error: "Too many requests from this IP address",
     message: "Please wait 15 minutes before making more requests",
-    retryAfter: 15 * 60 // seconds
+    retryAfter: 15 * 60 
   },
-  standardHeaders: true, // Return rate limit info in headers
+  standardHeaders: true, 
   legacyHeaders: false,
   handler: (req, res) => {
     res.status(429).json({
@@ -49,8 +49,8 @@ const loginLimiter = rateLimit({
 
 // Registration limiter - prevents spam registrations
 const registrationLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 3, // Allow only 3 registration attempts per hour per IP
+  windowMs: 60 * 60 * 1000, 
+  max: 3, 
   message: {
     error: "Registration limit exceeded",
     message: "Too many registration attempts. Please wait 1 hour before trying again.",
@@ -67,7 +67,7 @@ const registrationLimiter = rateLimit({
   }
 })
 
-// Admin/Committee operations limiter - balanced for productivity
+
 const adminLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
   max: 150, // Reduced from 200, but still allows productive work
@@ -89,8 +89,8 @@ const adminLimiter = rateLimit({
 
 // Voter operations limiter - restrictive to prevent voting manipulation
 const voterLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000, // 5 minutes - shorter window
-  max: 20, // Reduced from 50 - voters don't need many requests
+  windowMs: 5 * 60 * 1000, 
+  max: 20, 
   message: {
     error: "Voter request limit exceeded",
     message: "Please wait a few minutes before making more requests",

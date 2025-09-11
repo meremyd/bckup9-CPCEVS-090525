@@ -24,14 +24,6 @@ const ssgElectionSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
-    ballotOpenTime: {
-      type: String,
-      required: true,
-    },
-    ballotCloseTime: {
-      type: String,
-      required: true,
-    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

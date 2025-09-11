@@ -158,54 +158,36 @@ export const departmentalElectionsAPI = {
     const now = new Date()
     const electionDate = new Date(election.electionDate)
     
-    // Check if election date is today
-    if (electionDate.toDateString() !== now.toDateString()) return false
-    
-    // Check if within voting hours
-    const [openHour, openMinute] = election.ballotOpenTime.split(':').map(Number)
-    const [closeHour, closeMinute] = election.ballotCloseTime.split(':').map(Number)
-    
-    const openTime = new Date(electionDate)
-    openTime.setHours(openHour, openMinute, 0, 0)
-    
-    const closeTime = new Date(electionDate)
-    closeTime.setHours(closeHour, closeMinute, 59, 999)
-    
-    return now >= openTime && now <= closeTime
+    // Check if election date is today (or within voting period)
+    return electionDate.toDateString() === now.toDateString() || electionDate <= now
   },
 
-  // Get time until voting opens/closes
+  // Get voting time info - now based on ballot timer system
   getVotingTimeInfo: (election) => {
     if (!election) return null
     
     const now = new Date()
     const electionDate = new Date(election.electionDate)
     
-    const [openHour, openMinute] = election.ballotOpenTime.split(':').map(Number)
-    const [closeHour, closeMinute] = election.ballotCloseTime.split(':').map(Number)
-    
-    const openTime = new Date(electionDate)
-    openTime.setHours(openHour, openMinute, 0, 0)
-    
-    const closeTime = new Date(electionDate)
-    closeTime.setHours(closeHour, closeMinute, 59, 999)
-    
-    if (now < openTime) {
+    if (election.status === 'upcoming') {
       return {
         status: 'upcoming',
-        timeUntilOpen: openTime - now,
-        message: `Voting opens at ${election.ballotOpenTime} on ${electionDate.toDateString()}`
+        message: `Election scheduled for ${electionDate.toDateString()}`
       }
-    } else if (now >= openTime && now <= closeTime) {
+    } else if (election.status === 'active') {
       return {
         status: 'active',
-        timeUntilClose: closeTime - now,
-        message: `Voting closes at ${election.ballotCloseTime} today`
+        message: 'Election is active - voting available through ballot timer system'
+      }
+    } else if (election.status === 'completed') {
+      return {
+        status: 'completed',
+        message: 'Election has been completed'
       }
     } else {
       return {
-        status: 'closed',
-        message: 'Voting has ended for this election'
+        status: election.status,
+        message: `Election status: ${election.status}`
       }
     }
   },
@@ -238,7 +220,7 @@ export const departmentalElectionsAPI = {
     }, {})
   },
 
-  // Validate election data before submission
+  // Validate election data before submission - updated to remove ballot timing
   validateElectionData: (electionData) => {
     const errors = []
     
@@ -273,29 +255,50 @@ export const departmentalElectionsAPI = {
       }
     }
     
-    if (!electionData.ballotOpenTime) {
-      errors.push('Ballot open time is required')
-    }
-    
-    if (!electionData.ballotCloseTime) {
-      errors.push('Ballot close time is required')
-    }
-    
-    if (electionData.ballotOpenTime && electionData.ballotCloseTime) {
-      const [openHour, openMinute] = electionData.ballotOpenTime.split(':').map(Number)
-      const [closeHour, closeMinute] = electionData.ballotCloseTime.split(':').map(Number)
-      
-      const openMinutes = openHour * 60 + openMinute
-      const closeMinutes = closeHour * 60 + closeMinute
-      
-      if (openMinutes >= closeMinutes) {
-        errors.push('Ballot close time must be after open time')
-      }
-    }
-    
     return {
       isValid: errors.length === 0,
       errors
+    }
+  },
+
+  // New utility functions for ballot timer system integration
+  
+  // Check if voter has active ballot for election
+  hasActiveBallot: async (electionId) => {
+    try {
+      // This would typically be handled by a separate ballot API
+      // For now, return false as placeholder
+      return false
+    } catch (error) {
+      console.error('Error checking active ballot:', error)
+      return false
+    }
+  },
+
+  // Get ballot status for voter in election
+  getBallotStatus: async (electionId) => {
+    try {
+      // This would typically be handled by a separate ballot API
+      // Returns ballot status: 'not_started', 'active', 'expired', 'submitted'
+      return { status: 'not_started', timeRemaining: null }
+    } catch (error) {
+      console.error('Error getting ballot status:', error)
+      return { status: 'error', timeRemaining: null }
+    }
+  },
+
+  // Format election for voter display with ballot considerations
+  formatElectionForVoter: (election, eligibility = null) => {
+    return {
+      id: election._id,
+      title: election.title,
+      deptElectionId: election.deptElectionId,
+      department: departmentalElectionsAPI.formatDepartmentName(election.departmentId),
+      status: election.status,
+      electionDate: election.electionDate,
+      type: 'DEPARTMENTAL',
+      eligibility,
+      votingInfo: departmentalElectionsAPI.getVotingTimeInfo(election)
     }
   }
 }

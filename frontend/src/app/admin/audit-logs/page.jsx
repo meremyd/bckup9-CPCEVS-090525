@@ -101,21 +101,18 @@ export default function AuditLogsPage() {
       
       const response = await auditLogsAPI.getAll(params)
       
-      let auditLogs = []
+      // Handle response structure based on your API
       if (response.success && Array.isArray(response.data)) {
-        auditLogs = response.data
-      } else if (response.success && response.data && Array.isArray(response.data.logs)) {
-        auditLogs = response.data.logs
+        setLogs(response.data)
+      } else if (Array.isArray(response.logs)) {
+        setLogs(response.logs)
       } else if (Array.isArray(response)) {
-        auditLogs = response
-      } else if (response.logs && Array.isArray(response.logs)) {
-        auditLogs = response.logs
+        setLogs(response)
       } else {
         console.warn("Unexpected response structure:", response)
-        auditLogs = []
+        setLogs([])
       }
       
-      setLogs(auditLogs)
     } catch (error) {
       console.error("Fetch audit logs error:", error)
       const errorMessage = error.response?.data?.message || error.message || "Failed to fetch audit logs"
@@ -132,10 +129,13 @@ export default function AuditLogsPage() {
       const response = await auditLogsAPI.getStatistics()
       if (response.success) {
         setStatistics(response.data)
+      } else if (response.data) {
+        setStatistics(response.data)
+      } else {
+        setStatistics(response)
       }
     } catch (error) {
       console.error("Fetch statistics error:", error)
-      
     }
   }
 
@@ -237,7 +237,6 @@ export default function AuditLogsPage() {
     setSearchTerm("")
     setSelectedAction("")
     setDateFilter("")
-    // Refetch without filters
     setTimeout(() => fetchAuditLogs(), 100)
   }
 

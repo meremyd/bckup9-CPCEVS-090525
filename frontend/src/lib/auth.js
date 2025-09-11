@@ -1,10 +1,6 @@
-// frontend/src/lib/auth.js
 import { jwtDecode } from "jwt-decode"
 import { authAPI } from "./api/auth"
 
-/**
- * Admin/staff login
- */
 export async function login(username, password) {
   try {
     const data = await authAPI.login({ username, password })
@@ -34,8 +30,12 @@ export async function login(username, password) {
 
     return decodedUser
   } catch (error) {
-    const errorMessage = error.response?.data?.message || error.message || "Login failed"
-    throw new Error(errorMessage)
+    const statusCode = error.response?.status;
+    const errorMessage = error.response?.data?.message || error.message || "Request failed";
+
+    const customError = new Error(errorMessage);
+    customError.statusCode = statusCode;
+    throw customError;
   }
 }
 
@@ -52,8 +52,12 @@ export async function voterLogin(schoolId, password) {
 
     return { token, voter: user }
   } catch (error) {
-    const errorMessage = error.response?.data?.message || error.message || "Voter login failed"
-    throw new Error(errorMessage)
+    const statusCode = error.response?.status;
+    const errorMessage = error.response?.data?.message || error.message || "Request failed";
+
+    const customError = new Error(errorMessage);
+    customError.statusCode = statusCode;
+    throw customError;
   }
 }
 
@@ -65,8 +69,12 @@ export async function preRegisterStep1(schoolId) {
     const data = await authAPI.preRegisterStep1({ schoolId })
     return data
   } catch (error) {
-    const errorMessage = error.response?.data?.message || error.message || "Pre-registration step 1 failed"
-    throw new Error(errorMessage)
+    const statusCode = error.response?.status;
+    const errorMessage = error.response?.data?.message || error.message || "Request failed";
+
+    const customError = new Error(errorMessage);
+    customError.statusCode = statusCode;
+    throw customError;
   }
 }
 
@@ -75,8 +83,12 @@ export async function preRegisterStep2(registrationData) {
     const data = await authAPI.preRegisterStep2(registrationData)
     return data
   } catch (error) {
-    const errorMessage = error.response?.data?.message || error.message || "Pre-registration step 2 failed"
-    throw new Error(errorMessage)
+    const statusCode = error.response?.status;
+    const errorMessage = error.response?.data?.message || error.message || "Request failed";
+
+    const customError = new Error(errorMessage);
+    customError.statusCode = statusCode;
+    throw customError;
   }
 }
 

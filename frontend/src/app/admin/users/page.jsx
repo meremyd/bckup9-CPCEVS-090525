@@ -22,7 +22,6 @@ export default function UsersPage() {
     isActive: true,
   })
 
-  // SweetAlert function
   const showAlert = (type, title, text) => {
     Swal.fire({
       icon: type,
@@ -52,13 +51,11 @@ export default function UsersPage() {
     try {
       setLoading(true)
       const data = await usersAPI.getAll()
-      // Handle both array and object responses
+      // Handle both array and object responses based on your API structure
       if (Array.isArray(data)) {
         setUsers(data)
       } else if (data.users && Array.isArray(data.users)) {
         setUsers(data.users)
-      } else if (data.data && Array.isArray(data.data)) {
-        setUsers(data.data)
       } else {
         console.error("Unexpected data format:", data)
         setUsers([])
@@ -95,7 +92,7 @@ export default function UsersPage() {
     e.preventDefault()
     try {
       const result = await usersAPI.create(formData)
-      const newUser = result.user || result.data || result
+      const newUser = result
       setUsers([...users, newUser])
       setShowAddModal(false)
       resetForm()
@@ -116,7 +113,7 @@ export default function UsersPage() {
       }
 
       const result = await usersAPI.update(editingUser._id, updateData)
-      const updatedUser = result.user || result.data || result
+      const updatedUser = result
       setUsers(users.map((user) => (user._id === editingUser._id ? updatedUser : user)))
       setShowEditModal(false)
       setEditingUser(null)

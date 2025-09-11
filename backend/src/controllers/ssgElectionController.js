@@ -212,13 +212,11 @@ class SSGElectionController {
         electionYear,
         title,
         status = "upcoming",
-        electionDate,
-        ballotOpenTime,
-        ballotCloseTime,
+        electionDate
       } = req.body
 
       // Validation
-      const requiredFields = { ssgElectionId, electionYear, title, electionDate, ballotOpenTime, ballotCloseTime }
+      const requiredFields = { ssgElectionId, electionYear, title, electionDate }
       const missingFields = Object.entries(requiredFields).filter(([key, value]) => !value).map(([key]) => key)
       
       if (missingFields.length > 0) {
@@ -281,8 +279,6 @@ class SSGElectionController {
         title,
         status,
         electionDate: electionDateObj,
-        ballotOpenTime,
-        ballotCloseTime,
         createdBy: req.user?.userId,
       })
 
@@ -388,16 +384,16 @@ class SSGElectionController {
         return next(error)
       }
 
-      // Prevent updates to active elections with submitted ballots
+      // Prevent updates to elections with submitted ballots
       const submittedBallots = await Ballot.countDocuments({ ssgElectionId: id, isSubmitted: true })
-      if (submittedBallots > 0 && (updateData.electionDate || updateData.ballotOpenTime || updateData.ballotCloseTime)) {
+      if (submittedBallots > 0 && updateData.electionDate) {
         await AuditLog.logUserAction(
           "UPDATE_SSG_ELECTION",
           req.user,
           `Failed to update SSG election - Cannot modify election with ${submittedBallots} submitted ballots: ${existingElection.title}`,
           req
         )
-        const error = new Error("Cannot modify election timing after votes have been submitted")
+        const error = new Error("Cannot modify election date after votes have been submitted")
         error.statusCode = 400
         return next(error)
       }
@@ -789,7 +785,7 @@ class SSGElectionController {
               { $match: { 
                 $expr: { 
                   $and: [
-                    { $eq: ["$positionId", "$$positionId"] },
+                    { $eq: ["$positionId", "$positionId"] },
                     { $eq: ["$ssgElectionId", new mongoose.Types.ObjectId(id)] },
                     { $eq: ["$isActive", true] }
                   ]

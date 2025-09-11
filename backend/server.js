@@ -106,7 +106,7 @@ try {
   app.use("/api/departments", require("./src/routes/department"))
   console.log("Degrees routes loaded")
 } catch (error) {
-  console.error("Error loading degrees routes:", error.message)
+  console.error("Error loading departments routes:", error.message)
   process.exit(1)
 }
 

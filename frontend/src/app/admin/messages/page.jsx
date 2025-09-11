@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import Swal from 'sweetalert2'
 import { chatSupportAPI } from '@/lib/api/chatSupport'
-import { Search, Loader2, AlertCircle, MessageSquare, X,Eye,ChevronLeft,ChevronRight} from 'lucide-react'
+import { Search, Loader2, AlertCircle, MessageSquare, X, Eye, ChevronLeft, ChevronRight } from 'lucide-react'
 
 export default function MessagesPage() {
   const [messages, setMessages] = useState([])
@@ -47,23 +47,33 @@ export default function MessagesPage() {
         status: selectedStatus || undefined
       }
       
-      const data = await chatSupportAPI.getAll(params)
+      const response = await chatSupportAPI.getAll(params)
       
-      if (data.requests && Array.isArray(data.requests)) {
-        setMessages(data.requests)
+      // Handle different response formats
+      if (response.success) {
+        const data = response.data
+        setMessages(data.requests || data || [])
         setPagination(data.pagination || {
-          current: 1,
-          total: 0,
-          count: data.requests.length,
-          totalMessages: data.requests.length
+          current: currentPage,
+          total: Math.ceil((data.total || data.length) / pageSize),
+          count: data.requests?.length || data.length || 0,
+          totalMessages: data.total || data.length || 0
         })
-      } else if (Array.isArray(data)) {
-        setMessages(data)
+      } else if (response.requests && Array.isArray(response.requests)) {
+        setMessages(response.requests)
+        setPagination(response.pagination || {
+          current: currentPage,
+          total: Math.ceil(response.requests.length / pageSize),
+          count: response.requests.length,
+          totalMessages: response.requests.length
+        })
+      } else if (Array.isArray(response)) {
+        setMessages(response)
         setPagination({
-          current: 1,
-          total: 1,
-          count: data.length,
-          totalMessages: data.length
+          current: currentPage,
+          total: Math.ceil(response.length / pageSize),
+          count: response.length,
+          totalMessages: response.length
         })
       } else {
         setMessages([])
@@ -77,8 +87,14 @@ export default function MessagesPage() {
       setError("")
     } catch (error) {
       console.error("Fetch messages error:", error)
-      setError(error.message || "Failed to fetch messages")
+      setError(error.message || error || "Failed to fetch messages")
       setMessages([])
+      setPagination({
+        current: 1,
+        total: 0,
+        count: 0,
+        totalMessages: 0
+      })
     } finally {
       setLoading(false)
     }
@@ -89,10 +105,20 @@ export default function MessagesPage() {
     fetchMessages()
   }
 
-  const handleViewMessage = (message) => {
-    setSelectedMessage(message)
-    setResponseText(message.response || "")
-    setShowMessageModal(true)
+  const handleViewMessage = async (message) => {
+    try {
+      // Get full message details by ID if needed
+      const fullMessage = await chatSupportAPI.getById(message._id)
+      setSelectedMessage(fullMessage.success ? fullMessage.data : fullMessage)
+      setResponseText(fullMessage.response || message.response || "")
+      setShowMessageModal(true)
+    } catch (error) {
+      console.error("Error fetching message details:", error)
+      // Fallback to using the message from the list
+      setSelectedMessage(message)
+      setResponseText(message.response || "")
+      setShowMessageModal(true)
+    }
   }
 
   const handleUpdateStatus = async (status) => {
@@ -104,16 +130,20 @@ export default function MessagesPage() {
         response: responseText.trim() || undefined
       }
       
-      await chatSupportAPI.updateStatus(selectedMessage._id, updateData)
+      const response = await chatSupportAPI.updateStatus(selectedMessage._id, updateData)
       
-      fetchMessages()
-      setShowMessageModal(false)
-      setSelectedMessage(null)
-      setResponseText("")
-      showAlert("success", "Success!", "Message status updated successfully")
+      if (response.success || response.message) {
+        fetchMessages()
+        setShowMessageModal(false)
+        setSelectedMessage(null)
+        setResponseText("")
+        showAlert("success", "Success!", "Message status updated successfully")
+      } else {
+        throw new Error("Failed to update message status")
+      }
     } catch (error) {
       console.error("Update message error:", error)
-      showAlert("error", "Error!", error.message || "Failed to update message")
+      showAlert("error", "Error!", error.message || error || "Failed to update message")
     }
   }
 
@@ -134,6 +164,7 @@ export default function MessagesPage() {
 
   const formatDate = (dateString) => {
     try {
+      if (!dateString) return 'N/A'
       return new Date(dateString).toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
@@ -147,7 +178,9 @@ export default function MessagesPage() {
   }
 
   const handlePageChange = (page) => {
-    setCurrentPage(page)
+    if (page >= 1 && page <= pagination.total) {
+      setCurrentPage(page)
+    }
   }
 
   const clearFilters = () => {
@@ -279,30 +312,30 @@ export default function MessagesPage() {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {messages.map((message) => (
-                <tr key={message._id} className="hover:bg-gray-50">
+                <tr key={message._id || message.id} className="hover:bg-gray-50">
                   <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {message.schoolId}
+                    {message.schoolId || 'N/A'}
                   </td>
                   <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {message.fullName}
+                    {message.fullName || 'N/A'}
                   </td>
                   <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     <div className="max-w-xs truncate">
-                      {message.email}
+                      {message.email || 'N/A'}
                     </div>
                   </td>
                   <td className="px-4 lg:px-6 py-4 text-sm text-gray-900">
                     <div className="max-w-xs truncate">
-                      {message.message}
+                      {message.message || 'N/A'}
                     </div>
                   </td>
                   <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(message.status)}`}>
-                      {message.status?.replace("-", " ").toUpperCase()}
+                      {message.status?.replace("-", " ").toUpperCase() || 'PENDING'}
                     </span>
                   </td>
                   <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {formatDate(message.submittedAt)}
+                    {formatDate(message.submittedAt || message.createdAt)}
                   </td>
                   <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <button
@@ -357,7 +390,17 @@ export default function MessagesPage() {
                 {/* Page Numbers */}
                 <div className="flex space-x-1">
                   {[...Array(Math.min(5, pagination.total))].map((_, index) => {
-                    const pageNum = Math.max(1, currentPage - 2) + index
+                    let pageNum
+                    if (pagination.total <= 5) {
+                      pageNum = index + 1
+                    } else {
+                      // Show current page in the middle when possible
+                      const start = Math.max(1, currentPage - 2)
+                      const end = Math.min(pagination.total, start + 4)
+                      const actualStart = Math.max(1, end - 4)
+                      pageNum = actualStart + index
+                    }
+                    
                     if (pageNum > pagination.total) return null
                     
                     return (
@@ -413,18 +456,18 @@ export default function MessagesPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">School ID</label>
-                    <p className="mt-1 text-sm text-gray-900">{selectedMessage.schoolId}</p>
+                    <p className="mt-1 text-sm text-gray-900">{selectedMessage.schoolId || 'N/A'}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Full Name</label>
-                    <p className="mt-1 text-sm text-gray-900">{selectedMessage.fullName}</p>
+                    <p className="mt-1 text-sm text-gray-900">{selectedMessage.fullName || 'N/A'}</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Email</label>
-                    <p className="mt-1 text-sm text-gray-900">{selectedMessage.email}</p>
+                    <p className="mt-1 text-sm text-gray-900">{selectedMessage.email || 'N/A'}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Birthday</label>
@@ -437,21 +480,21 @@ export default function MessagesPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Submitted</label>
                   <p className="mt-1 text-sm text-gray-900">
-                    {formatDate(selectedMessage.submittedAt)}
+                    {formatDate(selectedMessage.submittedAt || selectedMessage.createdAt)}
                   </p>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Message</label>
                   <div className="mt-1 text-sm text-gray-900 bg-gray-50 p-3 rounded-lg border">
-                    {selectedMessage.message}
+                    {selectedMessage.message || 'No message content'}
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Current Status</label>
                   <span className={`mt-1 inline-flex px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedMessage.status)}`}>
-                    {selectedMessage.status?.replace("-", " ").toUpperCase()}
+                    {selectedMessage.status?.replace("-", " ").toUpperCase() || 'PENDING'}
                   </span>
                 </div>
 

@@ -5,9 +5,9 @@ require("dotenv").config({ path: path.join(__dirname, "../../.env") })
 
 async function migrate() {
   try {
-    console.log("🔄 Connecting to MongoDB...")
+    console.log("Connecting to MongoDB...")
     await mongoose.connect(process.env.MONGODB_URI)
-    console.log("✅ Connected to MongoDB")
+    console.log("Connected to MongoDB")
 
     // Import models
     const User = require("../models/User")
@@ -25,7 +25,7 @@ async function migrate() {
     const ElectionParticipation = require("../models/ElectionParticipation")
 
     // Clear existing data
-    console.log("🧹 Clearing existing data...")
+    console.log("Clearing existing data...")
     await User.deleteMany({})
     await Department.deleteMany({})
     await Voter.deleteMany({})
@@ -54,44 +54,45 @@ async function migrate() {
     for (const { model, name } of modelsToDropIndexes) {
       try {
         await model.collection.dropIndexes()
-        console.log(`✅ Dropped ${name} indexes`)
+        console.log(`Dropped ${name} indexes`)
       } catch (error) {
-        console.log(`⚠️ Could not drop ${name} indexes (might not exist yet)`)
+        console.log(`Could not drop ${name} indexes (might not exist yet)`)
       }
     }
 
     // Create users
-    console.log("👥 Migrating users...")
+    console.log("Migrating users...")
     const usersData = [
       {
         userType: "admin",
         username: "admin",
-        password: "admin123",
+        passwordHash: "admin123", // Will be hashed by pre-save hook
         isActive: true,
       },
       {
         userType: "election_committee",
         username: "ecommittee1",
-        password: "committee123",
+        passwordHash: "committee123", // Will be hashed by pre-save hook
         isActive: true,
       },
       {
         userType: "sao",
         username: "sao",
-        password: "sao123",
+        passwordHash: "sao123", // Will be hashed by pre-save hook
         isActive: true,
       },
     ]
 
     const users = []
     for (const userData of usersData) {
-      const user = await User.createWithPassword(userData)
+      const user = new User(userData)
+      await user.save()
       users.push(user)
-      console.log(`✅ Created user: ${user.username} (${user.userType})`)
+      console.log(`Created user: ${user.username} (${user.userType})`)
     }
 
-    // Migrate departments
-    console.log("🏛️ Migrating departments...")
+    // Migrate departments (keeping the same 5 departments)
+    console.log("Migrating departments...")
     const departments = await Department.insertMany([
       {
         departmentCode: "BEED",
@@ -118,21 +119,11 @@ async function migrate() {
         degreeProgram: "Bachelor of Science in Information Technology",
         college: "College of Computer Studies",
       },
-      {
-        departmentCode: "BSCS",
-        degreeProgram: "Bachelor of Science in Computer Science",
-        college: "College of Computer Studies",
-      },
-      {
-        departmentCode: "BSN",
-        degreeProgram: "Bachelor of Science in Nursing",
-        college: "College of Nursing",
-      },
     ])
-    console.log(`✅ Migrated ${departments.length} departments`)
+    console.log(`Migrated ${departments.length} departments`)
 
     // Create sample voters with updated structure
-    console.log("🗳️ Creating sample voters...")
+    console.log("Creating sample voters...")
     const votersData = [
       {
         schoolId: 20210001,
@@ -235,7 +226,7 @@ async function migrate() {
         middleName: "Grace",
         lastName: "Johnson",
         birthdate: new Date("2000-05-10"),
-        departmentId: departments[5]._id, // BSCS
+        departmentId: departments[2]._id, // BSED-ENG
         yearLevel: 2,
         email: "alice.johnson@student.edu",
         password: null,
@@ -251,10 +242,10 @@ async function migrate() {
     ]
     
     const voters = await Voter.insertMany(votersData)
-    console.log(`✅ Created ${voters.length} voters`)
+    console.log(`Created ${voters.length} voters`)
 
     // Create registered voters for testing
-    console.log("🔐 Creating registered voters for testing...")
+    console.log("Creating registered voters for testing...")
     const testPassword = "test123"
     
     const registeredVoters = [
@@ -267,11 +258,10 @@ async function migrate() {
         departmentId: departments[4]._id, // BSIT
         yearLevel: 2,
         email: "test.registered@student.edu",
-        password: testPassword,
+        password: testPassword, // Will be hashed and set registration flags
         faceEncoding: null,
         profilePicture: null,
         isActive: true,
-        isRegistered: true,
         isClassOfficer: false,
       },
       {
@@ -280,14 +270,13 @@ async function migrate() {
         middleName: "Class",
         lastName: "Officer",
         birthdate: new Date("1999-06-15"),
-        departmentId: departments[5]._id, // BSCS
+        departmentId: departments[4]._id, // BSIT
         yearLevel: 3,
         email: "demo.officer@student.edu",
-        password: testPassword,
+        password: testPassword, // Will be hashed and set registration flags
         faceEncoding: null,
         profilePicture: null,
         isActive: true,
-        isRegistered: true,
         isClassOfficer: true,
       },
     ]
@@ -297,29 +286,27 @@ async function migrate() {
       const voter = new Voter(voterData)
       await voter.save()
       registeredVoterDocs.push(voter)
-      console.log(`✅ Created registered voter: ${voter.schoolId} (${voter.fullName})`)
+      console.log(`Created registered voter: ${voter.schoolId} (${voter.fullName})`)
     }
 
-    // Create SSG Election
-    console.log("🗳️ Creating SSG election...")
+    // Create SSG Election (updated structure)
+    console.log("Creating SSG election...")
     const ssgElection = await SSGElection.create({
       ssgElectionId: "SSG2024001",
       electionYear: 2024,
       title: "SSG General Elections 2024",
       status: "upcoming",
       electionDate: new Date("2024-03-15"),
-      ballotOpenTime: "08:00:00",
-      ballotCloseTime: "17:00:00",
       createdBy: users[1]._id,
       totalVotes: 0,
       voterTurnout: 0,
     })
 
-    // Create Departmental Elections
-    console.log("🗳️ Creating departmental elections...")
+    // Create Departmental Elections (updated structure)
+    console.log("Creating departmental elections...")
     const departmentalElections = []
     
-    // Computer Studies Election
+    // Computer Studies Election (BSIT)
     const csElection = await DepartmentalElection.create({
       deptElectionId: "DEPT2024001",
       electionYear: 2024,
@@ -327,15 +314,13 @@ async function migrate() {
       departmentId: departments[4]._id, // BSIT department
       status: "upcoming", 
       electionDate: new Date("2024-04-15"),
-      ballotOpenTime: "09:00:00",
-      ballotCloseTime: "16:00:00",
       createdBy: users[1]._id,
       totalVotes: 0,
       voterTurnout: 0,
     })
     departmentalElections.push(csElection)
 
-    // Teacher Education Election
+    // Teacher Education Election (BEED)
     const teElection = await DepartmentalElection.create({
       deptElectionId: "DEPT2024002",
       electionYear: 2024,
@@ -343,18 +328,16 @@ async function migrate() {
       departmentId: departments[0]._id, // BEED department
       status: "upcoming",
       electionDate: new Date("2024-04-20"),
-      ballotOpenTime: "09:00:00",
-      ballotCloseTime: "16:00:00",
       createdBy: users[1]._id,
       totalVotes: 0,
       voterTurnout: 0,
     })
     departmentalElections.push(teElection)
 
-    console.log(`✅ Created 1 SSG election and ${departmentalElections.length} departmental elections`)
+    console.log(`Created 1 SSG election and ${departmentalElections.length} departmental elections`)
 
     // Create positions for SSG election
-    console.log("🏛️ Creating SSG positions...")
+    console.log("Creating SSG positions...")
     const ssgPositions = await Position.insertMany([
       {
         ssgElectionId: ssgElection._id,
@@ -362,6 +345,7 @@ async function migrate() {
         positionName: "President",
         positionOrder: 1,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Head of the Supreme Student Government",
         isActive: true,
       },
@@ -371,6 +355,7 @@ async function migrate() {
         positionName: "Vice President",
         positionOrder: 2,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Deputy head of the Supreme Student Government", 
         isActive: true,
       },
@@ -380,6 +365,7 @@ async function migrate() {
         positionName: "Secretary",
         positionOrder: 3,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Responsible for documentation and correspondence",
         isActive: true,
       },
@@ -389,6 +375,7 @@ async function migrate() {
         positionName: "Treasurer",
         positionOrder: 4,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Manages financial matters",
         isActive: true,
       },
@@ -398,6 +385,7 @@ async function migrate() {
         positionName: "Auditor",
         positionOrder: 5,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Reviews financial records and transactions",
         isActive: true,
       },
@@ -407,6 +395,7 @@ async function migrate() {
         positionName: "Public Information Officer", 
         positionOrder: 6,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Handles public relations and communications",
         isActive: true,
       },
@@ -416,14 +405,15 @@ async function migrate() {
         positionName: "Senator",
         positionOrder: 7,
         maxVotes: 12,
+        maxCandidates: 20,
         description: "Legislative body members",
         isActive: true,
       },
     ])
-    console.log(`✅ Created ${ssgPositions.length} SSG positions`)
+    console.log(`Created ${ssgPositions.length} SSG positions`)
 
     // Create positions for Departmental elections
-    console.log("🏛️ Creating departmental positions...")
+    console.log("Creating departmental positions...")
     const deptPositions = []
     
     // Computer Studies positions
@@ -434,6 +424,7 @@ async function migrate() {
         positionName: "Governor",
         positionOrder: 1,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Head of the departmental student government",
         isActive: true,
       },
@@ -443,6 +434,7 @@ async function migrate() {
         positionName: "Vice Governor", 
         positionOrder: 2,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Deputy head of the departmental student government",
         isActive: true,
       },
@@ -452,6 +444,7 @@ async function migrate() {
         positionName: "Secretary",
         positionOrder: 3,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Handles documentation for the department",
         isActive: true,
       },
@@ -461,6 +454,7 @@ async function migrate() {
         positionName: "Treasurer",
         positionOrder: 4,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Manages departmental funds",
         isActive: true,
       },
@@ -470,6 +464,7 @@ async function migrate() {
         positionName: "1st Year Representative",
         positionOrder: 5,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Represents first year students",
         isActive: true,
       },
@@ -479,6 +474,7 @@ async function migrate() {
         positionName: "2nd Year Representative",
         positionOrder: 6,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Represents second year students", 
         isActive: true,
       },
@@ -488,6 +484,7 @@ async function migrate() {
         positionName: "3rd Year Representative",
         positionOrder: 7,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Represents third year students",
         isActive: true,
       },
@@ -497,6 +494,7 @@ async function migrate() {
         positionName: "4th Year Representative",
         positionOrder: 8,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Represents fourth year students",
         isActive: true,
       },
@@ -511,6 +509,7 @@ async function migrate() {
         positionName: "Governor",
         positionOrder: 1,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Head of the departmental student government",
         isActive: true,
       },
@@ -520,6 +519,7 @@ async function migrate() {
         positionName: "Vice Governor",
         positionOrder: 2,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Deputy head of the departmental student government",
         isActive: true,
       },
@@ -529,16 +529,17 @@ async function migrate() {
         positionName: "Secretary",
         positionOrder: 3,
         maxVotes: 1,
+        maxCandidates: 10,
         description: "Handles documentation for the department",
         isActive: true,
       },
     ])
     deptPositions.push(...tePositions)
 
-    console.log(`✅ Created ${deptPositions.length} departmental positions`)
+    console.log(`Created ${deptPositions.length} departmental positions`)
 
     // Create partylists (only for SSG election)
-    console.log("🎉 Creating partylists...")
+    console.log("Creating partylists...")
     const partylists = await Partylist.insertMany([
       {
         partylistId: "PL2024001",
@@ -557,17 +558,17 @@ async function migrate() {
         isActive: true,
       },
     ])
-    console.log(`✅ Created ${partylists.length} partylists`)
+    console.log(`Created ${partylists.length} partylists`)
 
     // Create sample candidates 
-    console.log("👥 Creating sample candidates...")
+    console.log("Creating sample candidates...")
     const candidates = []
     
     // SSG Candidates
     const ssgCandidates = await Candidate.insertMany([
       {
-        candidateId: "CAND2024001",
         ssgElectionId: ssgElection._id,
+        deptElectionId: null,
         voterId: voters[0]._id,
         positionId: ssgPositions[0]._id, // President
         partylistId: partylists[0]._id,
@@ -578,20 +579,20 @@ async function migrate() {
         voteCount: 0,
       },
       {
-        candidateId: "CAND2024002",
         ssgElectionId: ssgElection._id,
+        deptElectionId: null,
         voterId: voters[1]._id,
         positionId: ssgPositions[1]._id, // Vice President
         partylistId: partylists[0]._id,
-        candidateNumber: 2,
+        candidateNumber: 1,
         campaignPicture: null,
         platform: "Enhanced student welfare programs",
         isActive: true,
         voteCount: 0,
       },
       {
-        candidateId: "CAND2024003",
         ssgElectionId: ssgElection._id,
+        deptElectionId: null,
         voterId: registeredVoterDocs[1]._id, // Class officer
         positionId: ssgPositions[2]._id, // Secretary
         partylistId: partylists[1]._id,
@@ -604,12 +605,12 @@ async function migrate() {
     ])
     candidates.push(...ssgCandidates)
 
-    // Departmental Candidates
+    // Departmental Candidates (using appropriate department voters)
     const deptCandidates = await Candidate.insertMany([
       {
-        candidateId: "CAND2024004",
         deptElectionId: csElection._id,
-        voterId: voters[4]._id, // Ryan Cruz (BSED Science student - assigned to CS election for demo)
+        ssgElectionId: null,
+        voterId: registeredVoterDocs[0]._id, // BSIT registered voter
         positionId: csPositions[0]._id, // Governor
         partylistId: null,
         candidateNumber: 1,
@@ -619,8 +620,8 @@ async function migrate() {
         voteCount: 0,
       },
       {
-        candidateId: "CAND2024005",
         deptElectionId: teElection._id,
+        ssgElectionId: null,
         voterId: voters[2]._id, // BEED student (class officer)
         positionId: tePositions[0]._id, // Governor
         partylistId: null,
@@ -633,10 +634,49 @@ async function migrate() {
     ])
     candidates.push(...deptCandidates)
 
-    console.log(`✅ Created ${candidates.length} sample candidates`)
+    console.log(`Created ${candidates.length} sample candidates`)
+
+    // Create sample ballots (updated with new timer structure)
+    console.log("Creating sample ballots...")
+    const crypto = require('crypto')
+    const sampleBallots = await Ballot.insertMany([
+      {
+        deptElectionId: null,
+        ssgElectionId: ssgElection._id,
+        currentPositionId: null,
+        voterId: registeredVoterDocs[0]._id,
+        ballotToken: crypto.randomBytes(32).toString('hex'),
+        isSubmitted: false,
+        submittedAt: null,
+        ipAddress: '127.0.0.1',
+        userAgent: 'Mozilla/5.0 Test Browser',
+        ballotOpenTime: null,
+        ballotCloseTime: null,
+        ballotDuration: 30,
+        timerStarted: false,
+        timerStartedAt: null,
+      },
+      {
+        deptElectionId: csElection._id,
+        ssgElectionId: null,
+        currentPositionId: null,
+        voterId: registeredVoterDocs[1]._id,
+        ballotToken: crypto.randomBytes(32).toString('hex'),
+        isSubmitted: false,
+        submittedAt: null,
+        ipAddress: '127.0.0.1',
+        userAgent: 'Mozilla/5.0 Test Browser',
+        ballotOpenTime: null,
+        ballotCloseTime: null,
+        ballotDuration: 30,
+        timerStarted: false,
+        timerStartedAt: null,
+      },
+    ])
+    console.log(`Created ${sampleBallots.length} sample ballots`)
 
     // Create sample chat support requests
-    console.log("💬 Creating sample chat support...")
+    console.log("Creating sample chat support...")
     const chatRequests = await ChatSupport.insertMany([
       {
         schoolId: voters[0].schoolId,
@@ -661,20 +701,53 @@ async function migrate() {
         respondedAt: new Date(),
       },
     ])
-    console.log(`✅ Created ${chatRequests.length} chat support requests`)
+    console.log(`Created ${chatRequests.length} chat support requests`)
+
+    // Create sample election participation records
+    console.log("Creating sample election participation records...")
+    const participationRecords = await ElectionParticipation.insertMany([
+      {
+        voterId: registeredVoterDocs[0]._id,
+        ssgElectionId: ssgElection._id,
+        deptElectionId: null,
+        confirmedAt: new Date(),
+        hasVoted: false,
+        votedAt: null,
+        departmentId: registeredVoterDocs[0].departmentId,
+        eligibilityCheckedAt: new Date(),
+        departmentRestriction: null,
+        status: "confirmed",
+      },
+      {
+        voterId: registeredVoterDocs[1]._id,
+        ssgElectionId: null,
+        deptElectionId: csElection._id,
+        confirmedAt: new Date(),
+        hasVoted: false,
+        votedAt: null,
+        departmentId: registeredVoterDocs[1].departmentId,
+        eligibilityCheckedAt: new Date(),
+        departmentRestriction: null,
+        status: "confirmed",
+      },
+    ])
+    console.log(`Created ${participationRecords.length} election participation records`)
 
     // Create initial audit log entry
     await AuditLog.create({
       action: "SYSTEM_ACCESS",
       username: "system",
+      userId: null,
+      voterId: null,
+      schoolId: null,
       details: "Database migration completed successfully",
       ipAddress: "127.0.0.1",
       userAgent: "Migration Script",
       timestamp: new Date(),
     })
 
-    console.log("🎉 Migration completed successfully!")
-    console.log("📊 Summary:")
+    console.log("Migration completed successfully!")
+    console.log("Summary:")
     console.log(`- Users: ${users.length}`)
     console.log(`- Departments: ${departments.length}`)
     console.log(`- Unregistered Voters: ${voters.length}`)
@@ -685,19 +758,21 @@ async function migrate() {
     console.log(`- Departmental Positions: ${deptPositions.length}`)
     console.log(`- Partylists: ${partylists.length}`)
     console.log(`- Candidates: ${candidates.length}`)
+    console.log(`- Sample Ballots: ${sampleBallots.length}`)
     console.log(`- Chat Support Requests: ${chatRequests.length}`)
-    console.log("\n🔑 Login Credentials:")
+    console.log(`- Election Participation Records: ${participationRecords.length}`)
+    console.log("\nLogin Credentials:")
     console.log("Admin: username=admin, password=admin123")
     console.log("Election Committee: username=ecommittee1, password=committee123") 
     console.log("SAO: username=sao, password=sao123")
     console.log("Test Registered Voter: schoolId=20210099, password=test123")
     console.log("Demo Class Officer: schoolId=20210098, password=test123")
   } catch (error) {
-    console.error("❌ Migration failed:", error)
+    console.error("Migration failed:", error)
     console.error("Error details:", error.message)
     console.error("Stack trace:", error.stack)
   } finally {
-    console.log("🔌 Database connection closed")
+    console.log("Database connection closed")
     await mongoose.connection.close()
   }
 }

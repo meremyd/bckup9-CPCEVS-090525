@@ -15,9 +15,8 @@ export default function AdminDepartments() {
   const [showEditModal, setShowEditModal] = useState(false)
   const [selectedDepartment, setSelectedDepartment] = useState(null)
   
-  // Simple form fields
+  // Simplified form fields (removed departmentName)
   const [departmentCode, setDepartmentCode] = useState('')
-  const [departmentName, setDepartmentName] = useState('')
   const [college, setCollege] = useState('')
   const [degreeProgram, setDegreeProgram] = useState('')
   
@@ -62,7 +61,6 @@ export default function AdminDepartments() {
 
   const resetForm = () => {
     setDepartmentCode('')
-    setDepartmentName('')
     setCollege('')
     setDegreeProgram('')
   }
@@ -75,7 +73,6 @@ export default function AdminDepartments() {
   const handleEditDepartment = (department) => {
     setSelectedDepartment(department)
     setDepartmentCode(department.departmentCode || '')
-    setDepartmentName(department.departmentName || '')
     setCollege(department.college || '')
     setDegreeProgram(department.degreeProgram || '')
     setShowEditModal(true)
@@ -86,16 +83,6 @@ export default function AdminDepartments() {
       Swal.fire({
         title: 'Validation Error!',
         text: 'Department Code is required.',
-        icon: 'warning',
-        confirmButtonColor: '#3085d6'
-      })
-      return false
-    }
-
-    if (!departmentName.trim()) {
-      Swal.fire({
-        title: 'Validation Error!',
-        text: 'Department Name is required.',
         icon: 'warning',
         confirmButtonColor: '#3085d6'
       })
@@ -123,7 +110,6 @@ export default function AdminDepartments() {
     try {
       const submitData = {
         departmentCode: departmentCode.trim().toUpperCase(),
-        departmentName: departmentName.trim(),
         college: college.trim(),
         degreeProgram: degreeProgram.trim() || null
       }
@@ -161,7 +147,6 @@ export default function AdminDepartments() {
     try {
       const submitData = {
         departmentCode: departmentCode.trim().toUpperCase(),
-        departmentName: departmentName.trim(),
         college: college.trim(),
         degreeProgram: degreeProgram.trim() || null
       }
@@ -195,7 +180,7 @@ export default function AdminDepartments() {
   const handleDeleteDepartment = async (department) => {
     const result = await Swal.fire({
       title: 'Are you sure?',
-      text: `Do you want to delete "${department.departmentName}"? This action cannot be undone.`,
+      text: `Do you want to delete "${department.departmentCode}"? This action cannot be undone.`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#EF4444',
@@ -276,13 +261,10 @@ export default function AdminDepartments() {
                   <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Code
                   </th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Department Name
-                  </th>
                   <th className="hidden md:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     College
                   </th>
-                  <th className="hidden lg:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Degree Program
                   </th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -293,7 +275,7 @@ export default function AdminDepartments() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {departments.length === 0 ? (
                   <tr>
-                    <td colSpan="5" className="px-3 sm:px-6 py-8 text-center text-gray-500">
+                    <td colSpan="4" className="px-3 sm:px-6 py-8 text-center text-gray-500">
                       <GraduationCap className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                       No departments available. Click "Add Department" to create your first department.
                     </td>
@@ -304,21 +286,13 @@ export default function AdminDepartments() {
                       <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         {department.departmentCode}
                       </td>
-                      <td className="px-3 sm:px-6 py-4 text-sm text-gray-900">
-                        <div className="md:hidden text-xs text-gray-500 mt-1">
-                          {department.college}
-                          {department.degreeProgram && (
-                            <div className="text-xs text-gray-400 mt-1">
-                              {department.degreeProgram}
-                            </div>
-                          )}
-                        </div>
-                        {department.departmentName}
-                      </td>
                       <td className="hidden md:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {department.college}
                       </td>
-                      <td className="hidden lg:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="px-3 sm:px-6 py-4 text-sm text-gray-900">
+                        <div className="md:hidden text-xs text-gray-500 mb-1">
+                          {department.college}
+                        </div>
                         {department.degreeProgram || '-'}
                       </td>
                       <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -379,20 +353,6 @@ export default function AdminDepartments() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Department Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={departmentName}
-                    onChange={(e) => setDepartmentName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="e.g., Computer Science, Education"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     College <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -407,7 +367,7 @@ export default function AdminDepartments() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Degree Program (Optional)
+                    Degree Program <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -415,6 +375,7 @@ export default function AdminDepartments() {
                     onChange={(e) => setDegreeProgram(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder="e.g., Bachelor of Science in Computer Science"
+                    required
                   />
                 </div>
 
@@ -470,20 +431,6 @@ export default function AdminDepartments() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Department Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={departmentName}
-                    onChange={(e) => setDepartmentName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="e.g., Computer Science, Education"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     College <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -498,7 +445,7 @@ export default function AdminDepartments() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Degree Program (Optional)
+                    Degree Program <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -506,6 +453,7 @@ export default function AdminDepartments() {
                     onChange={(e) => setDegreeProgram(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder="e.g., Bachelor of Science in Computer Science"
+                    required
                   />
                 </div>
 

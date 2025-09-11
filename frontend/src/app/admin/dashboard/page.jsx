@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Building2, Users, CheckCircle, GraduationCap, User, MessageCircle, FileText, LogOut, ChevronRight, Loader2 } from "lucide-react"
 import { logout, getUserFromToken } from "../../../lib/auth"
 import { dashboardAPI } from '@/lib/api/dashboard'
+import BackgroundWrapper from '@/components/BackgroundWrapper'
 
 export default function AdminDashboard() {
   const [dashboardData, setDashboardData] = useState(null)
@@ -99,38 +100,42 @@ export default function AdminDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <div className="text-center">
-          <Loader2 className="animate-spin rounded-full h-12 w-12 mx-auto text-blue-600" />
-          <p className="mt-4 text-gray-600">Loading dashboard...</p>
+      <BackgroundWrapper>
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center bg-white/10 backdrop-blur-md p-8 rounded-2xl border border-white/20">
+            <Loader2 className="animate-spin rounded-full h-12 w-12 mx-auto text-white" />
+            <p className="mt-4 text-white font-medium">Loading dashboard...</p>
+          </div>
         </div>
-      </div>
+      </BackgroundWrapper>
     )
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md mx-auto">
-          <div className="text-red-500 text-6xl mb-4 text-center">⚠️</div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-2 text-center">Error</h2>
-          <p className="text-gray-600 mb-4 text-center">{error}</p>
-          <div className="space-y-2">
-            <button
-              onClick={handleRetry}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors"
-            >
-              Retry
-            </button>
-            <button
-              onClick={() => router.push("/adminlogin")}
-              className="w-full bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition-colors"
-            >
-              Back to Login
-            </button>
+      <BackgroundWrapper>
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="bg-white/95 backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-md mx-auto border border-white/20">
+            <div className="text-red-500 text-6xl mb-4 text-center">⚠️</div>
+            <h2 className="text-2xl font-bold text-gray-800 mb-2 text-center">Error</h2>
+            <p className="text-gray-600 mb-4 text-center">{error}</p>
+            <div className="space-y-2">
+              <button
+                onClick={handleRetry}
+                className="w-full bg-[#001f65] hover:bg-[#003399] text-white px-6 py-2 rounded-lg transition-colors"
+              >
+                Retry
+              </button>
+              <button
+                onClick={() => router.push("/adminlogin")}
+                className="w-full bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition-colors"
+              >
+                Back to Login
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      </BackgroundWrapper>
     )
   }
 
@@ -145,35 +150,35 @@ export default function AdminDashboard() {
     {
       title: "Registered Voters",
       value: dashboardData?.registeredVoters || 0,
-      color: "green",
+      color: "emerald",
       path: "/admin/registered-voters",
       icon: <CheckCircle className="w-8 h-8 sm:w-10 md:w-12" />
     },
     {
       title: "Departments",
       value: dashboardData?.totalDepartments || dashboardData?.totalDegrees || 0,
-      color: "indigo",
+      color: "violet",
       path: "/admin/departments",
       icon: <GraduationCap className="w-8 h-8 sm:w-10 md:w-12" />
     },
     {
       title: "System Users",
       value: dashboardData?.systemUsers || dashboardData?.totalUsers || 0,
-      color: "orange",
+      color: "amber",
       path: "/admin/users",
       icon: <User className="w-8 h-8 sm:w-10 md:w-12" />
     },
     {
       title: "Support Messages",
       value: dashboardData?.totalMessages || dashboardData?.supportRequests || dashboardData?.totalSupportRequests || 0,
-      color: "pink",
+      color: "rose",
       path: "/admin/support",
       icon: <MessageCircle className="w-8 h-8 sm:w-10 md:w-12" />
     },
     {
       title: "Audit Logs",
       value: dashboardData?.auditLogs || dashboardData?.totalAuditLogs || 0,
-      color: "purple",
+      color: "cyan",
       path: "/admin/audit-logs",
       icon: <FileText className="w-8 h-8 sm:w-10 md:w-12" />
     }
@@ -182,67 +187,71 @@ export default function AdminDashboard() {
   const getColorClasses = (color) => {
     const colorMap = {
       blue: {
-        text: "text-blue-600",
-        bg: "bg-blue-100",
-        hover: "hover:bg-blue-50",
-        border: "border-blue-200"
+        text: "text-[#001f65]",
+        bg: "bg-[#b0c8fe]/30",
+        hover: "hover:bg-[#b0c8fe]/20",
+        border: "border-[#b0c8fe]/40",
+        shadow: "shadow-[#b0c8fe]/20"
       },
-      green: {
-        text: "text-green-600",
-        bg: "bg-green-100",
-        hover: "hover:bg-green-50",
-        border: "border-green-200"
+      emerald: {
+        text: "text-[#001f65]",
+        bg: "bg-[#b0c8fe]/25",
+        hover: "hover:bg-[#b0c8fe]/15",
+        border: "border-[#b0c8fe]/35",
+        shadow: "shadow-[#b0c8fe]/15"
       },
-      orange: {
-        text: "text-orange-600",
-        bg: "bg-orange-100",
-        hover: "hover:bg-orange-50",
-        border: "border-orange-200"
+      amber: {
+        text: "text-[#001f65]",
+        bg: "bg-[#b0c8fe]/35",
+        hover: "hover:bg-[#b0c8fe]/25",
+        border: "border-[#b0c8fe]/45",
+        shadow: "shadow-[#b0c8fe]/25"
       },
-      purple: {
-        text: "text-purple-600",
-        bg: "bg-purple-100",
-        hover: "hover:bg-purple-50",
-        border: "border-purple-200"
+      violet: {
+        text: "text-[#001f65]",
+        bg: "bg-[#b0c8fe]/40",
+        hover: "hover:bg-[#b0c8fe]/30",
+        border: "border-[#b0c8fe]/50",
+        shadow: "shadow-[#b0c8fe]/30"
       },
-      indigo: {
-        text: "text-indigo-600",
-        bg: "bg-indigo-100",
-        hover: "hover:bg-indigo-50",
-        border: "border-indigo-200"
+      rose: {
+        text: "text-[#001f65]",
+        bg: "bg-[#b0c8fe]/20",
+        hover: "hover:bg-[#b0c8fe]/10",
+        border: "border-[#b0c8fe]/30",
+        shadow: "shadow-[#b0c8fe]/10"
       },
-      pink: {
-        text: "text-pink-600",
-        bg: "bg-pink-100",
-        hover: "hover:bg-pink-50",
-        border: "border-pink-200"
+      cyan: {
+        text: "text-[#001f65]",
+        bg: "bg-[#b0c8fe]/45",
+        hover: "hover:bg-[#b0c8fe]/35",
+        border: "border-[#b0c8fe]/55",
+        shadow: "shadow-[#b0c8fe]/35"
       }
     }
     return colorMap[color] || colorMap.blue
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <BackgroundWrapper>
       {/* Header with Logout */}
-      <div className="bg-white shadow-sm border-b px-4 sm:px-6 py-4">
+      <div className="bg-[#b0c8fe]/95 backdrop-blur-sm shadow-lg border-b border-[#b0c8fe]/30 px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center mr-3">
+            <div className="w-8 h-8 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-lg flex items-center justify-center mr-3 shadow-lg">
               <Building2 className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Admin Dashboard</h1>
-              <p className="text-xs sm:text-sm text-gray-500">Student Government Election System</p>
+              <h1 className="text-xl sm:text-2xl font-bold text-[#001f65]">
+                Admin Dashboard
+              </h1>
+              <p className="text-xs text-[#001f65]/70">Welcome back, {user?.username}</p>
             </div>
           </div>
           <div className="flex items-center space-x-2 sm:space-x-4">
-            <div className="text-right hidden sm:block">
-              <p className="text-xs text-gray-500">Welcome back,</p>
-              <p className="text-sm font-medium text-gray-700">{user?.username}</p>
-            </div>
             <button
               onClick={handleLogout}
-              className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-200"
+              className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50/80 rounded-lg transition-colors border border-red-200 bg-white/60 backdrop-blur-sm"
             >
               <LogOut className="w-4 h-4 mr-1 sm:mr-2" />
               <span className="hidden sm:inline">Logout</span>
@@ -262,11 +271,11 @@ export default function AdminDashboard() {
                 <div
                   key={index}
                   onClick={() => handleCardClick(card.path)}
-                  className={`bg-white rounded-xl shadow-lg cursor-pointer transform hover:scale-105 transition-all duration-200 hover:shadow-xl ${colors.hover} border ${colors.border} h-48 lg:h-56 flex flex-col justify-center`}
+                  className={`bg-white/90 backdrop-blur-sm rounded-xl shadow-lg cursor-pointer transform hover:scale-105 transition-all duration-300 hover:shadow-2xl ${colors.hover} border ${colors.border} h-48 lg:h-56 flex flex-col justify-center hover:bg-white/95`}
                 >
                   <div className="p-3 sm:p-4 lg:p-5 text-center h-full flex flex-col justify-center">
                     {/* Icon */}
-                    <div className={`mx-auto p-3 sm:p-4 rounded-full ${colors.bg} mb-4`}>
+                    <div className={`mx-auto p-3 sm:p-4 rounded-full ${colors.bg} mb-4 shadow-lg border border-[#b0c8fe]/20`}>
                       <div className={colors.text}>
                         {card.icon}
                       </div>
@@ -274,7 +283,7 @@ export default function AdminDashboard() {
                     
                     {/* Content */}
                     <div className="flex-1 flex flex-col justify-center">
-                      <p className="text-sm sm:text-base lg:text-lg font-medium text-gray-600 mb-2">
+                      <p className="text-sm sm:text-base lg:text-lg font-medium text-[#001f65]/80 mb-2">
                         {card.title}
                       </p>
                       <p className={`text-2xl sm:text-3xl lg:text-4xl font-bold ${colors.text} mb-4`}>
@@ -283,7 +292,7 @@ export default function AdminDashboard() {
                     </div>
 
                     {/* Action Indicator */}
-                    <div className="flex items-center justify-center text-xs sm:text-sm text-gray-500">
+                    <div className="flex items-center justify-center text-xs sm:text-sm text-[#001f65]/60">
                       <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
                       <span className="hidden sm:inline">Click to manage</span>
                       <span className="sm:hidden">Tap to open</span>
@@ -293,10 +302,8 @@ export default function AdminDashboard() {
               )
             })}
           </div>
-
-
         </div>
       </div>
-    </div>
+    </BackgroundWrapper>
   )
 }

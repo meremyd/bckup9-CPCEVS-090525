@@ -433,13 +433,11 @@ class DepartmentalElectionController {
         title,
         departmentId,
         status = "upcoming",
-        electionDate,
-        ballotOpenTime,
-        ballotCloseTime,
+        electionDate
       } = req.body
 
       // Validation
-      const requiredFields = { deptElectionId, electionYear, title, departmentId, electionDate, ballotOpenTime, ballotCloseTime }
+      const requiredFields = { deptElectionId, electionYear, title, departmentId, electionDate }
       const missingFields = Object.entries(requiredFields).filter(([key, value]) => !value).map(([key]) => key)
       
       if (missingFields.length > 0) {
@@ -493,8 +491,6 @@ class DepartmentalElectionController {
         departmentId,
         status,
         electionDate: electionDateObj,
-        ballotOpenTime,
-        ballotCloseTime,
         createdBy: req.user?.userId,
       })
 
@@ -587,8 +583,8 @@ class DepartmentalElectionController {
 
       // Prevent updates to active elections with submitted ballots
       const submittedBallots = await Ballot.countDocuments({ deptElectionId: id, isSubmitted: true })
-      if (submittedBallots > 0 && (updateData.electionDate || updateData.ballotOpenTime || updateData.ballotCloseTime)) {
-        const error = new Error("Cannot modify election timing after votes have been submitted")
+      if (submittedBallots > 0 && updateData.electionDate) {
+        const error = new Error("Cannot modify election date after votes have been submitted")
         error.statusCode = 400
         return next(error)
       }
@@ -1140,4 +1136,3 @@ class DepartmentalElectionController {
 }
 
 module.exports = DepartmentalElectionController
-        

@@ -18,15 +18,12 @@ router.get("/registered", authorizeRoles("admin", "election_committee"), voterCo
 router.get("/officers", authorizeRoles("admin", "election_committee"), voterController.getOfficers)
 router.get("/", authorizeRoles("admin", "election_committee"), voterController.getAllVoters)
 
-// Single voter operations
 router.get("/:id", authorizeRoles("admin", "election_committee"), voterController.getVoter)
 
-// Voter management - admin only
 router.post("/", authorizeRoles("admin"), voterController.createVoter)
 router.put("/:id", authorizeRoles("admin"), voterController.updateVoter)
 router.delete("/:id", authorizeRoles("admin"), voterController.deleteVoter)
 
-// Voter status operations
 router.put("/:id/deactivate", authorizeRoles("admin"), voterController.deactivateVoter)
 router.put("/:id/toggle-officer", authorizeRoles("election_committee", "admin"), voterController.toggleOfficerStatus)
 
