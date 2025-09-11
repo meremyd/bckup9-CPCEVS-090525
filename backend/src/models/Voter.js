@@ -64,7 +64,6 @@ const voterSchema = new mongoose.Schema(
       type: Buffer,
       default: null,
     },
-    // Merged fields from VoterStatus
     isActive: {
       type: Boolean,
       default: true,
@@ -132,7 +131,6 @@ voterSchema.pre('save', async function(next) {
   next();
 });
 
-// Methods from VoterStatus
 voterSchema.methods.isPasswordExpired = function () {
   if (!this.passwordExpiresAt) return false
   return new Date() > this.passwordExpiresAt

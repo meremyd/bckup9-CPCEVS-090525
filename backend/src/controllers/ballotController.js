@@ -484,7 +484,7 @@ static async getBallotStatistics(req, res, next) {
       const { electionId, positionId } = req.body
       const voterId = req.user.voterId
 
-      // Validate election exists and is active
+    
       const election = await DepartmentalElection.findById(electionId)
         .populate('departmentId')
       if (!election) {

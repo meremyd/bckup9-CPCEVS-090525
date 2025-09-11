@@ -2,17 +2,21 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { Building2, Users, LogOut, Search, X } from "lucide-react"
 import { votersAPI } from '@/lib/api/voters'
+import { departmentsAPI } from '@/lib/api/departments'
+import { getUserFromToken, logout } from '../../../lib/auth'
+import BackgroundWrapper from '@/components/BackgroundWrapper'
 
 export default function ElectionCommitteeVotersPage() {
   const [allVoters, setAllVoters] = useState([])
   const [registeredVoters, setRegisteredVoters] = useState([])
   const [officers, setOfficers] = useState([])
-  const [degreeStats, setDegreeStats] = useState({})
+  const [departments, setDepartments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedDegree, setSelectedDegree] = useState("")
+  const [selectedDepartment, setSelectedDepartment] = useState("")
   const [activeTab, setActiveTab] = useState("voters")
   const [toggleLoading, setToggleLoading] = useState({})
   const [user, setUser] = useState(null)
@@ -22,38 +26,30 @@ export default function ElectionCommitteeVotersPage() {
     const checkAuthAndFetchData = async () => {
       try {
         const token = localStorage.getItem("token")
-        const userData = localStorage.getItem("user")
-
         if (!token) {
           router.push("/adminlogin")
           return
         }
 
-        let parsedUser = null
-        if (userData) {
-          try {
-            parsedUser = JSON.parse(userData)
-          } catch (parseError) {
-            console.error("Error parsing user data:", parseError)
-            localStorage.removeItem("user")
-            localStorage.removeItem("token")
-            router.push("/adminlogin")
-            return
-          }
-        }
-
-        if (!parsedUser || parsedUser.userType !== "election_committee") {
-          localStorage.removeItem("user")
-          localStorage.removeItem("token")
+        const userFromToken = getUserFromToken()
+        if (!userFromToken) {
           router.push("/adminlogin")
           return
         }
 
-        setUser(parsedUser)
+        if (userFromToken.userType !== "election_committee") {
+          console.warn("Unauthorized access: User is not an election committee member")
+          logout()
+          router.push("/adminlogin")
+          return
+        }
+
+        setUser(userFromToken)
         await fetchAllData()
       } catch (error) {
         console.error("Auth check error:", error)
         setError("Authentication error occurred")
+        logout()
         router.push("/adminlogin")
       }
     }
@@ -73,23 +69,72 @@ export default function ElectionCommitteeVotersPage() {
   const fetchAllData = async () => {
     try {
       setLoading(true)
+      setError("")
+      
+      console.log("Fetching all data...")
       
       // Fetch all data concurrently
-      const [votersData, registeredData, officersData, statsData] = await Promise.all([
-        votersAPI.getAll(),
-        votersAPI.getRegistered(),
-        votersAPI.getOfficers(),
-        votersAPI.getStatisticsByDegree()
+      const [votersData, registeredData, officersData, departmentsData] = await Promise.all([
+        votersAPI.getAll().then(data => {
+          console.log("All voters data:", data)
+          return Array.isArray(data) ? data : (data.voters || data.data || [])
+        }).catch(error => {
+          console.error("Error fetching all voters:", error)
+          return []
+        }),
+        votersAPI.getRegistered().then(data => {
+          console.log("Registered voters data:", data)
+          return Array.isArray(data) ? data : (data.voters || data.data || [])
+        }).catch(error => {
+          console.error("Error fetching registered voters:", error)
+          return []
+        }),
+        votersAPI.getOfficers().then(data => {
+          console.log("Officers data:", data)
+          return Array.isArray(data) ? data : (data.officers || data.data || [])
+        }).catch(error => {
+          console.error("Error fetching officers:", error)
+          return []
+        }),
+        departmentsAPI.getAll().then(data => {
+          console.log("Departments data:", data)
+          return Array.isArray(data) ? data : (data.departments || data.data || [])
+        }).catch(error => {
+          console.error("Error fetching departments:", error)
+          return []
+        })
       ])
 
-      setAllVoters(votersData)
-      setRegisteredVoters(registeredData)
-      setOfficers(officersData)
-      setDegreeStats(statsData)
+      setAllVoters(votersData || [])
+      setRegisteredVoters(registeredData || [])
+      setOfficers(officersData || [])
+      setDepartments(departmentsData || [])
+      
+      console.log("Data fetched successfully:", {
+        allVoters: votersData?.length || 0,
+        registeredVoters: registeredData?.length || 0,
+        officers: officersData?.length || 0,
+        departments: departmentsData?.length || 0
+      })
       
     } catch (error) {
       console.error("Fetch data error:", error)
-      setError(error.message || "Failed to fetch data")
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        logout()
+        router.push("/adminlogin")
+      } else {
+        let errorMessage = "Failed to fetch data"
+        
+        if (error.code === 'NETWORK_ERROR' || error.message?.includes('Network Error')) {
+          errorMessage = "Network error - please check if the server is running"
+        } else if (error.response?.status >= 500) {
+          errorMessage = "Server error - please try again later"
+        } else if (error.message) {
+          errorMessage = error.message
+        }
+        
+        setError(errorMessage)
+      }
     } finally {
       setLoading(false)
     }
@@ -98,24 +143,27 @@ export default function ElectionCommitteeVotersPage() {
   const fetchRegisteredVoters = async () => {
     try {
       const data = await votersAPI.getRegistered()
-      setRegisteredVoters(data)
+      const votersArray = Array.isArray(data) ? data : (data.voters || data.data || [])
+      setRegisteredVoters(votersArray)
     } catch (error) {
       console.error("Fetch registered voters error:", error)
+      setRegisteredVoters([])
     }
   }
 
   const fetchOfficers = async () => {
     try {
       const data = await votersAPI.getOfficers()
-      setOfficers(data)
+      const officersArray = Array.isArray(data) ? data : (data.officers || data.data || [])
+      setOfficers(officersArray)
     } catch (error) {
       console.error("Fetch officers error:", error)
+      setOfficers([])
     }
   }
 
   const handleLogout = () => {
-    localStorage.removeItem("token")
-    localStorage.removeItem("user")
+    logout()
     router.push("/adminlogin")
   }
 
@@ -128,8 +176,8 @@ export default function ElectionCommitteeVotersPage() {
       // Refresh all relevant data
       await fetchAllData()
       
-      // Show success message (you can implement toast notifications)
-      console.log('Officer status updated:', result.message)
+      // Clear any existing errors
+      setError("")
       
     } catch (error) {
       console.error("Toggle officer error:", error)
@@ -142,122 +190,114 @@ export default function ElectionCommitteeVotersPage() {
     }
   }
 
-  const handleDegreeCardClick = (degreeId) => {
-    setSelectedDegree(selectedDegree === degreeId ? "" : degreeId)
-  }
-
-  const getDegreeCardColors = (degreeCode, isSelected) => {
-    const baseColors = {
-      'BSIT': isSelected 
-        ? 'bg-green-500 text-white shadow-lg ring-4 ring-green-300' 
-        : 'bg-green-100 text-green-800 hover:bg-green-200',
-      'BEED': isSelected 
-        ? 'bg-red-500 text-white shadow-lg ring-4 ring-red-300' 
-        : 'bg-red-100 text-red-800 hover:bg-red-200',
-      'BSED': isSelected 
-        ? 'bg-blue-500 text-white shadow-lg ring-4 ring-blue-300' 
-        : 'bg-blue-100 text-blue-800 hover:bg-blue-200',
-      'BSHM': isSelected 
-        ? 'bg-orange-500 text-white shadow-lg ring-4 ring-orange-300' 
-        : 'bg-orange-100 text-orange-800 hover:bg-orange-200'
-    }
-    
-    // Handle different BSED majors with different blue shades
-    if (degreeCode?.startsWith('BSED')) {
-      if (isSelected) {
-        return 'bg-blue-500 text-white shadow-lg ring-4 ring-blue-300'
-      } else {
-        // Different blue shades for different majors
-        const blueVariants = [
-          'bg-blue-100 text-blue-800 hover:bg-blue-200',
-          'bg-sky-100 text-sky-800 hover:bg-sky-200',
-          'bg-indigo-100 text-indigo-800 hover:bg-indigo-200',
-          'bg-cyan-100 text-cyan-800 hover:bg-cyan-200'
-        ]
-        const hash = degreeCode.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-        return blueVariants[hash % blueVariants.length]
-      }
-    }
-    
-    return baseColors[degreeCode] || (isSelected 
-      ? 'bg-gray-500 text-white shadow-lg ring-4 ring-gray-300' 
-      : 'bg-gray-100 text-gray-800 hover:bg-gray-200')
+  const handleDepartmentCardClick = (departmentId) => {
+    setSelectedDepartment(selectedDepartment === departmentId ? "" : departmentId)
   }
 
   const getCurrentVoters = () => {
     switch (activeTab) {
       case "registered":
-        return registeredVoters
+        return Array.isArray(registeredVoters) ? registeredVoters : []
       case "officers":
-        return officers
+        return Array.isArray(officers) ? officers : []
       default:
-        return allVoters
+        return Array.isArray(allVoters) ? allVoters : []
     }
   }
 
   const getFilteredVoters = () => {
     const voters = getCurrentVoters()
-    
+
+    if (!Array.isArray(voters)) {
+      console.warn("getCurrentVoters did not return an array:", voters)
+      return []
+    }
+
     return voters.filter(voter => {
       const matchesSearch = 
-        voter.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        voter.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        voter.schoolId.toString().includes(searchTerm) ||
+        voter.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        voter.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        voter.schoolId?.toString().includes(searchTerm) ||
         voter.email?.toLowerCase().includes(searchTerm.toLowerCase())
       
-      const matchesDegree = selectedDegree === "" || voter.degreeId?._id === selectedDegree
+      const matchesDepartment = 
+        selectedDepartment === "" || voter.departmentId?._id === selectedDepartment
       
-      return matchesSearch && matchesDegree
+      return matchesSearch && matchesDepartment
     })
   }
 
-  const getDegreeCountForTab = (stats, degreeId) => {
+  const getDepartmentCountForTab = (departmentId) => {
     const currentVoters = getCurrentVoters()
-    return currentVoters.filter(voter => voter.degreeId?._id === degreeId).length
+    return currentVoters.filter(voter => voter.departmentId?._id === departmentId).length
+  }
+
+  // Create department cards from the fetched departments
+  const getDepartmentCards = () => {
+    if (!departments.length) return []
+
+    return departments.map(department => {
+      const count = getDepartmentCountForTab(department._id)
+      return {
+        id: department._id,
+        code: department.departmentCode,
+        name: department.degreeProgram || department.departmentName,
+        count: count
+      }
+    }).filter(dept => dept.count > 0) // Only show departments with voters
+  }
+
+  const getDepartmentName = (departmentId) => {
+    if (!departmentId) return "Unknown"
+    
+    const department = departments.find(dept => dept._id === departmentId)
+    return department ? (department.degreeProgram || department.departmentName) : "Unknown"
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-indigo-600 mx-auto"></div>
-          <p className="mt-6 text-lg text-gray-600 font-medium">Loading voters data...</p>
+      <BackgroundWrapper>
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center bg-white/10 backdrop-blur-md p-8 rounded-2xl border border-white/20">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-white mx-auto"></div>
+            <p className="mt-6 text-lg text-white font-medium">Loading voters data...</p>
+          </div>
         </div>
-      </div>
+      </BackgroundWrapper>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      {/* Header - Same as Dashboard */}
-      <div className="bg-white/90 backdrop-blur-sm shadow-sm border-b border-indigo-100">
-        <div className="px-6 py-6">
-          <div className="flex justify-between items-center">
+    <BackgroundWrapper>
+      {/* Header - Matching the Election Committee Dashboard style */}
+      <div className="bg-[#b0c8fe]/95 backdrop-blur-sm shadow-lg border-b border-[#b0c8fe]/30 px-4 sm:px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <div className="w-8 h-8 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-lg flex items-center justify-center mr-3 shadow-lg">
+              <Users className="w-5 h-5 text-white" />
+            </div>
             <div>
-              <h1 className="text-3xl font-bold text-gray-800">Election Committee Dashboard</h1>
-              <p className="text-gray-600 mt-1">Welcome back, {user?.username}</p>
+              <h1 className="text-xl sm:text-2xl font-bold text-[#001f65]">
+                Election Committee Dashboard
+              </h1>
+              <p className="text-xs text-[#001f65]/70">Voter Management</p>
             </div>
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={() => router.push('/ecommittee/dashboard')}
-                className="flex items-center px-4 py-2 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors font-medium"
-              >
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a3 3 0 106 0v4H8V5z" />
-                </svg>
-                Dashboard
-              </button>
-              <button
-                onClick={handleLogout}
-                className="flex items-center px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors font-medium shadow-sm"
-              >
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-                Logout
-              </button>
-            </div>
+          </div>
+          <div className="flex items-center space-x-2 sm:space-x-4">
+            <button
+              onClick={() => router.push('/ecommittee/dashboard')}
+              className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-[#001f65] hover:bg-[#001f65]/10 rounded-lg transition-colors border border-[#001f65]/20 bg-white/60 backdrop-blur-sm"
+            >
+              <Building2 className="w-4 h-4 mr-1 sm:mr-2" />
+              <span className="hidden sm:inline">Dashboard</span>
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50/80 rounded-lg transition-colors border border-red-200 bg-white/60 backdrop-blur-sm"
+            >
+              <LogOut className="w-4 h-4 mr-1 sm:mr-2" />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
           </div>
         </div>
       </div>
@@ -265,45 +305,25 @@ export default function ElectionCommitteeVotersPage() {
       <div className="container mx-auto px-4 sm:px-6 py-8">
         {/* Error Message */}
         {error && (
-          <div className="mb-6 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
+          <div className="mb-6 bg-red-100/90 backdrop-blur-sm border border-red-400 text-red-700 px-4 py-3 rounded-lg relative">
             <span className="block sm:inline">{error}</span>
             <button 
               onClick={() => setError("")}
               className="absolute top-0 bottom-0 right-0 px-4 py-3"
             >
               <span className="sr-only">Close</span>
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X className="w-6 h-6" />
             </button>
           </div>
         )}
 
-        {/* Navigation */}
-        {/* <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={() => router.push('/ecommittee/dashboard')}
-              className="flex items-center px-4 py-2 text-sm text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors"
-            >
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a3 3 0 106 0v4H8V5z" />
-              </svg>
-              Dashboard
-            </button>
-            <span className="text-gray-300">|</span>
-            <span className="text-gray-600 font-medium">Voter Management</span>
-          </div>
-        </div> */}
-
         {/* Tabs */}
         <div className="mb-6 flex justify-center">
-          <div className="flex space-x-1 bg-white/50 p-1 rounded-lg">
+          <div className="flex space-x-1 bg-white/50 backdrop-blur-sm p-1 rounded-lg border border-white/20">
             <button
               onClick={() => setActiveTab("voters")}
               className={`px-4 sm:px-6 py-3 rounded-md transition-colors text-sm sm:text-base ${
-                activeTab === "voters" ? "bg-white text-indigo-600 shadow-sm" : "text-gray-600 hover:text-gray-800"
+                activeTab === "voters" ? "bg-white text-[#001f65] shadow-sm" : "text-[#001f65]/70 hover:text-[#001f65]"
               }`}
             >
               All Voters ({allVoters.length})
@@ -311,7 +331,7 @@ export default function ElectionCommitteeVotersPage() {
             <button
               onClick={() => setActiveTab("registered")}
               className={`px-4 sm:px-6 py-3 rounded-md transition-colors text-sm sm:text-base ${
-                activeTab === "registered" ? "bg-white text-indigo-600 shadow-sm" : "text-gray-600 hover:text-gray-800"
+                activeTab === "registered" ? "bg-white text-[#001f65] shadow-sm" : "text-[#001f65]/70 hover:text-[#001f65]"
               }`}
             >
               Registered ({registeredVoters.length})
@@ -319,36 +339,11 @@ export default function ElectionCommitteeVotersPage() {
             <button
               onClick={() => setActiveTab("officers")}
               className={`px-4 sm:px-6 py-3 rounded-md transition-colors text-sm sm:text-base ${
-                activeTab === "officers" ? "bg-white text-indigo-600 shadow-sm" : "text-gray-600 hover:text-gray-800"
+                activeTab === "officers" ? "bg-white text-[#001f65] shadow-sm" : "text-[#001f65]/70 hover:text-[#001f65]"
               }`}
             >
               Officers ({officers.length})
             </button>
-          </div>
-        </div>
-
-        {/* Degree Filter Cards - Inline Layout */}
-        <div className="mb-8">
-
-          <div className="flex flex-wrap justify-center gap-4 max-w-6xl mx-auto">
-            {Object.entries(degreeStats).map(([key, stats]) => (
-              <button
-                key={key}
-                onClick={() => handleDegreeCardClick(stats.degreeInfo.id)}
-                className={`${getDegreeCardColors(stats.degreeInfo.code, selectedDegree === stats.degreeInfo.id)} 
-                  rounded-xl p-6 text-center transition-all duration-200 transform hover:scale-105 w-[200px] h-[140px] flex-shrink-0 flex flex-col justify-between`}
-              >
-                <div className="font-bold text-2xl mb-2">
-                  {stats.degreeInfo.code}
-                </div>
-                <div className="text-4xl font-bold mb-3">
-                  {getDegreeCountForTab(stats, stats.degreeInfo.id)}
-                </div>
-                <div className="text-sm font-medium leading-tight flex-grow flex items-end justify-center">
-                  {stats.degreeInfo.name}
-                </div>
-              </button>
-            ))}
           </div>
         </div>
 
@@ -360,47 +355,48 @@ export default function ElectionCommitteeVotersPage() {
               placeholder="Search voters by name, school ID, or email..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white/80"
+              className="w-full pl-10 pr-4 py-3 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-[#001f65] bg-white/80 backdrop-blur-sm"
             />
-            <svg
-              className="absolute left-3 top-3.5 h-5 w-5 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
+            <Search className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" />
           </div>
           
-          {selectedDegree && (
+          <div className="relative">
+            <select
+              value={selectedDepartment}
+              onChange={(e) => setSelectedDepartment(e.target.value)}
+              className="px-4 py-3 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-[#001f65] bg-white/80 backdrop-blur-sm"
+            >
+              <option value="">All Departments</option>
+              {departments.map((dept) => (
+                <option key={dept._id} value={dept._id}>
+                  {dept.departmentCode} - {dept.degreeProgram || dept.departmentName}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          {selectedDepartment && (
             <button
-              onClick={() => setSelectedDegree("")}
-              className="px-4 py-3 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition-colors flex items-center justify-center whitespace-nowrap"
+              onClick={() => setSelectedDepartment("")}
+              className="px-4 py-3 bg-[#001f65]/10 text-[#001f65] rounded-lg hover:bg-[#001f65]/20 transition-colors flex items-center justify-center whitespace-nowrap backdrop-blur-sm border border-[#001f65]/20"
             >
               Clear Filter
-              <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X className="w-4 h-4 ml-2" />
             </button>
           )}
         </div>
 
         {/* Voters Table */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg overflow-hidden">
+        <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg overflow-hidden border border-white/20">
           <div className="overflow-x-auto">
             <table className="min-w-full">
-              <thead className="bg-indigo-600 text-white">
+              <thead className="bg-[#001f65] text-white">
                 <tr>
                   <th className="px-3 sm:px-6 py-4 text-left text-xs sm:text-sm font-medium uppercase tracking-wider">School ID</th>
                   <th className="px-3 sm:px-6 py-4 text-left text-xs sm:text-sm font-medium uppercase tracking-wider">Name</th>
                   <th className="px-3 sm:px-6 py-4 text-left text-xs sm:text-sm font-medium uppercase tracking-wider">Email</th>
-                  <th className="px-3 sm:px-6 py-4 text-left text-xs sm:text-sm font-medium uppercase tracking-wider">Degree</th>
                   <th className="px-3 sm:px-6 py-4 text-left text-xs sm:text-sm font-medium uppercase tracking-wider">Department</th>
+                  <th className="px-3 sm:px-6 py-4 text-left text-xs sm:text-sm font-medium uppercase tracking-wider">Year Level</th>
                   <th className="px-3 sm:px-6 py-4 text-left text-xs sm:text-sm font-medium uppercase tracking-wider">Status</th>
                   <th className="px-3 sm:px-6 py-4 text-left text-xs sm:text-sm font-medium uppercase tracking-wider">
                     {activeTab === "officers" ? "Actions" : "Officer"}
@@ -409,7 +405,7 @@ export default function ElectionCommitteeVotersPage() {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {getFilteredVoters().map((voter) => (
-                  <tr key={voter._id} className="hover:bg-indigo-50/50">
+                  <tr key={voter._id} className="hover:bg-[#001f65]/5">
                     <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm font-medium text-gray-900">
                       {voter.schoolId}
                     </td>
@@ -425,18 +421,16 @@ export default function ElectionCommitteeVotersPage() {
                     </td>
                     <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900">
                       <div className="max-w-[120px] truncate">
-                        {voter.degreeId?.degreeCode || "N/A"}
-                        {voter.degreeId?.major && (
+                        {voter.departmentId?.departmentCode || "N/A"}
+                        {voter.departmentId?.college && (
                           <div className="text-xs text-gray-500">
-                            {voter.degreeId.major}
+                            {voter.departmentId.college}
                           </div>
                         )}
                       </div>
                     </td>
                     <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900">
-                      <div className="max-w-[120px] truncate">
-                        {voter.degreeId?.department || "N/A"}
-                      </div>
+                      {voter.yearLevel || "N/A"}
                     </td>
                     <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col gap-1">
@@ -461,7 +455,7 @@ export default function ElectionCommitteeVotersPage() {
                         <button
                           onClick={() => handleToggleOfficer(voter._id)}
                           disabled={toggleLoading[voter._id]}
-                          className="px-2 sm:px-3 py-1 rounded-full text-xs font-medium transition-colors bg-red-100 text-red-800 hover:bg-red-200"
+                          className="px-2 sm:px-3 py-1 rounded-full text-xs font-medium transition-colors bg-red-100 text-red-800 hover:bg-red-200 disabled:opacity-50"
                         >
                           {toggleLoading[voter._id] ? (
                             <div className="flex items-center">
@@ -478,9 +472,9 @@ export default function ElectionCommitteeVotersPage() {
                           disabled={toggleLoading[voter._id]}
                           className={`px-2 sm:px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                             voter.isClassOfficer
-                              ? "bg-indigo-100 text-indigo-800 hover:bg-indigo-200"
+                              ? "bg-[#001f65]/10 text-[#001f65] hover:bg-[#001f65]/20"
                               : "bg-gray-100 text-gray-800 hover:bg-gray-200"
-                          } ${toggleLoading[voter._id] ? "opacity-50 cursor-not-allowed" : ""}`}
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
                         >
                           {toggleLoading[voter._id] ? (
                             <div className="flex items-center">
@@ -503,17 +497,15 @@ export default function ElectionCommitteeVotersPage() {
             {getFilteredVoters().length === 0 && (
               <div className="text-center py-8 text-gray-500">
                 <p>No voters found matching your criteria.</p>
+                {searchTerm && (
+                  <p className="text-sm mt-2">Try adjusting your search term or clearing filters.</p>
+                )}
               </div>
             )}
           </div>
         </div>
 
-        {/* Summary Footer */}
-        <div className="mt-6 text-center text-sm text-gray-600">
-          Showing {getFilteredVoters().length} of {getCurrentVoters().length} {activeTab} 
-          {selectedDegree && " (filtered by degree)"}
-        </div>
       </div>
-    </div>
+    </BackgroundWrapper>
   )
-}
+} 

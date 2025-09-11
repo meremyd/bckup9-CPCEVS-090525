@@ -210,7 +210,7 @@ class AuthController {
     }
   }
 
-  // Pre-registration Step 1 - Updated for Department model
+  // Pre-registration Step 1 
   static async preRegisterStep1(req, res, next) {
     try {
       const { schoolId } = req.body

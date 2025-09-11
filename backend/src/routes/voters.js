@@ -3,28 +3,32 @@ const voterController = require("../controllers/voterController")
 const { authMiddleware, authorizeRoles } = require("../middleware/authMiddleware")
 const router = express.Router()
 
-// Apply authentication to all routes
 router.use(authMiddleware)
 
-// Public lookup - no additional authorization needed
+// Public voter lookup (requires auth but less restrictive)
 router.get("/lookup/:schoolId", voterController.lookupVoter)
 
-// Statistics routes - accessible to all authenticated users
+// Statistics routes (order matters - more specific routes first)
 router.get("/stats/summary", authorizeRoles("admin", "election_committee", "sao"), voterController.getStatistics)
-router.get("/stats/by-degree", authorizeRoles("admin", "election_committee", "sao"), voterController.getStatisticsByDegree)
+router.get("/stats/by-department", authorizeRoles("admin", "election_committee", "sao"), voterController.getStatisticsByDepartment)
 
-// Voter listing routes - admin and election_committee only
-router.get("/registered", authorizeRoles("admin", "election_committee"), voterController.getRegisteredVoters)
-router.get("/officers", authorizeRoles("admin", "election_committee"), voterController.getOfficers)
-router.get("/", authorizeRoles("admin", "election_committee"), voterController.getAllVoters)
+// Filtered lists routes
+router.get("/registered", authorizeRoles("admin", "election_committee", "sao"), voterController.getRegisteredVoters)
+router.get("/officers", authorizeRoles("admin", "election_committee", "sao"), voterController.getOfficers)
 
-router.get("/:id", authorizeRoles("admin", "election_committee"), voterController.getVoter)
+// Individual voter routes
+router.get("/:id", authorizeRoles("admin", "election_committee", "sao"), voterController.getVoter)
 
+// Voter management routes (admin only)
 router.post("/", authorizeRoles("admin"), voterController.createVoter)
 router.put("/:id", authorizeRoles("admin"), voterController.updateVoter)
 router.delete("/:id", authorizeRoles("admin"), voterController.deleteVoter)
-
 router.put("/:id/deactivate", authorizeRoles("admin"), voterController.deactivateVoter)
-router.put("/:id/toggle-officer", authorizeRoles("election_committee", "admin"), voterController.toggleOfficerStatus)
+
+// Officer status management (election committee can also manage)
+router.put("/:id/toggle-officer", authorizeRoles("election_committee"), voterController.toggleOfficerStatus)
+
+// All voters list (should be last to avoid conflicts)
+router.get("/", authorizeRoles("admin", "election_committee", "sao"), voterController.getAllVoters)
 
 module.exports = router

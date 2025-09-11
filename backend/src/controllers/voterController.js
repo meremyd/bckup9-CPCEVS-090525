@@ -51,7 +51,10 @@ class VoterController {
         department: voter.departmentId,
         hasPassword: !!voter.password,
         isRegistered: voter.isRegistered,
-        isClassOfficer: voter.isClassOfficer
+        isClassOfficer: voter.isClassOfficer,
+        isActive: voter.isActive,
+        isPasswordActive: voter.isPasswordActive,
+        passwordExpired: voter.isPasswordExpired()
       })
     } catch (error) {
       next(error)
@@ -123,7 +126,8 @@ class VoterController {
       const { department, yearLevel, page = 1, limit = 100, search } = req.query
 
       const filter = { 
-        isRegistered: true 
+        isRegistered: true,
+        isActive: true 
       }
       
       if (department) filter.departmentId = department
@@ -182,7 +186,8 @@ class VoterController {
       const { department, yearLevel, page = 1, limit = 100, search } = req.query
 
       const filter = { 
-        isClassOfficer: true 
+        isClassOfficer: true,
+        isActive: true 
       }
       
       if (department) filter.departmentId = department
@@ -254,6 +259,12 @@ class VoterController {
         return next(error)
       }
 
+      if (!voter.isActive) {
+        const error = new Error("Cannot modify officer status of inactive voter")
+        error.statusCode = 400
+        return next(error)
+      }
+
       const wasOfficer = voter.isClassOfficer
       voter.isClassOfficer = !voter.isClassOfficer
       await voter.save()
@@ -285,7 +296,7 @@ class VoterController {
   }
 
   // Get voter statistics by department
-  static async getStatisticsByDegree(req, res, next) {
+  static async getStatisticsByDepartment(req, res, next) {
     try {
       const statsByDepartment = await Voter.aggregate([
         {
@@ -297,7 +308,7 @@ class VoterController {
           },
         },
         {
-          $unwind: "$department",
+          $unwind: { path: "$department", preserveNullAndEmptyArrays: true },
         },
         {
           $group: {
@@ -340,7 +351,7 @@ class VoterController {
 
       const departmentStats = {}
       statsByDepartment.forEach(stat => {
-        const key = stat._id.code
+        const key = stat._id.code || 'Unknown Department'
         
         // Group by year level
         const yearLevelStats = {}
@@ -367,9 +378,9 @@ class VoterController {
           byYearLevel: yearLevelStats,
           departmentInfo: {
             id: stat._id.departmentId,
-            code: stat._id.code,
-            program: stat._id.program,
-            college: stat._id.college
+            code: stat._id.code || 'N/A',
+            program: stat._id.program || 'Unknown Program',
+            college: stat._id.college || 'Unknown College'
           }
         }
       })
@@ -499,6 +510,10 @@ class VoterController {
         departmentId,
         yearLevel: yearLevelNumber,
         email,
+        isActive: true,
+        isRegistered: false,
+        isClassOfficer: false,
+        isPasswordActive: false
       })
 
       await voter.save()
@@ -742,7 +757,7 @@ class VoterController {
       const total = await Voter.countDocuments()
       const registered = await Voter.countDocuments({ isRegistered: true })
       const active = await Voter.countDocuments({ isActive: true })
-      const classOfficers = await Voter.countDocuments({ isClassOfficer: true })
+      const classOfficers = await Voter.countDocuments({ isClassOfficer: true, isActive: true })
 
       // Statistics by department
       const byDepartment = await Voter.aggregate([
@@ -755,7 +770,7 @@ class VoterController {
           },
         },
         {
-          $unwind: "$department",
+          $unwind: { path: "$department", preserveNullAndEmptyArrays: true },
         },
         {
           $group: {

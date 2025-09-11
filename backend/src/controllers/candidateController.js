@@ -133,8 +133,8 @@ class CandidateController {
       const candidate = await Candidate.findById(id)
         .populate('voterId', 'schoolId firstName middleName lastName departmentId yearLevel email')
         .populate('voterId.departmentId', 'departmentCode degreeProgram college')
-        .populate('ssgElectionId', 'title electionDate status ballotOpenTime ballotCloseTime')
-        .populate('deptElectionId', 'title electionDate status ballotOpenTime ballotCloseTime department')
+        .populate('ssgElectionId', 'title electionDate status')
+        .populate('deptElectionId', 'title electionDate status department')
         .populate('positionId', 'positionName positionOrder maxVotes')
         .populate('partylistId', 'partylistName description')
 
