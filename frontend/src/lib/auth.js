@@ -39,9 +39,7 @@ export async function login(username, password) {
   }
 }
 
-/**
- * Voter login - Updated to handle new response structure with department info
- */
+
 export async function voterLogin(schoolId, password) {
   try {
     const data = await authAPI.voterLogin({ userId: schoolId, password })
@@ -61,9 +59,7 @@ export async function voterLogin(schoolId, password) {
   }
 }
 
-/**
- * Pre-registration functions - Updated to handle department info
- */
+
 export async function preRegisterStep1(schoolId) {
   try {
     const data = await authAPI.preRegisterStep1({ schoolId })
@@ -92,9 +88,7 @@ export async function preRegisterStep2(registrationData) {
   }
 }
 
-/**
- * Logout functions
- */
+
 export function logout() {
   localStorage.removeItem("token")
   localStorage.removeItem("user")
@@ -107,9 +101,6 @@ export function voterLogout() {
   window.location.href = "/voterlogin"
 }
 
-/**
- * Token + user helpers
- */
 export function getToken() {
   return localStorage.getItem("token")
 }
@@ -154,9 +145,6 @@ export function getVoterFromToken() {
   }
 }
 
-/**
- * Helper to get stored voter data (includes department info)
- */
 export function getStoredVoter() {
   const voterData = localStorage.getItem("voter")
   if (!voterData) return null
@@ -170,9 +158,6 @@ export function getStoredVoter() {
   }
 }
 
-/**
- * Helper to get stored user data
- */
 export function getStoredUser() {
   const userData = localStorage.getItem("user")
   if (!userData) return null

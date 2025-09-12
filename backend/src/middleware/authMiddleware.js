@@ -27,8 +27,6 @@ const authorizeRoles = (...roles) => {
       return res.status(403).json({ message: "Forbidden: You do not have permission to access this resource" })
     }
     
-    // Special handling for "voter" userType since it's not in User model enum
-    // but is used in JWT tokens for voter authentication
     const allowedRoles = [...roles]
     
     if (!allowedRoles.includes(req.user.userType)) {
@@ -42,7 +40,7 @@ const authorizeRoles = (...roles) => {
   }
 }
 
-// New middleware specifically for voter-only routes
+// middleware specifically for voter-only routes
 const voterOnly = (req, res, next) => {
   if (!req.user || req.user.userType !== "voter") {
     return res.status(403).json({ 

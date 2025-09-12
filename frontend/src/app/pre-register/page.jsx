@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation"
 import { useState } from "react"
 import ChatSupportBtn from "../../components/ChatSupportBtn"
 import Swal from "sweetalert2"
-import { votersAPI, authAPI } from '@/lib/api/voters'
+import { votersAPI } from '@/lib/api/voters'
+import { authAPI } from '@/lib/api/auth'
 
 export default function PreRegister() {
   const router = useRouter()
@@ -165,7 +166,7 @@ export default function PreRegister() {
               <input
                 type="number"
                 name="schoolId"
-                placeholder="Enter your School ID (8 digits)"
+                placeholder="Enter your School ID"
                 value={form.schoolId}
                 onChange={handleChange}
                 maxLength="8"

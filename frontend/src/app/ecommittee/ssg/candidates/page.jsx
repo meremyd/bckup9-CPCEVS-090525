@@ -20,7 +20,10 @@ import {
   Users,
   UserCheck,
   X,
-  Info
+  Info,
+  UserPlus,
+  Upload,
+  Image
 } from "lucide-react"
 
 export default function SSGCandidatesPage() {
@@ -34,7 +37,13 @@ export default function SSGCandidatesPage() {
   const [formLoading, setFormLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterPosition, setFilterPosition] = useState('')
-  const [filterPartylist, setFilterPartylist] = useState('')
+  
+  // Voter lookup states
+  const [voterSearchId, setVoterSearchId] = useState('')
+  const [voterLookupLoading, setVoterLookupLoading] = useState(false)
+  const [foundVoter, setFoundVoter] = useState(null)
+  const [voterLookupError, setVoterLookupError] = useState('')
+  
   const [candidateStats, setCandidateStats] = useState({
     total: 0,
     active: 0,
@@ -48,6 +57,7 @@ export default function SSGCandidatesPage() {
     partylistId: '',
     candidateNumber: '',
     platform: '',
+    campaignPicture: '',
     isActive: true
   })
 
@@ -138,7 +148,6 @@ export default function SSGCandidatesPage() {
   const fetchData = async () => {
     try {
       setLoading(true)
-      console.log('Fetching data for SSG Election ID:', ssgElectionId)
 
       // Fetch candidates using multiple API strategies
       const candidatesData = await fetchCandidatesWithFallback()
@@ -153,13 +162,10 @@ export default function SSGCandidatesPage() {
       // Set candidates data and calculate stats
       setSsgCandidates(candidatesData)
       setCandidateStats(calculateCandidateStats(candidatesData))
-      console.log('Final candidates set:', candidatesData)
-      console.log('Candidate count:', candidatesData.length)
 
       // Handle positions response
       if (positionsResponse.status === 'fulfilled') {
         const positionsData = positionsResponse.value
-        console.log('Positions response:', positionsData)
         setSsgPositions(Array.isArray(positionsData) ? positionsData : 
                        positionsData.positions || positionsData.data || [])
       } else {
@@ -170,7 +176,6 @@ export default function SSGCandidatesPage() {
       // Handle partylists response
       if (partylistsResponse.status === 'fulfilled') {
         const partylistsData = partylistsResponse.value
-        console.log('Partylists response:', partylistsData)
         setSsgPartylists(Array.isArray(partylistsData) ? partylistsData : 
                         partylistsData.partylists || partylistsData.data || [])
       } else {
@@ -181,7 +186,6 @@ export default function SSGCandidatesPage() {
       // Handle voters response
       if (votersResponse.status === 'fulfilled') {
         const votersData = votersResponse.value
-        console.log('Voters response:', votersData)
         setRegisteredVoters(Array.isArray(votersData) ? votersData : 
                            votersData.voters || votersData.data || [])
       } else {
@@ -210,21 +214,18 @@ export default function SSGCandidatesPage() {
     const fallbackStrategies = [
       // Strategy 1: SSG specific API
       async () => {
-        console.log('Strategy 1: Using candidatesAPI.ssg.getByElection...')
         const result = await candidatesAPI.ssg.getByElection(ssgElectionId)
         return result
       },
       
       // Strategy 2: General candidates API with type filter
       async () => {
-        console.log('Strategy 2: Using candidatesAPI.getByElection with SSG type...')
         const result = await candidatesAPI.getByElection(ssgElectionId, 'ssg')
         return result
       },
       
       // Strategy 3: Get all candidates with filters
       async () => {
-        console.log('Strategy 3: Using candidatesAPI.getAll with filters...')
         const result = await candidatesAPI.getAll({ 
           electionId: ssgElectionId, 
           type: 'ssg',
@@ -235,7 +236,6 @@ export default function SSGCandidatesPage() {
       
       // Strategy 4: SSG getAll with election filter
       async () => {
-        console.log('Strategy 4: Using candidatesAPI.ssg.getAll with election filter...')
         const result = await candidatesAPI.ssg.getAll({ 
           electionId: ssgElectionId,
           limit: 1000 
@@ -249,7 +249,6 @@ export default function SSGCandidatesPage() {
     for (let i = 0; i < fallbackStrategies.length; i++) {
       try {
         const result = await fallbackStrategies[i]()
-        console.log(`Strategy ${i + 1} raw result:`, result)
         
         // Normalize the response - handle different response structures
         let candidates = []
@@ -267,8 +266,6 @@ export default function SSGCandidatesPage() {
           }
         }
         
-        console.log(`Strategy ${i + 1} normalized candidates:`, candidates)
-        
         // Additional filtering to ensure we only get candidates for this election
         const filteredCandidates = candidates.filter(candidate => {
           const matchesElection = candidate.ssgElectionId === ssgElectionId ||
@@ -284,23 +281,82 @@ export default function SSGCandidatesPage() {
           return matchesElection && isSSGCandidate
         })
         
-        console.log(`Strategy ${i + 1} filtered candidates (${filteredCandidates.length}):`, filteredCandidates)
-        
         // Return results even if empty (for last strategy) or if we found candidates
         if (filteredCandidates.length > 0 || i === fallbackStrategies.length - 1) {
           return filteredCandidates
         }
         
       } catch (error) {
-        console.log(`Strategy ${i + 1} failed:`, error.message)
         lastError = error
         continue
       }
     }
     
-    // If all strategies failed, log the error but return empty array
+    // If all strategies failed, return empty array
     console.error('All candidate fetching strategies failed. Last error:', lastError)
     return []
+  }
+
+  // Voter lookup by school ID
+  const lookupVoterBySchoolId = async (schoolId) => {
+    if (!schoolId.trim()) {
+      setFoundVoter(null)
+      setVoterLookupError('')
+      return
+    }
+
+    setVoterLookupLoading(true)
+    setVoterLookupError('')
+
+    try {
+      const voter = await votersAPI.lookupBySchoolId(schoolId.trim())
+      setFoundVoter(voter)
+      setFormData(prev => ({ ...prev, voterId: voter._id }))
+    } catch (error) {
+      console.error('Error looking up voter:', error)
+      setFoundVoter(null)
+      setVoterLookupError(getErrorMessage(error))
+      setFormData(prev => ({ ...prev, voterId: '' }))
+    } finally {
+      setVoterLookupLoading(false)
+    }
+  }
+
+  // Handle image upload
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      // Check file size (max 2MB)
+      if (file.size > 2 * 1024 * 1024) {
+        Swal.fire({
+          icon: 'error',
+          title: 'File Too Large',
+          text: 'Please select an image smaller than 2MB.',
+          confirmButtonColor: '#001f65'
+        })
+        return
+      }
+
+      // Check file type
+      if (!file.type.startsWith('image/')) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Invalid File Type',
+          text: 'Please select a valid image file.',
+          confirmButtonColor: '#001f65'
+        })
+        return
+      }
+
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setFormData(prev => ({ 
+          ...prev, 
+          campaignPicture: reader.result.split(',')[1] // Remove data:image/jpeg;base64, prefix
+        }))
+      }
+      reader.readAsDataURL(file)
+    }
   }
 
   const handleAddCandidate = () => {
@@ -312,8 +368,12 @@ export default function SSGCandidatesPage() {
       partylistId: '',
       candidateNumber: '',
       platform: '',
+      campaignPicture: '',
       isActive: true
     })
+    setVoterSearchId('')
+    setFoundVoter(null)
+    setVoterLookupError('')
   }
 
   const handleEditCandidate = (candidate) => {
@@ -325,8 +385,20 @@ export default function SSGCandidatesPage() {
       partylistId: candidate.partylistId?._id || '',
       candidateNumber: candidate.candidateNumber || '',
       platform: candidate.platform || '',
+      campaignPicture: candidate.campaignPicture || '',
       isActive: candidate.isActive !== false
     })
+    
+    // Set voter search data for editing
+    if (candidate.voterId) {
+      setVoterSearchId(candidate.voterId.schoolId || '')
+      setFoundVoter(candidate.voterId)
+      setVoterLookupError('')
+    } else {
+      setVoterSearchId('')
+      setFoundVoter(null)
+      setVoterLookupError('')
+    }
   }
 
   const handleDeleteCandidate = async (candidateId, candidateName) => {
@@ -387,7 +459,7 @@ export default function SSGCandidatesPage() {
     }
   }
 
-  // Filter candidates based on search and filters - with safety check
+  // Filter candidates based on search and filters
   const filteredCandidates = Array.isArray(ssgCandidates) ? ssgCandidates.filter(candidate => {
     const matchesSearch = searchTerm === '' || 
       candidate.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -396,11 +468,8 @@ export default function SSGCandidatesPage() {
       candidate.platform?.toLowerCase().includes(searchTerm.toLowerCase())
 
     const matchesPosition = filterPosition === '' || candidate.positionId?._id === filterPosition
-    const matchesPartylist = filterPartylist === '' || 
-      (filterPartylist === 'independent' && !candidate.partylistId) ||
-      candidate.partylistId?._id === filterPartylist
 
-    return matchesSearch && matchesPosition && matchesPartylist
+    return matchesSearch && matchesPosition
   }) : []
 
   if (loading) {
@@ -437,7 +506,7 @@ export default function SSGCandidatesPage() {
         </button>
       }
     >
-      {/* Candidate Statistics Cards */}
+      {/* Partylist Statistics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="bg-white/90 backdrop-blur-sm rounded-xl p-4 border border-white/20">
           <div className="flex items-center justify-between">
@@ -472,28 +541,13 @@ export default function SSGCandidatesPage() {
         <div className="bg-white/90 backdrop-blur-sm rounded-xl p-4 border border-white/20">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Positions</p>
-              <p className="text-2xl font-bold text-[#001f65]">{Object.keys(candidateStats.byPosition).length}</p>
+              <p className="text-sm text-gray-600">Available Partylists</p>
+              <p className="text-2xl font-bold text-[#001f65]">{ssgPartylists.length}</p>
             </div>
             <Info className="w-8 h-8 text-[#001f65]" />
           </div>
         </div>
       </div>
-
-      {/* Debug Info (Remove in production) */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-          <h4 className="font-medium text-yellow-800 mb-2">Debug Information</h4>
-          <div className="text-sm text-yellow-700 space-y-1">
-            <p>Election ID: {ssgElectionId}</p>
-            <p>Raw candidates array length: {ssgCandidates?.length || 0}</p>
-            <p>Filtered candidates length: {filteredCandidates?.length || 0}</p>
-            <p>Search term: "{searchTerm}"</p>
-            <p>Position filter: {filterPosition || 'None'}</p>
-            <p>Partylist filter: {filterPartylist || 'None'}</p>
-          </div>
-        </div>
-      )}
 
       {/* Add/Edit Candidate Form Modal */}
       {showAddForm && (
@@ -514,23 +568,56 @@ export default function SSGCandidatesPage() {
 
               <form onSubmit={handleFormSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
+                  {/* Voter Lookup by School ID */}
+                  <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Voter *
+                      Voter School ID *
                     </label>
-                    <select
-                      required
-                      value={formData.voterId}
-                      onChange={(e) => setFormData(prev => ({ ...prev, voterId: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="">Select a voter</option>
-                      {Array.isArray(registeredVoters) && registeredVoters.map(voter => (
-                        <option key={voter._id} value={voter._id}>
-                          {voter.fullName} - {voter.schoolId}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={voterSearchId}
+                        onChange={(e) => {
+                          setVoterSearchId(e.target.value)
+                          // Debounce the lookup call
+                          clearTimeout(window.voterLookupTimeout)
+                          window.voterLookupTimeout = setTimeout(() => {
+                            lookupVoterBySchoolId(e.target.value)
+                          }, 500)
+                        }}
+                        placeholder="Enter voter's school ID..."
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-10"
+                      />
+                      {voterLookupLoading && (
+                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                          <Loader2 className="animate-spin h-4 w-4 text-gray-400" />
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Voter lookup results */}
+                    {foundVoter && (
+                      <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <div className="flex items-center">
+                          <UserCheck className="w-4 h-4 text-green-600 mr-2" />
+                          <div className="text-sm">
+                            <p className="font-medium text-green-800">{foundVoter.fullName}</p>
+                            <p className="text-green-600">
+                              {foundVoter.departmentId?.departmentCode || 'N/A'} - Year {foundVoter.yearLevel}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {voterLookupError && (
+                      <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <div className="flex items-center">
+                          <AlertCircle className="w-4 h-4 text-red-600 mr-2" />
+                          <p className="text-sm text-red-600">{voterLookupError}</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -570,7 +657,7 @@ export default function SSGCandidatesPage() {
                     </select>
                   </div>
 
-                  <div>
+                  <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Candidate Number
                     </label>
@@ -582,6 +669,38 @@ export default function SSGCandidatesPage() {
                       min="1"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
+                  </div>
+
+                  {/* Campaign Picture Upload */}
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Campaign Picture (Optional)
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      <input
+                        type="file"
+                        id="campaignPicture"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        className="hidden"
+                      />
+                      <label
+                        htmlFor="campaignPicture"
+                        className="flex items-center px-4 py-2 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                      >
+                        <Upload className="w-4 h-4 mr-2 text-gray-600" />
+                        Choose Image
+                      </label>
+                      {formData.campaignPicture && (
+                        <div className="flex items-center text-sm text-green-600">
+                          <Image className="w-4 h-4 mr-1" />
+                          Image uploaded
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Maximum file size: 2MB. Supported formats: JPG, PNG, GIF
+                    </p>
                   </div>
                 </div>
 
@@ -621,7 +740,7 @@ export default function SSGCandidatesPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={formLoading}
+                    disabled={formLoading || !foundVoter}
                     className="flex-1 flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {formLoading ? (
@@ -649,7 +768,7 @@ export default function SSGCandidatesPage() {
               <h2 className="text-xl font-bold text-[#001f65]">
                 Candidates 
                 <span className="text-lg font-normal text-gray-600 ml-2">
-                  ({filteredCandidates.length}{searchTerm || filterPosition || filterPartylist ? ` of ${candidateStats.total}` : ''})
+                  ({filteredCandidates.length}{searchTerm || filterPosition ? ` of ${candidateStats.total}` : ''})
                 </span>
               </h2>
             </div>
@@ -692,22 +811,13 @@ export default function SSGCandidatesPage() {
               })}
             </select>
 
-            <select
-              value={filterPartylist}
-              onChange={(e) => setFilterPartylist(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+            <button
+              onClick={handleAddCandidate}
+              className="flex items-center px-4 py-2 bg-[#001f65] hover:bg-[#003399] text-white rounded-lg transition-colors whitespace-nowrap"
             >
-              <option value="">All Partylists ({Object.keys(candidateStats.byPartylist).length})</option>
-              <option value="independent">Independent ({candidateStats.byPartylist['Independent'] || 0})</option>
-              {Array.isArray(ssgPartylists) && ssgPartylists.map(partylist => {
-                const count = candidateStats.byPartylist[partylist.partylistName] || 0
-                return (
-                  <option key={partylist._id} value={partylist._id}>
-                    {partylist.partylistName} ({count})
-                  </option>
-                )
-              })}
-            </select>
+              <UserPlus className="w-4 h-4 mr-2" />
+              Add Candidate
+            </button>
           </div>
         </div>
 
@@ -748,7 +858,7 @@ export default function SSGCandidatesPage() {
                       <p className="text-gray-500 mb-4">
                         {candidateStats.total === 0 ? 
                           'Get started by adding the first candidate for this election.' :
-                          searchTerm || filterPosition || filterPartylist ? 
+                          searchTerm || filterPosition ? 
                             'Try adjusting your search or filters to see more candidates.' :
                             'All candidates are currently filtered out.'
                         }
@@ -762,12 +872,11 @@ export default function SSGCandidatesPage() {
                           Add First Candidate
                         </button>
                       )}
-                      {candidateStats.total > 0 && (searchTerm || filterPosition || filterPartylist) && (
+                      {candidateStats.total > 0 && (searchTerm || filterPosition) && (
                         <button
                           onClick={() => {
                             setSearchTerm('')
                             setFilterPosition('')
-                            setFilterPartylist('')
                           }}
                           className="text-[#001f65] hover:text-[#003399] font-medium"
                         >
@@ -783,9 +892,17 @@ export default function SSGCandidatesPage() {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <div className="flex-shrink-0 h-10 w-10">
-                          <div className="h-10 w-10 rounded-full bg-[#b0c8fe]/30 flex items-center justify-center">
-                            <UserCheck className="h-5 w-5 text-[#001f65]" />
-                          </div>
+                          {candidate.campaignPicture ? (
+                            <img
+                              className="h-10 w-10 rounded-full object-cover"
+                              src={`data:image/jpeg;base64,${candidate.campaignPicture}`}
+                              alt={candidate.fullName || candidate.voterId?.fullName || 'Candidate'}
+                            />
+                          ) : (
+                            <div className="h-10 w-10 rounded-full bg-[#b0c8fe]/30 flex items-center justify-center">
+                              <UserCheck className="h-5 w-5 text-[#001f65]" />
+                            </div>
+                          )}
                         </div>
                         <div className="ml-4">
                           <div className="text-sm font-medium text-gray-900">

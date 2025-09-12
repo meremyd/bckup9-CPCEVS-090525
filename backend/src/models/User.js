@@ -5,7 +5,7 @@ const userSchema = new mongoose.Schema(
   {
     userType: {
       type: String,
-      enum: ["admin", "election_committee", "sao"], // Removed "voter"
+      enum: ["admin", "election_committee", "sao"], 
       required: true,
     },
     username: {
@@ -29,15 +29,14 @@ const userSchema = new mongoose.Schema(
   }
 )
 
-// Simplified password handling - only hash when password is modified and not already hashed
 userSchema.pre('save', async function(next) {
-  // Only hash the password if it has been modified (or is new)
+
   if (!this.isModified('passwordHash')) {
     return next();
   }
   
   try {
-    // Check if passwordHash is already a bcrypt hash (more secure check)
+
     if (this.passwordHash && this.passwordHash.match(/^\$2[aby]\$\d{1,2}\$.{53}$/)) {
       return next();
     }
@@ -50,7 +49,6 @@ userSchema.pre('save', async function(next) {
   }
 });
 
-// Password comparison method
 userSchema.methods.comparePassword = async function (password) {
   try {
     if (!this.passwordHash) {
@@ -64,7 +62,6 @@ userSchema.methods.comparePassword = async function (password) {
   }
 }
 
-// Static method to create user with password
 userSchema.statics.createWithPassword = async function(userData) {
   const { password, ...otherData } = userData;
   
@@ -72,10 +69,9 @@ userSchema.statics.createWithPassword = async function(userData) {
     throw new Error('Password is required');
   }
   
-  // Create user with passwordHash field
   const user = new this({
     ...otherData,
-    passwordHash: password // Will be hashed by pre-save hook
+    passwordHash: password 
   });
   
   await user.save();

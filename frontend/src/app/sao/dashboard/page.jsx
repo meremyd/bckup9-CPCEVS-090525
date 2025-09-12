@@ -1,27 +1,32 @@
 "use client"
+
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, Users, UserCheck, Building2, LogOut, AlertCircle } from "lucide-react"
-import { logout, getUserFromToken } from "../../../lib/auth"
+import { Building2, Vote, Users, CheckCircle, GraduationCap, LogOut, ChevronRight, Loader2 } from "lucide-react"
 import { dashboardAPI } from '@/lib/api/dashboard'
+import { ssgElectionsAPI } from '@/lib/api/ssgElections'
+import { departmentalElectionsAPI } from '@/lib/api/departmentalElections'
+import { getUserFromToken, logout } from '../../../lib/auth'
+import BackgroundWrapper from '@/components/BackgroundWrapper'
 
 export default function SAODashboard() {
   const [dashboardData, setDashboardData] = useState(null)
+  const [elections, setElections] = useState({ ssg: [], departmental: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [user, setUser] = useState(null)
   const router = useRouter()
 
   useEffect(() => {
-    const initializeDashboard = async () => {
-      const token = localStorage.getItem("token")
-
-      if (!token) {
-        router.push("/adminlogin")
-        return
-      }
-
+    const checkAuthAndLoadData = async () => {
       try {
+        const token = localStorage.getItem("token")
+
+        if (!token) {
+          router.push("/adminlogin")
+          return
+        }
+
         // Use getUserFromToken for better token validation
         const userFromToken = getUserFromToken()
         if (!userFromToken) {
@@ -29,42 +34,36 @@ export default function SAODashboard() {
           return
         }
 
-        setUser(userFromToken)
-
-        // Check if user is SAO
         if (userFromToken.userType !== "sao") {
-          console.warn("Unauthorized access: User is not SAO")
+          console.warn("Unauthorized access: User is not a SAO member")
           logout()
           router.push("/adminlogin")
           return
         }
 
-        await fetchDashboardData()
+        setUser(userFromToken)
+        await Promise.all([fetchDashboardData(), fetchElections()])
       } catch (error) {
-        console.error("Error initializing dashboard:", error)
+        console.error("Auth check error:", error)
+        setError("Authentication error occurred")
         logout()
         router.push("/adminlogin")
-      }
+      } 
     }
 
-    initializeDashboard()
+    checkAuthAndLoadData()
   }, [router])
 
   const fetchDashboardData = async () => {
     try {
-      setLoading(true)
       const data = await dashboardAPI.getSAODashboard()
-      console.log("SAO Dashboard data received:", data)
       setDashboardData(data)
-      setError("") // Clear any previous errors
     } catch (error) {
       console.error("Dashboard error:", error)
       if (error.response?.status === 401 || error.response?.status === 403) {
-        console.warn("Session expired or unauthorized. Logging out.")
         logout()
         router.push("/adminlogin")
       } else {
-        // More specific error handling
         let errorMessage = "Failed to load dashboard data"
         
         if (error.code === 'NETWORK_ERROR' || error.message?.includes('Network Error')) {
@@ -77,6 +76,57 @@ export default function SAODashboard() {
         
         setError(errorMessage)
       }
+    }
+  }
+
+  const fetchElections = async () => {
+    try {
+      // Fetch SSG elections - handle different response structures
+      const ssgResponse = await ssgElectionsAPI.getAll()
+      console.log('SSG Response:', ssgResponse) // Debug log
+      let ssgElections = []
+      if (ssgResponse.data?.elections) {
+        ssgElections = ssgResponse.data.elections
+      } else if (ssgResponse.elections) {
+        ssgElections = ssgResponse.elections
+      } else if (Array.isArray(ssgResponse.data)) {
+        ssgElections = ssgResponse.data
+      } else if (Array.isArray(ssgResponse)) {
+        ssgElections = ssgResponse
+      }
+      
+      // Fetch departmental elections - handle different response structures
+      const deptResponse = await departmentalElectionsAPI.getAll()
+      console.log('Dept Response:', deptResponse) // Debug log
+      let departmentalElections = []
+      if (deptResponse.data?.elections) {
+        departmentalElections = deptResponse.data.elections
+      } else if (deptResponse.elections) {
+        departmentalElections = deptResponse.elections
+      } else if (Array.isArray(deptResponse.data)) {
+        departmentalElections = deptResponse.data
+      } else if (Array.isArray(deptResponse)) {
+        departmentalElections = deptResponse
+      }
+      
+      console.log('SSG Elections:', ssgElections.length) // Debug log
+      console.log('Dept Elections:', departmentalElections.length) // Debug log
+      
+      setElections({
+        ssg: ssgElections,
+        departmental: departmentalElections
+      })
+    } catch (error) {
+      console.error("Fetch elections error:", error)
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        logout()
+        router.push("/adminlogin")
+      }
+      // Set empty arrays on error to prevent undefined values
+      setElections({
+        ssg: [],
+        departmental: []
+      })
     } finally {
       setLoading(false)
     }
@@ -87,39 +137,46 @@ export default function SAODashboard() {
     router.push("/adminlogin")
   }
 
+  const handleElectionTypeClick = (type) => {
+    router.push(`/sao/${type}`)
+  }
+
   const handleRetry = () => {
     setError("")
-    fetchDashboardData()
+    setLoading(true)
+    Promise.all([fetchDashboardData(), fetchElections()])
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-emerald-100">
-        <div className="text-center">
-          <Loader2 className="animate-spin rounded-full h-12 w-12 mx-auto text-green-600" />
-          <p className="mt-4 text-gray-600">Loading SAO dashboard...</p>
+      <BackgroundWrapper>
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center bg-white/10 backdrop-blur-md p-8 rounded-2xl border border-white/20">
+            <Loader2 className="animate-spin rounded-full h-12 w-12 mx-auto text-white" />
+            <p className="mt-4 text-white font-medium">Loading dashboard...</p>
+          </div>
         </div>
-      </div>
+      </BackgroundWrapper>
     )
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-emerald-100">
-        <div className="bg-white/80 backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-md">
-          <div className="text-center">
-            <AlertCircle className="text-red-500 w-16 h-16 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-gray-800 mb-2">Error</h2>
-            <p className="text-gray-600 mb-4">{error}</p>
+      <BackgroundWrapper>
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="bg-white/95 backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-md mx-auto border border-white/20">
+            <div className="text-red-500 text-6xl mb-4 text-center">⚠️</div>
+            <h2 className="text-2xl font-bold text-gray-800 mb-2 text-center">Error</h2>
+            <p className="text-gray-600 mb-4 text-center">{error}</p>
             <div className="space-y-2">
               <button
                 onClick={handleRetry}
-                className="w-full bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition-colors"
+                className="w-full bg-[#001f65] hover:bg-[#003399] text-white px-6 py-2 rounded-lg transition-colors"
               >
                 Retry
               </button>
               <button
-                onClick={handleLogout}
+                onClick={() => router.push("/adminlogin")}
                 className="w-full bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition-colors"
               >
                 Back to Login
@@ -127,235 +184,132 @@ export default function SAODashboard() {
             </div>
           </div>
         </div>
-      </div>
+      </BackgroundWrapper>
     )
   }
 
+  const dashboardCards = [
+    {
+      title: "Total Registered Voters",
+      value: dashboardData?.registeredVoters || 0,
+      color: "blue",
+      path: "/sao/voters",
+      icon: <CheckCircle className="w-8 h-8 sm:w-10 md:w-12" />
+    },
+    {
+      title: "Total SSG Elections",
+      value: elections.ssg?.length || 0,
+      color: "violet",
+      path: "/sao/ssg",
+      icon: <Vote className="w-8 h-8 sm:w-10 md:w-12" />
+    },
+    {
+      title: "Total Departmental Elections",
+      value: elections.departmental?.length || 0,
+      color: "cyan",
+      path: "/sao/departmental",
+      icon: <GraduationCap className="w-8 h-8 sm:w-10 md:w-12" />
+    }
+  ]
+
+  const getColorClasses = (color) => {
+    const colorMap = {
+      blue: {
+        text: "text-[#001f65]",
+        bg: "bg-[#b0c8fe]/30",
+        hover: "hover:bg-[#b0c8fe]/20",
+        border: "border-[#b0c8fe]/40",
+        shadow: "shadow-[#b0c8fe]/20"
+      },
+      violet: {
+        text: "text-[#001f65]",
+        bg: "bg-[#b0c8fe]/40",
+        hover: "hover:bg-[#b0c8fe]/30",
+        border: "border-[#b0c8fe]/50",
+        shadow: "shadow-[#b0c8fe]/30"
+      },
+      cyan: {
+        text: "text-[#001f65]",
+        bg: "bg-[#b0c8fe]/45",
+        hover: "hover:bg-[#b0c8fe]/35",
+        border: "border-[#b0c8fe]/55",
+        shadow: "shadow-[#b0c8fe]/35"
+      }
+    }
+    return colorMap[color] || colorMap.blue
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100">
-      {/* Header */}
-      <div className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-white/20">
-        <div className="px-4 sm:px-6 py-4">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center">
-              <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center mr-3">
-                <Building2 className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-800">SAO Dashboard</h1>
-                <p className="text-xs sm:text-sm text-gray-600">Student Affairs Office Portal</p>
-              </div>
+    <BackgroundWrapper>
+      {/* Header with Logout - matching admin dashboard style */}
+      <div className="bg-[#b0c8fe]/95 backdrop-blur-sm shadow-lg border-b border-[#b0c8fe]/30 px-4 sm:px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <div className="w-8 h-8 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-lg flex items-center justify-center mr-3 shadow-lg">
+              <Building2 className="w-5 h-5 text-white" />
             </div>
-            <div className="flex items-center space-x-2 sm:space-x-4">
-              <div className="text-right hidden sm:block">
-                <p className="text-xs text-gray-500">Welcome back,</p>
-                <p className="text-sm font-medium text-gray-700">{user?.username}</p>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-200"
-              >
-                <LogOut className="w-4 h-4 mr-1 sm:mr-2" />
-                <span className="hidden sm:inline">Logout</span>
-              </button>
+            <div>
+              <h1 className="text-xl sm:text-2xl font-bold text-[#001f65]">
+                SAO Dashboard
+              </h1>
+              <p className="text-xs text-[#001f65]/70">Welcome back, {user?.username}</p>
             </div>
+          </div>
+          <div className="flex items-center space-x-2 sm:space-x-4">
+            <button
+              onClick={handleLogout}
+              className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50/80 rounded-lg transition-colors border border-red-200 bg-white/60 backdrop-blur-sm"
+            >
+              <LogOut className="w-4 h-4 mr-1 sm:mr-2" />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Dashboard Content */}
-      <div className="p-4 sm:p-6">
-        <div className="max-w-7xl mx-auto">
-          {/* Main Stats Card */}
-          <div className="mb-8 flex justify-center">
-            <div className="bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl p-6 shadow-xl min-w-[300px] max-w-md w-full">
-              <div className="text-center">
-                <div className="flex items-center justify-center mb-4">
-                  <Users className="w-8 h-8 mr-3" />
-                  <h3 className="text-xl font-bold">Total Voters Overview</h3>
-                </div>
-                <div className="flex items-center justify-center space-x-4">
-                  <div className="text-center">
-                    <p className="text-3xl font-bold">
-                      {dashboardData?.registeredVoters || dashboardData?.totalRegisteredVoters || 0}
-                    </p>
-                    <p className="text-emerald-100 text-sm">Registered</p>
-                  </div>
-                  <div className="text-white/60 text-2xl">/</div>
-                  <div className="text-center">
-                    <p className="text-3xl font-bold">
-                      {dashboardData?.totalVoters || 0}
-                    </p>
-                    <p className="text-emerald-100 text-sm">Total</p>
-                  </div>
-                </div>
-                {dashboardData?.totalVoters > 0 && (
-                  <div className="mt-4">
-                    <div className="bg-white/20 rounded-full h-2">
-                      <div 
-                        className="bg-white rounded-full h-2 transition-all duration-500"
-                        style={{ 
-                          width: `${((dashboardData?.registeredVoters || 0) / dashboardData.totalVoters * 100)}%` 
-                        }}
-                      ></div>
+      {/* Main Content - Centered Dashboard Cards */}
+      <div className="min-h-[calc(100vh-120px)] flex items-center justify-center p-4 sm:p-6 lg:p-8">
+        <div className="w-full max-w-6xl">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+            {dashboardCards.map((card, index) => {
+              const colors = getColorClasses(card.color)
+              return (
+                <div
+                  key={index}
+                  onClick={() => router.push(card.path)}
+                  className={`bg-white/90 backdrop-blur-sm rounded-xl shadow-lg cursor-pointer transform hover:scale-105 transition-all duration-300 hover:shadow-2xl ${colors.hover} border ${colors.border} h-56 lg:h-64 flex flex-col justify-center items-center hover:bg-white/95`}
+                >
+                  <div className="p-6 text-center h-full flex flex-col justify-center items-center w-full">
+                    {/* Icon */}
+                    <div className={`p-4 rounded-full ${colors.bg} mb-6 shadow-lg border border-[#b0c8fe]/20`}>
+                      <div className={colors.text}>
+                        {card.icon}
+                      </div>
                     </div>
-                    <p className="text-emerald-100 text-xs mt-1">
-                      {Math.round((dashboardData?.registeredVoters || 0) / dashboardData.totalVoters * 100)}% Registration Rate
-                    </p>
+                    
+                    {/* Content */}
+                    <div className="flex-1 flex flex-col justify-center items-center">
+                      <p className="text-base sm:text-lg font-medium text-[#001f65]/80 mb-3 text-center">
+                        {card.title}
+                      </p>
+                      <p className={`text-3xl sm:text-4xl lg:text-5xl font-bold ${colors.text} mb-6`}>
+                        {typeof card.value === 'number' ? card.value.toLocaleString() : card.value}
+                      </p>
+                    </div>
+
+                    {/* Action Indicator */}
+                    <div className="flex items-center justify-center text-sm text-[#001f65]/60">
+                      <ChevronRight className="w-4 h-4 mr-1" />
+                      <span className="hidden sm:inline">Click to manage</span>
+                      <span className="sm:hidden">Tap to open</span>
+                    </div>
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
+              )
+            })}
           </div>
-
-          {/* Department Statistics */}
-          {dashboardData?.voterStatsByDepartment && (
-            <div className="mb-8">
-              <h2 className="text-xl font-bold text-gray-800 mb-4 text-center">Voter Statistics by Department</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {Object.entries(dashboardData.voterStatsByDepartment).map(([deptKey, stats]) => (
-                  <div
-                    key={deptKey}
-                    className="bg-white rounded-lg shadow-lg border-2 border-green-200 hover:border-green-400 hover:scale-105 transition-all duration-200 p-4"
-                  >
-                    <div className="text-center">
-                      <div className="flex items-center justify-center mb-2">
-                        <UserCheck className="w-5 h-5 text-green-600 mr-2" />
-                        <h3 className="text-sm font-bold text-gray-800 truncate" title={deptKey}>
-                          {deptKey}
-                        </h3>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex justify-center items-baseline space-x-1">
-                          <span className="text-2xl font-bold text-green-600">
-                            {stats.registered || 0}
-                          </span>
-                          <span className="text-gray-400">/</span>
-                          <span className="text-lg font-semibold text-gray-600">
-                            {stats.total || 0}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-500">Registered/Total</p>
-                        
-                        {/* Progress bar */}
-                        {stats.total > 0 && (
-                          <div className="w-full bg-gray-200 rounded-full h-1.5">
-                            <div 
-                              className="bg-green-600 h-1.5 rounded-full transition-all duration-500"
-                              style={{ width: `${(stats.registered / stats.total * 100)}%` }}
-                            ></div>
-                          </div>
-                        )}
-                        
-                        {/* Percentage */}
-                        <p className="text-xs text-green-600 font-medium">
-                          {stats.total > 0 ? Math.round((stats.registered / stats.total) * 100) : 0}%
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Fallback for legacy data structure */}
-          {dashboardData?.voterStats && !dashboardData?.voterStatsByDepartment && (
-            <div className="mb-8">
-              <h2 className="text-xl font-bold text-gray-800 mb-4 text-center">Voter Statistics by Department</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {Object.entries(dashboardData.voterStats).map(([deptKey, stats]) => (
-                  <div
-                    key={deptKey}
-                    className="bg-white rounded-lg shadow-lg border-2 border-green-200 hover:border-green-400 hover:scale-105 transition-all duration-200 p-4"
-                  >
-                    <div className="text-center">
-                      <div className="flex items-center justify-center mb-2">
-                        <UserCheck className="w-5 h-5 text-green-600 mr-2" />
-                        <h3 className="text-sm font-bold text-gray-800 truncate" title={deptKey}>
-                          {deptKey}
-                        </h3>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex justify-center items-baseline space-x-1">
-                          <span className="text-2xl font-bold text-green-600">
-                            {stats.registered || 0}
-                          </span>
-                          <span className="text-gray-400">/</span>
-                          <span className="text-lg font-semibold text-gray-600">
-                            {stats.total || 0}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-500">Registered/Total</p>
-                        
-                        {/* Progress bar */}
-                        {stats.total > 0 && (
-                          <div className="w-full bg-gray-200 rounded-full h-1.5">
-                            <div 
-                              className="bg-green-600 h-1.5 rounded-full transition-all duration-500"
-                              style={{ width: `${(stats.registered / stats.total * 100)}%` }}
-                            ></div>
-                          </div>
-                        )}
-                        
-                        {/* Percentage */}
-                        <p className="text-xs text-green-600 font-medium">
-                          {stats.total > 0 ? Math.round((stats.registered / stats.total) * 100) : 0}%
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Additional SAO Metrics */}
-          {dashboardData && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white rounded-lg shadow-lg p-4 text-center">
-                <div className="text-2xl font-bold text-blue-600">
-                  {dashboardData.activeElections || 0}
-                </div>
-                <p className="text-sm text-gray-600">Active Elections</p>
-              </div>
-              <div className="bg-white rounded-lg shadow-lg p-4 text-center">
-                <div className="text-2xl font-bold text-purple-600">
-                  {dashboardData.totalCandidates || 0}
-                </div>
-                <p className="text-sm text-gray-600">Total Candidates</p>
-              </div>
-              <div className="bg-white rounded-lg shadow-lg p-4 text-center">
-                <div className="text-2xl font-bold text-orange-600">
-                  {dashboardData.totalVotes || 0}
-                </div>
-                <p className="text-sm text-gray-600">Votes Cast</p>
-              </div>
-              <div className="bg-white rounded-lg shadow-lg p-4 text-center">
-                <div className="text-2xl font-bold text-green-600">
-                  {dashboardData.totalDepartments || dashboardData.totalDegrees || 0}
-                </div>
-                <p className="text-sm text-gray-600">Departments</p>
-              </div>
-            </div>
-          )}
-
-          {/* No Data State */}
-          {!dashboardData?.voterStats && !dashboardData?.voterStatsByDepartment && (
-            <div className="text-center py-12">
-              <Users className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-600 mb-2">No voter data available</h3>
-              <p className="text-gray-500 mb-4">Voter statistics will appear here once data is loaded</p>
-              <button
-                onClick={handleRetry}
-                className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition-colors"
-              >
-                Refresh Data
-              </button>
-            </div>
-          )}
         </div>
       </div>
-    </div>
+    </BackgroundWrapper>
   )
 }

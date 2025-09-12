@@ -265,7 +265,7 @@ export default function PreRegisterStep2() {
           <div className="text-center mb-6 -mt-1 md:mb-8 md:mt-10 lg:mb-10 lg:-mt-0 xl:mb-12">
             <div className="flex flex-row items-center justify-center w-full mb-2 xl:mt-10">
               <img
-                src="/fingerprint.png"
+                src="/voteicon.png"
                 alt="Fingerprint Icon"
                 className="w-10 h-10 md:w-12 md:h-12 xl:w-16 xl:h-16 mr-3"
               />

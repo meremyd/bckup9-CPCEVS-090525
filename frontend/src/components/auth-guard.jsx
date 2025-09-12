@@ -16,7 +16,7 @@ export default function AuthGuard({ children, requiredRole = null }) {
       }
 
       if (requiredRole && !hasRole(requiredRole)) {
-        // Redirect to appropriate dashboard based on user role
+ 
         const user = getUserFromToken()
         if (user && user.userType) {
           switch (user.userType) {

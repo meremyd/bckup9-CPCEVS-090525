@@ -3,6 +3,13 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { departmentalElectionsAPI } from "@/lib/api/departmentalElections"
+import { candidatesAPI } from "@/lib/api/candidates"
+import { ballotAPI } from "@/lib/api/ballots"
+import { votersAPI } from "@/lib/api/voters"
+import { departmentsAPI } from "@/lib/api/departments"
+import DepartmentalLayout from "@/components/DepartmentalLayout"
+import BackgroundWrapper from '@/components/BackgroundWrapper'
+import Swal from 'sweetalert2'
 import { 
   Home, 
   CheckCircle, 
@@ -13,39 +20,46 @@ import {
   BarChart3,
   Menu,
   X,
-  ArrowLeft,
   LayoutDashboard,
   LogOut,
-  Calendar,
   Plus,
   Edit,
   Trash2,
   Save,
   AlertCircle,
-  BookOpen,
-  GraduationCap,
+  Vote,
   Building2,
-  ChevronRight
+  Loader2,
+  ChevronRight,
+  Settings,
+  UserCheck,
+  GraduationCap
 } from "lucide-react"
 
 export default function DepartmentalPage() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [elections, setElections] = useState([])
   const [departments, setDepartments] = useState([])
-  const [allElections, setAllElections] = useState([])
-  const [filteredElections, setFilteredElections] = useState([])
-  const [selectedDepartment, setSelectedDepartment] = useState(null)
   const [selectedElection, setSelectedElection] = useState(null)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
   const [formLoading, setFormLoading] = useState(false)
+  const [countsLoading, setCountsLoading] = useState(false)
+  const [cardCounts, setCardCounts] = useState({
+    candidates: 0,
+    position: 0,
+    officers: 0,
+    ballot: 0,
+    statistics: 0,
+    voterTurnout: 0
+  })
   const [formData, setFormData] = useState({
+    deptElectionId: '',
+    electionYear: new Date().getFullYear(),
     title: '',
-    description: '',
-    department: '',
-    startDate: '',
-    endDate: '',
-    electionYear: new Date().getFullYear()
+    status: 'upcoming',
+    electionDate: '',
+    departmentId: ''
   })
   const [error, setError] = useState('')
   const router = useRouter()
@@ -68,8 +82,8 @@ export default function DepartmentalPage() {
         return
       }
 
+      fetchElections()
       fetchDepartments()
-      fetchAllElections()
     } catch (parseError) {
       console.error("Error parsing user data:", parseError)
       router.push("/adminlogin")
@@ -79,9 +93,28 @@ export default function DepartmentalPage() {
     setLoading(false)
   }, [router])
 
+  useEffect(() => {
+    if (selectedElection) {
+      console.log('Selected election changed, fetching counts for:', selectedElection)
+      fetchCardCounts()
+    }
+  }, [selectedElection])
+
+  const fetchElections = async () => {
+    try {
+      const response = await departmentalElectionsAPI.getAll()
+      console.log('Departmental Elections API response:', response)
+      setElections(response.elections || response.data || response)
+    } catch (error) {
+      console.error("Error fetching elections:", error)
+      setElections([])
+    }
+  }
+
   const fetchDepartments = async () => {
     try {
-      const response = await departmentalElectionsAPI.getAvailableDepartments()
+      const response = await departmentsAPI.getAll()
+      console.log('Departments API response:', response)
       setDepartments(response.departments || response.data || response)
     } catch (error) {
       console.error("Error fetching departments:", error)
@@ -89,46 +122,163 @@ export default function DepartmentalPage() {
     }
   }
 
-  const fetchAllElections = async () => {
-    try {
-      const response = await departmentalElectionsAPI.getAll()
-      const elections = response.elections || response.data || response
-      setAllElections(elections)
-      setFilteredElections(elections) // Show all elections initially
-    } catch (error) {
-      console.error("Error fetching elections:", error)
-      setAllElections([])
-      setFilteredElections([])
+  const fetchCardCounts = async () => {
+    if (!selectedElection) {
+      console.log('No selected election, skipping count fetch')
+      return
     }
-  }
 
-  const handleDepartmentClick = (department) => {
-    if (selectedDepartment === department) {
-      // If same department clicked, show all elections
-      setSelectedDepartment(null)
-      setFilteredElections(allElections)
-    } else {
-      // Filter elections by department
-      setSelectedDepartment(department)
-      const filtered = allElections.filter(election => election.department === department)
-      setFilteredElections(filtered)
+    setCountsLoading(true)
+    console.log('=== STARTING CARD COUNTS FETCH ===')
+    console.log('Selected election:', selectedElection)
+
+    try {
+      const departmentalElectionId = selectedElection._id || selectedElection.id
+      console.log('Using departmentalElectionId:', departmentalElectionId)
+      
+      let counts = {
+        candidates: 0,
+        position: 0,
+        officers: 0,
+        ballot: 0,
+        statistics: 0,
+        voterTurnout: 0
+      }
+
+      // Helper function to safely get count from response
+      const getCount = (response, countKeys = ['length', 'total', 'count']) => {
+        console.log('Getting count from response:', response)
+        
+        if (Array.isArray(response)) {
+          console.log('Response is array, length:', response.length)
+          return response.length
+        }
+        
+        for (const key of countKeys) {
+          if (response[key] !== undefined) {
+            const value = Array.isArray(response[key]) ? response[key].length : Number(response[key]) || 0
+            console.log(`Found count in ${key}:`, value)
+            return value
+          }
+        }
+        
+        const dataKeys = ['data', 'candidates', 'officers', 'ballots', 'positions']
+        for (const key of dataKeys) {
+          if (response[key] && Array.isArray(response[key])) {
+            console.log(`Found array in ${key}, length:`, response[key].length)
+            return response[key].length
+          }
+        }
+        
+        console.log('No count found, returning 0')
+        return 0
+      }
+
+      // Fetch candidates
+      console.log('Fetching candidates...')
+      try {
+        const candidatesResponse = await candidatesAPI.departmental.getByElection(departmentalElectionId)
+        console.log('Candidates response:', candidatesResponse)
+        counts.candidates = getCount(candidatesResponse)
+        console.log('Candidates count:', counts.candidates)
+      } catch (candidatesError) {
+        console.error('Failed to fetch candidates:', candidatesError)
+        counts.candidates = 0
+      }
+
+      // Fetch officers
+      console.log('Fetching officers...')
+      try {
+        const officersResponse = await votersAPI.getOfficers({ departmentId: selectedElection.departmentId?._id || selectedElection.departmentId, limit: 1 })
+        console.log('Officers response:', officersResponse)
+        counts.officers = getCount(officersResponse, ['total', 'count'])
+        console.log('Officers count:', counts.officers)
+      } catch (officersError) {
+        console.error('Failed to fetch officers:', officersError)
+        counts.officers = 0
+      }
+
+      // Fetch ballots
+      console.log('Fetching ballots...')
+      try {
+        const ballotsResponse = await ballotAPI.getAllDepartmentalBallots({ 
+          electionId: departmentalElectionId,
+          limit: 1 
+        })
+        console.log('Ballots response:', ballotsResponse)
+        counts.ballot = getCount(ballotsResponse, ['total', 'count'])
+        console.log('Ballots count:', counts.ballot)
+      } catch (ballotsError) {
+        console.error('Failed to fetch ballots:', ballotsError)
+        counts.ballot = 0
+      }
+
+      // Position count - typically based on available positions in the election
+      counts.position = selectedElection.positions?.length || 0
+
+      // Set statistics count (using candidates count)
+      counts.statistics = counts.candidates
+
+      // Calculate voter turnout percentage
+      if (counts.officers > 0) {
+        counts.voterTurnout = Math.round((counts.ballot / counts.officers) * 100)
+      } else {
+        counts.voterTurnout = 0
+      }
+
+      console.log('Final counts:', counts)
+      setCardCounts(counts)
+
+    } catch (error) {
+      console.error("Critical error in fetchCardCounts:", error)
+      setCardCounts({
+        candidates: 0,
+        position: 0,
+        officers: 0,
+        ballot: 0,
+        statistics: 0,
+        voterTurnout: 0
+      })
+    } finally {
+      setCountsLoading(false)
+      console.log('=== FINISHED CARD COUNTS FETCH ===')
     }
   }
 
   const handleElectionClick = (election) => {
+    console.log('Election clicked:', election)
     setSelectedElection(election)
-    router.push(`/ecommittee/departmental/status?electionId=${election._id || election.id}&department=${election.department}`)
+    localStorage.setItem('selectedDepartmentalElection', JSON.stringify(election))
+  }
+
+  const handleBackToElections = () => {
+    setSelectedElection(null)
+    localStorage.removeItem('selectedDepartmentalElection')
+    setCardCounts({
+      candidates: 0,
+      position: 0,
+      officers: 0,
+      ballot: 0,
+      statistics: 0,
+      voterTurnout: 0
+    })
+  }
+
+  const handleDepartmentClick = (department) => {
+    console.log('Department clicked:', department)
+    // Navigate to department-specific elections view
+    router.push(`/ecommittee/departmental/department/${department._id || department.id}`)
   }
 
   const handleAddElection = () => {
     setShowAddForm(true)
     setFormData({
+      deptElectionId: '',
+      electionYear: new Date().getFullYear(),
       title: '',
-      description: '',
-      department: selectedDepartment || '',
-      startDate: '',
-      endDate: '',
-      electionYear: new Date().getFullYear()
+      status: 'upcoming',
+      electionDate: '',
+      departmentId: ''
     })
     setError('')
   }
@@ -139,130 +289,307 @@ export default function DepartmentalPage() {
     setError('')
 
     try {
-      // Validate dates
-      const startDate = new Date(formData.startDate)
-      const endDate = new Date(formData.endDate)
-      
-      if (startDate >= endDate) {
-        throw new Error('End date must be after start date')
-      }
-
       await departmentalElectionsAPI.create(formData)
-      
-      // Refresh elections
-      await fetchAllElections()
-      
+      await fetchElections()
       setShowAddForm(false)
       setFormData({
+        deptElectionId: '',
+        electionYear: new Date().getFullYear(),
         title: '',
-        description: '',
-        department: '',
-        startDate: '',
-        endDate: '',
-        electionYear: new Date().getFullYear()
+        status: 'upcoming',
+        electionDate: '',
+        departmentId: ''
+      })
+
+      Swal.fire({
+        title: 'Success!',
+        text: 'Departmental Election created successfully',
+        icon: 'success',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#3b82f6'
       })
     } catch (error) {
       setError(error.message || 'Failed to create election')
+      
+      Swal.fire({
+        title: 'Error!',
+        text: error.message || 'Failed to create election',
+        icon: 'error',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#ef4444'
+      })
     } finally {
       setFormLoading(false)
     }
   }
 
-  const handleDeleteElection = async (electionId, e) => {
+  const handleDeleteElection = async (departmentalElectionId, e) => {
     e.stopPropagation()
     
-    if (window.confirm('Are you sure you want to delete this election? This action cannot be undone.')) {
+    const result = await Swal.fire({
+      title: 'Are you sure?',
+      text: 'This will permanently delete the election and all associated data. This action cannot be undone!',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Yes, delete it!',
+      cancelButtonText: 'Cancel',
+      reverseButtons: true
+    })
+
+    if (result.isConfirmed) {
       try {
-        await departmentalElectionsAPI.delete(electionId)
-        await fetchAllElections()
+        Swal.fire({
+          title: 'Deleting...',
+          text: 'Please wait while we delete the election',
+          allowOutsideClick: false,
+          allowEscapeKey: false,
+          showConfirmButton: false,
+          didOpen: () => {
+            Swal.showLoading()
+          }
+        })
+
+        await departmentalElectionsAPI.delete(departmentalElectionId)
+        await fetchElections()
+        
+        if (selectedElection && (selectedElection._id === departmentalElectionId || selectedElection.id === departmentalElectionId)) {
+          handleBackToElections()
+        }
+
+        Swal.fire({
+          title: 'Deleted!',
+          text: 'The election has been successfully deleted.',
+          icon: 'success',
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#10b981'
+        })
       } catch (error) {
         console.error('Error deleting election:', error)
-        alert('Failed to delete election. Please try again.')
+        
+        Swal.fire({
+          title: 'Error!',
+          text: error.message || 'Failed to delete election. Please try again.',
+          icon: 'error',
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#ef4444'
+        })
       }
     }
-  }
-
-  const handleSidebarNavigation = (path) => {
-    const electionParam = selectedElection ? `?electionId=${selectedElection._id || selectedElection.id}&department=${selectedElection.department}` : ''
-    router.push(`${path}${electionParam}`)
-    setSidebarOpen(false)
-  }
-
-  const handleBackToElections = () => {
-    setSelectedElection(null)
-    setSidebarOpen(false)
-    router.push('/ecommittee/departmental')
   }
 
   const handleLogout = () => {
     localStorage.removeItem("token")
     localStorage.removeItem("user")
+    localStorage.removeItem("selectedDepartmentalElection")
     router.push("/adminlogin")
   }
 
-  // Department icon mapping
-  const getDepartmentIcon = (department) => {
-    const iconMap = {
-      'Computer Science': BookOpen,
-      'Information Technology': BookOpen,
-      'Engineering': Building2,
-      'Business': GraduationCap,
-      'Education': GraduationCap,
-      'Arts': BookOpen,
-      'Science': BookOpen,
-      'Medicine': Building2,
-      'Law': GraduationCap,
-      'Agriculture': Building2
+  const handleBackToDashboard = () => {
+    router.push('/ecommittee/dashboard')
+  }
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'active':
+        return 'bg-green-500/20 text-green-100'
+      case 'upcoming':
+        return 'bg-yellow-500/20 text-yellow-100'
+      case 'completed':
+        return 'bg-blue-500/20 text-blue-100'
+      case 'draft':
+        return 'bg-gray-500/20 text-gray-100'
+      default:
+        return 'bg-gray-500/20 text-gray-100'
     }
-    return iconMap[department] || BookOpen
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-400 via-purple-500 to-purple-600">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto"></div>
-          <p className="mt-4 text-white">Loading...</p>
+      <BackgroundWrapper>
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center bg-white/10 backdrop-blur-md p-8 rounded-2xl border border-white/20">
+            <Loader2 className="animate-spin rounded-full h-12 w-12 mx-auto text-white" />
+            <p className="mt-4 text-white font-medium">Loading elections...</p>
+          </div>
         </div>
-      </div>
+      </BackgroundWrapper>
     )
   }
 
-  const sidebarItems = [
+  const electionManagementCards = [
     { 
-      icon: Home, 
-      label: "Home", 
-      path: "/ecommittee/departmental" 
+      title: "Position",
+      icon: Clipboard,
+      color: "bg-[#b0c8fe]/30",
+      hoverColor: "hover:bg-[#b0c8fe]/20",
+      borderColor: "border-[#b0c8fe]/40",
+      shadowColor: "shadow-[#b0c8fe]/20",
+      textColor: "text-[#001f65]",
+      description: "Manage election positions",
+      count: cardCounts.position,
+      path: `/ecommittee/departmental/position?departmentalElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
-      icon: CheckCircle, 
-      label: "Status", 
-      path: "/ecommittee/departmental/status" 
+      title: "Class Officers",
+      icon: UserCheck,
+      color: "bg-[#b0c8fe]/40",
+      hoverColor: "hover:bg-[#b0c8fe]/30",
+      borderColor: "border-[#b0c8fe]/50",
+      shadowColor: "shadow-[#b0c8fe]/30",
+      textColor: "text-[#001f65]",
+      description: "Manage class officers",
+      count: cardCounts.officers,
+      path: `/ecommittee/departmental/officers?departmentalElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
-      icon: Users, 
-      label: "Candidates", 
-      path: "/ecommittee/departmental/candidates" 
+      title: "Ballot",
+      icon: Vote,
+      color: "bg-[#b0c8fe]/42",
+      hoverColor: "hover:bg-[#b0c8fe]/32",
+      borderColor: "border-[#b0c8fe]/52",
+      shadowColor: "shadow-[#b0c8fe]/32",
+      textColor: "text-[#001f65]",
+      description: "Manage voting ballots",
+      count: cardCounts.ballot,
+      path: `/ecommittee/departmental/ballot?departmentalElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
-      icon: Clipboard, 
-      label: "Ballot", 
-      path: "/ecommittee/departmental/ballot" 
+      title: "Statistics",
+      icon: BarChart3,
+      color: "bg-[#b0c8fe]/38",
+      hoverColor: "hover:bg-[#b0c8fe]/28",
+      borderColor: "border-[#b0c8fe]/48",
+      shadowColor: "shadow-[#b0c8fe]/28",
+      textColor: "text-[#001f65]",
+      description: "View election analytics",
+      count: cardCounts.statistics,
+      path: `/ecommittee/departmental/statistics?departmentalElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
-      icon: TrendingUp, 
-      label: "Voter Turnout", 
-      path: "/ecommittee/departmental/voterTurnout" 
+      title: "Candidates",
+      icon: Users,
+      color: "bg-[#b0c8fe]/35",
+      hoverColor: "hover:bg-[#b0c8fe]/25",
+      borderColor: "border-[#b0c8fe]/45",
+      shadowColor: "shadow-[#b0c8fe]/25",
+      textColor: "text-[#001f65]",
+      description: "Manage election candidates",
+      count: cardCounts.candidates,
+      path: `/ecommittee/departmental/candidates?departmentalElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
-      icon: BarChart3, 
-      label: "Statistics", 
-      path: "/ecommittee/departmental/statistics" 
-    },
+      title: "Voter Turnout",
+      icon: TrendingUp,
+      color: "bg-[#b0c8fe]/45",
+      hoverColor: "hover:bg-[#b0c8fe]/35",
+      borderColor: "border-[#b0c8fe]/55",
+      shadowColor: "shadow-[#b0c8fe]/35",
+      textColor: "text-[#001f65]",
+      description: "Monitor voting activity",
+      count: `${cardCounts.voterTurnout}%`,
+      path: `/ecommittee/departmental/voterTurnout?departmentalElectionId=${selectedElection?._id || selectedElection?.id}`
+    }
   ]
 
+  if (selectedElection) {
+    // Use DepartmentalLayout for election management view
+    return (
+      <DepartmentalLayout
+        departmentalElectionId={selectedElection._id || selectedElection.id}
+        title={selectedElection.title}
+        subtitle="Election Management"
+        activeItem=""
+        showBackButton={false}
+      >
+        <div className="min-h-[60vh] flex flex-col justify-center">
+          <div className="text-center mb-8">
+            <h2 className="text-3xl font-bold text-white mb-2">{selectedElection.title}</h2>
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(selectedElection?.status)}`}>
+                {selectedElection?.status || 'upcoming'}
+              </span>
+            </div>
+            <p className="text-white/60 text-sm">Election ID: {selectedElection.deptElectionId}</p>
+            <p className="text-white/60 text-sm">Department: {selectedElection.departmentId?.departmentCode || 'Unknown'}</p>
+          </div>
+
+          {/* Show loading state for counts */}
+          {countsLoading && (
+            <div className="text-center mb-4">
+              <Loader2 className="animate-spin h-6 w-6 mx-auto text-white/60" />
+              <p className="text-white/60 text-sm mt-2">Loading card data...</p>
+            </div>
+          )}
+
+          <div className="flex justify-center">
+            <div className="w-full max-w-6xl">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+                {electionManagementCards.map((card, index) => {
+                  const IconComponent = card.icon
+                  return (
+                    <div
+                      key={index}
+                      onClick={() => router.push(card.path)}
+                      className={`bg-white/90 backdrop-blur-sm rounded-xl shadow-lg cursor-pointer transform hover:scale-105 transition-all duration-300 hover:shadow-2xl ${card.hoverColor} border ${card.borderColor} h-56 lg:h-64 flex flex-col justify-center items-center hover:bg-white/95`}
+                    >
+                      <div className="p-6 text-center h-full flex flex-col justify-center items-center w-full">
+                        {/* Icon */}
+                        <div className={`p-4 rounded-full ${card.color} mb-6 shadow-lg border border-[#b0c8fe]/20`}>
+                          <div className={card.textColor}>
+                            <IconComponent className="w-8 h-8 sm:w-10 md:w-12" />
+                          </div>
+                        </div>
+                        
+                        {/* Content */}
+                        <div className="flex-1 flex flex-col justify-center items-center">
+                          <p className="text-base sm:text-lg font-medium text-[#001f65]/80 mb-3 text-center">
+                            {card.title}
+                          </p>
+                          <p className={`text-3xl sm:text-4xl lg:text-5xl font-bold ${card.textColor} mb-6`}>
+                            {countsLoading ? (
+                              <Loader2 className="animate-spin h-8 w-8 mx-auto" />
+                            ) : (
+                              typeof card.count === 'number' ? card.count.toLocaleString() : card.count
+                            )}
+                          </p>
+                        </div>
+
+                        {/* Action Indicator */}
+                        <div className="flex items-center justify-center text-sm text-[#001f65]/60">
+                          <ChevronRight className="w-4 h-4 mr-1" />
+                          <span className="hidden sm:inline">Click to manage</span>
+                          <span className="sm:hidden">Tap to open</span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Debug info - remove this in production */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-8 bg-black/20 backdrop-blur-sm rounded-lg p-4 max-w-2xl mx-auto">
+              <h4 className="text-white font-bold mb-2">Debug Info:</h4>
+              <pre className="text-white/80 text-xs overflow-auto">
+                {JSON.stringify({ 
+                  selectedElection: selectedElection?._id || selectedElection?.id,
+                  cardCounts,
+                  countsLoading 
+                }, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      </DepartmentalLayout>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-400 via-purple-500 to-purple-600">
+    <BackgroundWrapper>
       {/* Add Election Form Modal */}
       {showAddForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -288,15 +615,15 @@ export default function DepartmentalPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Election Title *
+                    Departmental Election ID *
                   </label>
                   <input
                     type="text"
                     required
-                    value={formData.title}
-                    onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                    placeholder="e.g., CS Department Election 2024"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    value={formData.deptElectionId}
+                    onChange={(e) => setFormData(prev => ({ ...prev, deptElectionId: e.target.value }))}
+                    placeholder="e.g., DEPT2024-001"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
 
@@ -306,28 +633,17 @@ export default function DepartmentalPage() {
                   </label>
                   <select
                     required
-                    value={formData.department}
-                    onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    value={formData.departmentId}
+                    onChange={(e) => setFormData(prev => ({ ...prev, departmentId: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="">Select Department</option>
                     {departments.map((dept) => (
-                      <option key={dept} value={dept}>{dept}</option>
+                      <option key={dept._id || dept.id} value={dept._id || dept.id}>
+                        {dept.departmentCode} - {dept.degreeProgram}
+                      </option>
                     ))}
                   </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Description
-                  </label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="Brief description of the election"
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  />
                 </div>
 
                 <div>
@@ -341,36 +657,35 @@ export default function DepartmentalPage() {
                     onChange={(e) => setFormData(prev => ({ ...prev, electionYear: parseInt(e.target.value) }))}
                     min="2024"
                     max="2030"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Start Date *
-                    </label>
-                    <input
-                      type="datetime-local"
-                      required
-                      value={formData.startDate}
-                      onChange={(e) => setFormData(prev => ({ ...prev, startDate: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Election Title *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.title}
+                    onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                    placeholder="e.g., Departmental Election 2024"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      End Date *
-                    </label>
-                    <input
-                      type="datetime-local"
-                      required
-                      value={formData.endDate}
-                      onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Election Date *
+                  </label>
+                  <input
+                    type="datetime-local"
+                    required
+                    value={formData.electionDate}
+                    onChange={(e) => setFormData(prev => ({ ...prev, electionDate: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
                 </div>
 
                 <div className="flex gap-3 pt-4">
@@ -384,10 +699,10 @@ export default function DepartmentalPage() {
                   <button
                     type="submit"
                     disabled={formLoading}
-                    className="flex-1 flex items-center justify-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="flex-1 flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {formLoading ? (
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <Loader2 className="animate-spin rounded-full h-4 w-4" />
                     ) : (
                       <>
                         <Save className="w-4 h-4 mr-2" />
@@ -402,335 +717,180 @@ export default function DepartmentalPage() {
         </div>
       )}
 
-      {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && selectedElection && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Sidebar */}
-      {selectedElection && (
-        <div className={`fixed left-0 top-0 h-full w-64 bg-white/95 backdrop-blur-sm shadow-lg border-r z-50 transform transition-transform duration-300 ease-in-out ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        } lg:translate-x-0`}>
-          <div className="p-6 flex flex-col h-full">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-xl font-bold text-gray-800">Departmental Elections</h2>
-                <p className="text-sm text-gray-600 truncate">{selectedElection.title}</p>
-                <p className="text-xs text-gray-500">{selectedElection.department}</p>
-              </div>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="lg:hidden p-1 rounded-lg hover:bg-gray-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
+      {/* Header */}
+      <div className="bg-[#b0c8fe]/95 backdrop-blur-sm shadow-lg border-b border-[#b0c8fe]/30 px-4 sm:px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <div className="w-8 h-8 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-lg flex items-center justify-center mr-3 shadow-lg">
+              <GraduationCap className="w-5 h-5 text-white" />
             </div>
-
-            <nav className="space-y-2 flex-1">
-              {sidebarItems.map((item) => {
-                const IconComponent = item.icon
-                return (
-                  <button
-                    key={item.path}
-                    onClick={() => handleSidebarNavigation(item.path)}
-                    className="w-full flex items-center px-4 py-3 text-left rounded-lg transition-colors text-gray-600 hover:bg-purple-50 hover:text-purple-700"
-                  >
-                    <IconComponent className="w-5 h-5" />
-                    <span className="ml-3">{item.label}</span>
-                  </button>
-                )
-              })}
-            </nav>
-
-            <div className="pt-6 space-y-2">
-              <button
-                onClick={handleBackToElections}
-                className="w-full flex items-center px-4 py-3 text-left rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
-              >
-                <ArrowLeft className="w-5 h-5 mr-3" />
-                Back to Elections
-              </button>
-              
-              <button
-                onClick={() => router.push('/ecommittee/dashboard')}
-                className="w-full flex items-center px-4 py-3 text-left rounded-lg text-purple-600 hover:bg-purple-50 transition-colors"
-              >
-                <LayoutDashboard className="w-5 h-5 mr-3" />
-                Dashboard
-              </button>
-
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center px-4 py-3 text-left rounded-lg text-red-600 hover:bg-red-50 transition-colors"
-              >
-                <LogOut className="w-5 h-5 mr-3" />
-                Logout
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Content */}
-      <div className={`transition-all duration-300 ${selectedElection ? 'lg:ml-64' : ''}`}>
-        {/* Header */}
-        <div className="bg-white/10 backdrop-blur-sm border-b border-white/20">
-          <div className="px-4 lg:px-6 py-4">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center">
-                {selectedElection && (
-                  <button
-                    onClick={() => setSidebarOpen(true)}
-                    className="lg:hidden p-2 rounded-lg hover:bg-white/10 mr-3"
-                  >
-                    <Menu className="w-5 h-5 text-white" />
-                  </button>
-                )}
-                <div>
-                  <h1 className="text-2xl font-bold text-white">
-                    {selectedElection ? selectedElection.title : 'Departmental Elections'}
-                  </h1>
-                  <p className="text-purple-100">
-                    Welcome, {user?.username}
-                    {selectedDepartment && (
-                      <>
-                        {' • '}
-                        <span className="font-medium">{selectedDepartment}</span>
-                        {' • '}
-                        <button 
-                          onClick={() => handleDepartmentClick(selectedDepartment)}
-                          className="hover:underline"
-                        >
-                          Show All
-                        </button>
-                      </>
-                    )}
-                  </p>
-                </div>
-              </div>
-              
-              {!selectedElection && (
-                <button
-                  onClick={() => router.push('/ecommittee/dashboard')}
-                  className="flex items-center px-4 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 transition-colors backdrop-blur-sm"
-                >
-                  <LayoutDashboard className="w-4 h-4 mr-2" />
-                  Dashboard
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Page Content */}
-        <div className="p-4 lg:p-6">
-          {!selectedElection ? (
             <div>
-              {/* Department Cards Section */}
-              {departments.length > 0 && (
-                <div className="mb-12">
-                  {/* <div className="mb-8 text-center">
-                    <h2 className="text-2xl font-bold text-white mb-2">Departments</h2>
-                    <p className="text-purple-100">Filter elections by department</p>
-                  </div> */}
-                  
-                  <div className="flex justify-center mb-8">
-                    <div className="w-full max-w-6xl">
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 justify-items-center">
-                        {departments.map((department) => {
-                          const IconComponent = getDepartmentIcon(department)
-                          const isSelected = selectedDepartment === department
-                          
-                          return (
-                            <div
-                              key={department}
-                              onClick={() => handleDepartmentClick(department)}
-                              className={`w-full max-w-[140px] rounded-2xl shadow-lg p-4 transition-all duration-200 cursor-pointer group relative overflow-hidden aspect-square flex flex-col items-center justify-center text-center ${
-                                isSelected 
-                                  ? 'bg-white/40 backdrop-blur-sm scale-105' 
-                                  : 'bg-white/20 backdrop-blur-sm hover:bg-white/30'
-                              }`}
-                            >
-                              {/* Background Pattern */}
-                              <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-                              
-                              <div className="relative z-10 flex flex-col items-center">
-                                {/* Department Icon */}
-                                <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 transition-transform duration-200 ${
-                                  isSelected ? 'bg-white/30 scale-110' : 'bg-white/20 group-hover:scale-110'
-                                }`}>
-                                  <IconComponent className="w-6 h-6 text-white" />
-                                </div>
-
-                                {/* Department Name */}
-                                <h3 className="text-sm font-bold text-white leading-tight">
-                                  {department}
-                                </h3>
-                              </div>
-                              
-                              {isSelected && (
-                                <div className="absolute inset-0 border-2 border-white/50 rounded-2xl"></div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Elections Section */}
-              {/* <div className="mb-8 text-center">
-                <h2 className="text-2xl font-bold text-white mb-2">
-                  {selectedDepartment ? `${selectedDepartment} Elections` : 'All Elections'}
-                </h2>
-                <p className="text-purple-100">
-                  {selectedDepartment 
-                    ? `Elections for ${selectedDepartment} department` 
-                    : 'Select an election to manage or create a new one'
-                  }
-                </p>
-              </div> */}
-
-              {/* Centered Grid Container */}
-              <div className="flex justify-center">
-                <div className="w-full max-w-6xl">
-                  {filteredElections.length === 0 ? (
-                    <div className="text-center py-12">
-                      <div className="w-16 h-16 mx-auto mb-4 bg-white/10 rounded-full flex items-center justify-center">
-                        <Calendar className="w-8 h-8 text-white" />
-                      </div>
-                      <h3 className="text-lg font-medium text-white mb-4">
-                        {selectedDepartment ? `No Elections Found for ${selectedDepartment}` : 'No Elections Found'}
-                      </h3>
-                      <p className="text-purple-100 mb-6">
-                        {selectedDepartment 
-                          ? `There are no elections for ${selectedDepartment} at the moment.`
-                          : 'There are no departmental elections available at the moment.'
-                        }
-                      </p>
-                      <button
-                        onClick={handleAddElection}
-                        className="inline-flex items-center px-6 py-3 bg-white/20 text-white rounded-lg hover:bg-white/30 transition-colors backdrop-blur-sm"
-                      >
-                        <Plus className="w-5 h-5 mr-2" />
-                        Create Your First Election
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 justify-items-center">
-                      {/* Add Election Card */}
-                      <div
-                        onClick={handleAddElection}
-                        className="w-full max-w-xs bg-white/10 backdrop-blur-sm rounded-2xl border-2 border-dashed border-white/30 p-8 hover:bg-white/20 hover:border-white/50 transition-all duration-200 cursor-pointer group flex flex-col items-center justify-center text-center aspect-[3/4]"
-                      >
-                        <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-200">
-                          <Plus className="w-8 h-8 text-white" />
-                        </div>
-                        <h3 className="text-xl font-bold text-white mb-2">Add Election</h3>
-                        <p className="text-purple-100 text-sm">Create a new departmental election</p>
-                      </div>
-
-                      {/* Election Cards */}
-                      {filteredElections.map((election) => (
-                        <div
-                          key={election._id || election.id}
-                          onClick={() => handleElectionClick(election)}
-                          className="w-full max-w-xs bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg p-6 hover:bg-white/30 transition-all duration-200 cursor-pointer group relative overflow-hidden aspect-[3/4] flex flex-col"
-                        >
-                          {/* Background Pattern */}
-                          <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-                          
-                          <div className="relative z-10 flex-1 flex flex-col">
-                            {/* Status Badge */}
-                            <div className="flex justify-end mb-4">
-                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                                election.status === 'active' 
-                                  ? 'bg-green-500/20 text-green-100' 
-                                  : election.status === 'upcoming'
-                                  ? 'bg-yellow-500/20 text-yellow-100'
-                                  : 'bg-gray-500/20 text-gray-100'
-                              }`}>
-                                {election.status || 'draft'}
-                              </span>
-                            </div>
-
-                            {/* Election Info */}
-                            <div className="flex-1 flex flex-col justify-center text-center mb-6">
-                              <h3 className="text-2xl font-bold text-white mb-2 leading-tight">
-                                {election.title || `${election.department} Election ${election.electionYear}`}
-                              </h3>
-                              <p className="text-purple-100 text-sm mb-2">
-                                {election.electionYear}
-                              </p>
-                              <p className="text-purple-200 text-xs mb-2 font-medium">
-                                {election.department}
-                              </p>
-                              {election.description && (
-                                <p className="text-purple-200 text-xs line-clamp-2">
-                                  {election.description}
-                                </p>
-                              )}
-                            </div>
-
-                            {/* Dates */}
-                            <div className="text-center mb-4">
-                              <p className="text-purple-100 text-xs">
-                                {election.startDate ? new Date(election.startDate).toLocaleDateString() : 'No date set'} - 
-                                {election.endDate ? new Date(election.endDate).toLocaleDateString() : 'No date set'}
-                              </p>
-                            </div>
-
-                            {/* Action Icons */}
-                            <div className="flex justify-center gap-4 mt-auto">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleElectionClick(election)
-                                }}
-                                className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
-                                title="Manage Election"
-                              >
-                                <Edit className="w-5 h-5 text-white" />
-                              </button>
-                              <button
-                                onClick={(e) => handleDeleteElection(election._id || election.id, e)}
-                                className="w-10 h-10 bg-red-500/30 rounded-full flex items-center justify-center hover:bg-red-500/50 transition-colors"
-                                title="Delete Election"
-                              >
-                                <Trash2 className="w-5 h-5 text-white" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
+              <h1 className="text-xl sm:text-2xl font-bold text-[#001f65]">Election Committee Dashboard</h1>
+              <p className="text-xs text-[#001f65]/70">Departmental Elections</p>
             </div>
-          ) : (
-            // Selected Election Content (this will be replaced by specific pages)
-            <div className="bg-white/20 backdrop-blur-sm rounded-xl shadow-sm border border-white/20 p-6">
-              <h2 className="text-xl font-semibold text-white mb-4">Election Management</h2>
-              <p className="text-purple-100">
-                You are now managing: <strong>{selectedElection.title}</strong>
-              </p>
-              <p className="text-sm text-purple-200 mt-2">
-                Department: <strong>{selectedElection.department}</strong>
-              </p>
-              <p className="text-sm text-purple-200 mt-2">
-                Use the sidebar to navigate to different sections of this election.
-              </p>
-            </div>
-          )}
+          </div>
+          
+          <div className="flex gap-2">
+            <button
+              onClick={handleBackToDashboard}
+              className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-[#001f65] hover:bg-[#b0c8fe]/30 rounded-lg transition-colors border border-[#001f65]/20 bg-white/60 backdrop-blur-sm"
+            >
+              <LayoutDashboard className="w-4 h-4 mr-1 sm:mr-2" />
+              Dashboard
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-200 bg-white/60 backdrop-blur-sm"
+            >
+              <LogOut className="w-4 h-4 mr-1 sm:mr-2" />
+              Logout
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Main Content */}
+      <div className="p-4 lg:p-6">
+        <div className="min-h-[calc(100vh-120px)]">
+          {/* Departments Cards Section */}
+          <div className="mb-12">
+            <div className="text-center mb-6">
+              <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Departmentmental Elections</h2>
+              <p className="text-white/80">Browse elections by department</p>
+            </div>
+
+            <div className="flex justify-center">
+              <div className="w-full max-w-7xl">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                  {departments.map((department) => (
+                    <div
+                      key={department._id || department.id}
+                      onClick={() => handleDepartmentClick(department)}
+                      className="bg-white/20 backdrop-blur-sm rounded-xl shadow-lg p-4 hover:bg-white/30 transition-all duration-200 cursor-pointer group relative overflow-hidden aspect-square flex flex-col justify-center items-center text-center"
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                      
+                      <div className="relative z-10">
+                        <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center mb-3 mx-auto">
+                          <Building2 className="w-6 h-6 text-white" />
+                        </div>
+                        <h3 className="text-sm font-bold text-white mb-1 leading-tight">
+                          {department.departmentCode}
+                        </h3>
+                        <p className="text-xs text-blue-100 line-clamp-2">
+                          {department.degreeProgram}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Elections Section */}
+          <div className="flex flex-col justify-center">
+            
+
+            {/* Elections Grid */}
+            <div className="flex justify-center">
+              <div className="w-full max-w-6xl">
+                {elections.length === 0 ? (
+                  // Only show add election card when no elections
+                  <div className="flex justify-center">
+                    <div
+                      onClick={handleAddElection}
+                      className="w-full max-w-xs bg-white/10 backdrop-blur-sm rounded-2xl border-2 border-dashed border-white/30 p-8 hover:bg-white/20 hover:border-white/50 transition-all duration-200 cursor-pointer group flex flex-col items-center justify-center text-center aspect-[3/4]"
+                    >
+                      <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-200">
+                        <Plus className="w-8 h-8 text-white" />
+                      </div>
+                      <h3 className="text-xl font-bold text-white mb-2">Add Election</h3>
+                      <p className="text-blue-100 text-sm">Create a new departmental election</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 justify-items-center">
+                    {/* Add Election Card */}
+                    <div
+                      onClick={handleAddElection}
+                      className="w-full max-w-xs bg-white/10 backdrop-blur-sm rounded-2xl border-2 border-dashed border-white/30 p-8 hover:bg-white/20 hover:border-white/50 transition-all duration-200 cursor-pointer group flex flex-col items-center justify-center text-center aspect-[3/4]"
+                    >
+                      <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-200">
+                        <Plus className="w-8 h-8 text-white" />
+                      </div>
+                      <h3 className="text-xl font-bold text-white mb-2">Add Election</h3>
+                      <p className="text-blue-100 text-sm">Create a new departmental election</p>
+                    </div>
+
+                    {/* Election Cards */}
+                    {elections.map((election) => (
+                      <div
+                        key={election._id || election.id}
+                        onClick={() => handleElectionClick(election)}
+                        className="w-full max-w-xs bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg p-6 hover:bg-white/30 transition-all duration-200 cursor-pointer group relative overflow-hidden aspect-[3/4] flex flex-col"
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                        
+                        <div className="relative z-10 flex-1 flex flex-col">
+                          {/* Status Badge */}
+                          <div className="flex justify-end mb-4">
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(election.status)}`}>
+                              {election.status || 'upcoming'}
+                            </span>
+                          </div>
+
+                          {/* Election Info */}
+                          <div className="flex-1 flex flex-col justify-center text-center mb-6">
+                            <h3 className="text-xl font-bold text-white mb-2 leading-tight">
+                              {election.title || `Departmental Election ${election.electionYear}`}
+                            </h3>
+                            <p className="text-blue-100 text-sm mb-2">
+                              {election.departmentId?.departmentCode || 'Unknown Dept'}
+                            </p>
+                            <p className="text-blue-200 text-xs mb-2">
+                              {election.electionYear}
+                            </p>
+                            {election.electionDate && (
+                              <p className="text-blue-200 text-xs">
+                                {new Date(election.electionDate).toLocaleDateString()}
+                              </p>
+                            )}
+                            <p className="text-blue-200 text-xs mt-1">
+                              ID: {election.deptElectionId}
+                            </p>
+                          </div>
+
+                          {/* Action Icons */}
+                          <div className="flex justify-center gap-4 mt-auto">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                router.push(`/ecommittee/departmental/status?departmentalElectionId=${election._id || election.id}`)
+                              }}
+                              className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
+                              title="Manage Election Status"
+                            >
+                              <Settings className="w-5 h-5 text-white" />
+                            </button>
+                            <button
+                              onClick={(e) => handleDeleteElection(election._id || election.id, e)}
+                              className="w-10 h-10 bg-red-500/30 rounded-full flex items-center justify-center hover:bg-red-500/50 transition-colors"
+                              title="Delete Election"
+                            >
+                              <Trash2 className="w-5 h-5 text-white" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </BackgroundWrapper>
   )
 }
