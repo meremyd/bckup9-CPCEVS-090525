@@ -16,6 +16,12 @@ router.get("/:id/results", authorizeStaffAndVoters("election_committee", "sao", 
 router.post("/", authorizeRoles("election_committee"), SSGElectionController.createSSGElection)
 router.put("/:id", authorizeRoles("election_committee"), SSGElectionController.updateSSGElection)
 router.patch("/:id/status", authorizeRoles("election_committee"), SSGElectionController.toggleSSGElectionStatus)
-router.delete("/:id", authorizeRoles("admin"), SSGElectionController.deleteSSGElection)
+router.delete("/:id", authorizeRoles("election_committee"), SSGElectionController.deleteSSGElection)
+router.get("/:id/candidates", authorizeStaffAndVoters("election_committee", "sao", "voter"), SSGElectionController.getSSGElectionCandidates)
+router.get("/:id/partylists", authorizeStaffAndVoters("election_committee", "sao", "voter"), SSGElectionController.getSSGElectionPartylists)
+router.get("/:id/participants", authorizeRoles("election_committee", "sao"), SSGElectionController.getSSGElectionVoterParticipants)
+router.get("/:id/turnout", authorizeStaffAndVoters("election_committee", "sao", "voter"), SSGElectionController.getSSGElectionVoterTurnout)
+router.get("/:id/ballots", authorizeRoles("election_committee", "sao"), SSGElectionController.getSSGElectionBallots)
+router.get("/:id/positions", authorizeStaffAndVoters("election_committee", "sao", "voter"), SSGElectionController.getSSGElectionPositions)
 
 module.exports = router

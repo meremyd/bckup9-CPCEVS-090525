@@ -1,5 +1,5 @@
-// frontend/src/lib/api/electionParticipation.js
-import { api } from './index'
+// FIXED: Import from correct path
+import api from '../api'
 
 export const electionParticipationAPI = {
   // Confirm participation in an election (SSG or Departmental)

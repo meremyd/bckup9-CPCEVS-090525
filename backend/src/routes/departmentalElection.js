@@ -12,7 +12,7 @@ router.get("/departments",
   DepartmentalElectionController.getAvailableDepartments
 )
 
-router.get("/dashboard", authorizeRoles("admin", "election_committee"),DepartmentalElectionController.getDepartmentalDashboardSummary)
+router.get("/dashboard", authorizeRoles("election_committee"),DepartmentalElectionController.getDepartmentalDashboardSummary)
 router.get("/audit-logs", authorizeRoles("admin"),DepartmentalElectionController.getDepartmentalElectionAuditLogs)
 router.get("/department/:departmentId", authorizeStaffAndVoters("admin", "election_committee", "sao"),DepartmentalElectionController.getElectionsByDepartment)
 router.get("/:electionId/candidates/voter",voterOnly,DepartmentalElectionController.getCandidatesForVoter)

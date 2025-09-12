@@ -121,5 +121,74 @@ export const ssgElectionsAPI = {
       console.error(`Error deleting SSG election ${id}:`, error)
       throw error
     }
+  },
+
+  // Add these methods to your ssgElectionsAPI object
+
+// Get SSG election candidates
+getCandidates: async (id, params = {}) => {
+  try {
+    const response = await api.get(`/ssgElections/${id}/candidates`, { params })
+    return response.data
+  } catch (error) {
+    console.error(`Error fetching SSG election candidates for ${id}:`, error)
+    throw error
   }
+},
+
+// Get SSG election partylists
+getPartylists: async (id, params = {}) => {
+  try {
+    const response = await api.get(`/ssgElections/${id}/partylists`, { params })
+    return response.data
+  } catch (error) {
+    console.error(`Error fetching SSG election partylists for ${id}:`, error)
+    throw error
+  }
+},
+
+// Get SSG election voter participants
+getParticipants: async (id, params = {}) => {
+  try {
+    const response = await api.get(`/ssgElections/${id}/participants`, { params })
+    return response.data
+  } catch (error) {
+    console.error(`Error fetching SSG election participants for ${id}:`, error)
+    throw error
+  }
+},
+
+// Get SSG election voter turnout
+getTurnout: async (id) => {
+  try {
+    const response = await api.get(`/ssgElections/${id}/turnout`)
+    return response.data
+  } catch (error) {
+    console.error(`Error fetching SSG election turnout for ${id}:`, error)
+    throw error
+  }
+},
+
+// Get SSG election ballots
+getBallots: async (id, params = {}) => {
+  try {
+    const response = await api.get(`/ssgElections/${id}/ballots`, { params })
+    return response.data
+  } catch (error) {
+    console.error(`Error fetching SSG election ballots for ${id}:`, error)
+    throw error
+  }
+},
+
+// Get SSG election positions
+getPositions: async (id, params = {}) => {
+  try {
+    const response = await api.get(`/ssgElections/${id}/positions`, { params })
+    return response.data
+  } catch (error) {
+    console.error(`Error fetching SSG election positions for ${id}:`, error)
+    throw error
+  }
+}
+
 }

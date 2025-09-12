@@ -1167,6 +1167,755 @@ class SSGElectionController {
       next(error)
     }
   }
+
+  // Additional methods for SSGElectionController class
+
+// Get SSG election candidates
+static async getSSGElectionCandidates(req, res, next) {
+  try {
+    const { id } = req.params
+    const { positionId, partylistId, status = 'active' } = req.query
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election candidates - Invalid election ID: ${id}`,
+        req
+      )
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await SSGElection.findById(id)
+    if (!election) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election candidates - Election not found: ${id}`,
+        req
+      )
+      const error = new Error("SSG election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Build filter
+    const filter = { ssgElectionId: id }
+    if (status === 'active') filter.isActive = true
+    else if (status === 'inactive') filter.isActive = false
+    if (positionId) filter.positionId = positionId
+    if (partylistId) filter.partylistId = partylistId
+
+    const candidates = await Candidate.find(filter)
+      .populate("voterId", "firstName middleName lastName schoolId departmentId yearLevel")
+      .populate({
+        path: "voterId",
+        populate: {
+          path: "departmentId",
+          select: "departmentCode degreeProgram college"
+        }
+      })
+      .populate("positionId", "positionName positionOrder maxVotes")
+      .populate("partylistId", "partylistName description")
+      .sort({ "positionId.positionOrder": 1, candidateNumber: 1 })
+
+    // Group candidates by position
+    const candidatesByPosition = candidates.reduce((acc, candidate) => {
+      const positionName = candidate.positionId?.positionName || "Unknown Position"
+      if (!acc[positionName]) {
+        acc[positionName] = {
+          position: candidate.positionId,
+          candidates: []
+        }
+      }
+      acc[positionName].candidates.push(candidate)
+      return acc
+    }, {})
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Accessed SSG election candidates - ${election.title} - ${candidates.length} candidates`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election: {
+          id: election._id,
+          title: election.title,
+          ssgElectionId: election.ssgElectionId,
+          status: election.status
+        },
+        candidates,
+        candidatesByPosition,
+        summary: {
+          totalCandidates: candidates.length,
+          activeCandidates: candidates.filter(c => c.isActive).length,
+          inactiveCandidates: candidates.filter(c => !c.isActive).length
+        }
+      }
+    })
+  } catch (error) {
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Failed to get SSG election candidates for ${req.params.id}: ${error.message}`,
+      req
+    )
+    next(error)
+  }
+}
+
+// Get SSG election partylists
+static async getSSGElectionPartylists(req, res, next) {
+  try {
+    const { id } = req.params
+    const { status = 'active' } = req.query
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election partylists - Invalid election ID: ${id}`,
+        req
+      )
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await SSGElection.findById(id)
+    if (!election) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election partylists - Election not found: ${id}`,
+        req
+      )
+      const error = new Error("SSG election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Build filter
+    const filter = { ssgElectionId: id }
+    if (status === 'active') filter.isActive = true
+    else if (status === 'inactive') filter.isActive = false
+
+    const partylists = await Partylist.find(filter).sort({ partylistName: 1 })
+
+    // Get candidate count for each partylist
+    const partylistsWithCandidates = await Promise.all(
+      partylists.map(async (partylist) => {
+        const candidateCount = await Candidate.countDocuments({
+          ssgElectionId: id,
+          partylistId: partylist._id,
+          isActive: true
+        })
+        return {
+          ...partylist.toObject(),
+          candidateCount
+        }
+      })
+    )
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Accessed SSG election partylists - ${election.title} - ${partylists.length} partylists`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election: {
+          id: election._id,
+          title: election.title,
+          ssgElectionId: election.ssgElectionId,
+          status: election.status
+        },
+        partylists: partylistsWithCandidates,
+        summary: {
+          totalPartylists: partylists.length,
+          activePartylists: partylists.filter(p => p.isActive).length,
+          inactivePartylists: partylists.filter(p => !p.isActive).length
+        }
+      }
+    })
+  } catch (error) {
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Failed to get SSG election partylists for ${req.params.id}: ${error.message}`,
+      req
+    )
+    next(error)
+  }
+}
+
+// Get SSG election voter participants
+static async getSSGElectionVoterParticipants(req, res, next) {
+  try {
+    const { id } = req.params
+    const { page = 1, limit = 50, departmentId, yearLevel, hasVoted } = req.query
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election voter participants - Invalid election ID: ${id}`,
+        req
+      )
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await SSGElection.findById(id)
+    if (!election) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election voter participants - Election not found: ${id}`,
+        req
+      )
+      const error = new Error("SSG election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Build filter for eligible voters (all registered voters for SSG)
+    const voterFilter = { isActive: true, isRegistered: true }
+    if (departmentId) voterFilter.departmentId = departmentId
+    if (yearLevel) voterFilter.yearLevel = parseInt(yearLevel)
+
+    // Pagination
+    const skip = (page - 1) * limit
+    const limitNum = Math.min(Number.parseInt(limit), 100)
+
+    // Get voters with ballot information
+    const voters = await Voter.find(voterFilter)
+      .populate("departmentId", "departmentCode degreeProgram college")
+      .sort({ lastName: 1, firstName: 1 })
+      .skip(skip)
+      .limit(limitNum)
+      .lean()
+
+    // Get ballot information for these voters
+    const voterIds = voters.map(v => v._id)
+    const ballots = await Ballot.find({
+      ssgElectionId: id,
+      voterId: { $in: voterIds }
+    }).lean()
+
+    // Create ballot lookup map
+    const ballotMap = ballots.reduce((acc, ballot) => {
+      acc[ballot.voterId.toString()] = ballot
+      return acc
+    }, {})
+
+    // Enhance voters with voting status
+    const participantData = voters.map(voter => {
+      const ballot = ballotMap[voter._id.toString()]
+      return {
+        ...voter,
+        hasVoted: ballot ? ballot.isSubmitted : false,
+        votedAt: ballot ? ballot.submittedAt : null,
+        ballotStatus: ballot ? (ballot.isSubmitted ? 'submitted' : 'started') : 'not_started'
+      }
+    })
+
+    // Apply hasVoted filter if specified
+    const filteredParticipants = hasVoted !== undefined 
+      ? participantData.filter(p => p.hasVoted === (hasVoted === 'true'))
+      : participantData
+
+    const total = await Voter.countDocuments(voterFilter)
+    const totalPages = Math.ceil(total / limitNum)
+
+    // Get summary statistics
+    const totalRegisteredVoters = await Voter.countDocuments({ isActive: true, isRegistered: true })
+    const totalVoted = await Ballot.countDocuments({ ssgElectionId: id, isSubmitted: true })
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Accessed SSG election voter participants - ${election.title} - ${filteredParticipants.length} participants`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election: {
+          id: election._id,
+          title: election.title,
+          ssgElectionId: election.ssgElectionId,
+          status: election.status
+        },
+        participants: filteredParticipants,
+        summary: {
+          totalRegisteredVoters,
+          totalVoted,
+          totalNotVoted: totalRegisteredVoters - totalVoted,
+          turnoutPercentage: totalRegisteredVoters > 0 ? ((totalVoted / totalRegisteredVoters) * 100).toFixed(2) : 0
+        },
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalItems: total,
+          itemsPerPage: limitNum
+        }
+      }
+    })
+  } catch (error) {
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Failed to get SSG election voter participants for ${req.params.id}: ${error.message}`,
+      req
+    )
+    next(error)
+  }
+}
+
+// Get SSG election voter turnout
+static async getSSGElectionVoterTurnout(req, res, next) {
+  try {
+    const { id } = req.params
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election voter turnout - Invalid election ID: ${id}`,
+        req
+      )
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await SSGElection.findById(id)
+    if (!election) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election voter turnout - Election not found: ${id}`,
+        req
+      )
+      const error = new Error("SSG election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Overall turnout statistics
+    const totalRegisteredVoters = await Voter.countDocuments({ isActive: true, isRegistered: true })
+    const totalVoted = await Ballot.countDocuments({ ssgElectionId: id, isSubmitted: true })
+    const totalNotVoted = totalRegisteredVoters - totalVoted
+
+    // Turnout by department
+    const turnoutByDepartment = await Voter.aggregate([
+      { $match: { isActive: true, isRegistered: true } },
+      {
+        $lookup: {
+          from: "ballots",
+          let: { voterId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$voterId", "$$voterId"] },
+                    { $eq: ["$ssgElectionId", new mongoose.Types.ObjectId(id)] },
+                    { $eq: ["$isSubmitted", true] }
+                  ]
+                }
+              }
+            }
+          ],
+          as: "ballot"
+        }
+      },
+      {
+        $lookup: {
+          from: "departments",
+          localField: "departmentId",
+          foreignField: "_id",
+          as: "department"
+        }
+      },
+      { $unwind: "$department" },
+      {
+        $group: {
+          _id: {
+            departmentId: "$departmentId",
+            departmentCode: "$department.departmentCode",
+            degreeProgram: "$department.degreeProgram",
+            college: "$department.college"
+          },
+          totalVoters: { $sum: 1 },
+          votedCount: {
+            $sum: {
+              $cond: [{ $gt: [{ $size: "$ballot" }, 0] }, 1, 0]
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
+          notVotedCount: { $subtract: ["$totalVoters", "$votedCount"] },
+          turnoutPercentage: {
+            $round: [
+              { $multiply: [{ $divide: ["$votedCount", "$totalVoters"] }, 100] },
+              2
+            ]
+          }
+        }
+      },
+      { $sort: { "_id.departmentCode": 1 } }
+    ])
+
+    // Turnout by year level
+    const turnoutByYearLevel = await Voter.aggregate([
+      { $match: { isActive: true, isRegistered: true } },
+      {
+        $lookup: {
+          from: "ballots",
+          let: { voterId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$voterId", "$$voterId"] },
+                    { $eq: ["$ssgElectionId", new mongoose.Types.ObjectId(id)] },
+                    { $eq: ["$isSubmitted", true] }
+                  ]
+                }
+              }
+            }
+          ],
+          as: "ballot"
+        }
+      },
+      {
+        $group: {
+          _id: "$yearLevel",
+          totalVoters: { $sum: 1 },
+          votedCount: {
+            $sum: {
+              $cond: [{ $gt: [{ $size: "$ballot" }, 0] }, 1, 0]
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
+          notVotedCount: { $subtract: ["$totalVoters", "$votedCount"] },
+          turnoutPercentage: {
+            $round: [
+              { $multiply: [{ $divide: ["$votedCount", "$totalVoters"] }, 100] },
+              2
+            ]
+          }
+        }
+      },
+      { $sort: { "_id": 1 } }
+    ])
+
+    // Voting timeline (hourly breakdown)
+    const votingTimeline = await Ballot.aggregate([
+      { $match: { ssgElectionId: new mongoose.Types.ObjectId(id), isSubmitted: true } },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: "%Y-%m-%d %H:00",
+              date: "$submittedAt"
+            }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { "_id": 1 } }
+    ])
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Accessed SSG election voter turnout - ${election.title} - ${totalVoted}/${totalRegisteredVoters} voted`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election: {
+          id: election._id,
+          title: election.title,
+          ssgElectionId: election.ssgElectionId,
+          status: election.status,
+          electionDate: election.electionDate
+        },
+        overall: {
+          totalRegisteredVoters,
+          totalVoted,
+          totalNotVoted,
+          turnoutPercentage: totalRegisteredVoters > 0 ? ((totalVoted / totalRegisteredVoters) * 100).toFixed(2) : 0
+        },
+        turnoutByDepartment,
+        turnoutByYearLevel,
+        votingTimeline
+      }
+    })
+  } catch (error) {
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Failed to get SSG election voter turnout for ${req.params.id}: ${error.message}`,
+      req
+    )
+    next(error)
+  }
+}
+
+// Get SSG election ballots
+static async getSSGElectionBallots(req, res, next) {
+  try {
+    const { id } = req.params
+    const { page = 1, limit = 50, status, voterId } = req.query
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election ballots - Invalid election ID: ${id}`,
+        req
+      )
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await SSGElection.findById(id)
+    if (!election) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election ballots - Election not found: ${id}`,
+        req
+      )
+      const error = new Error("SSG election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Build filter
+    const filter = { ssgElectionId: id }
+    if (status) {
+      if (status === 'submitted') filter.isSubmitted = true
+      else if (status === 'pending') filter.isSubmitted = false
+    }
+    if (voterId && mongoose.Types.ObjectId.isValid(voterId)) {
+      filter.voterId = voterId
+    }
+
+    // Pagination
+    const skip = (page - 1) * limit
+    const limitNum = Math.min(Number.parseInt(limit), 100)
+
+    const ballots = await Ballot.find(filter)
+      .populate("voterId", "schoolId firstName middleName lastName departmentId yearLevel")
+      .populate({
+        path: "voterId",
+        populate: {
+          path: "departmentId",
+          select: "departmentCode degreeProgram college"
+        }
+      })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum)
+
+    const total = await Ballot.countDocuments(filter)
+    const totalPages = Math.ceil(total / limitNum)
+
+    // Get ballot statistics
+    const ballotStats = await Ballot.aggregate([
+      { $match: { ssgElectionId: new mongoose.Types.ObjectId(id) } },
+      {
+        $group: {
+          _id: null,
+          totalBallots: { $sum: 1 },
+          submittedBallots: {
+            $sum: { $cond: ["$isSubmitted", 1, 0] }
+          },
+          pendingBallots: {
+            $sum: { $cond: ["$isSubmitted", 0, 1] }
+          },
+          averageBallotDuration: { $avg: "$ballotDuration" }
+        }
+      }
+    ])
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Accessed SSG election ballots - ${election.title} - ${ballots.length} ballots`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election: {
+          id: election._id,
+          title: election.title,
+          ssgElectionId: election.ssgElectionId,
+          status: election.status
+        },
+        ballots,
+        statistics: ballotStats[0] || {
+          totalBallots: 0,
+          submittedBallots: 0,
+          pendingBallots: 0,
+          averageBallotDuration: 0
+        },
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalItems: total,
+          itemsPerPage: limitNum
+        }
+      }
+    })
+  } catch (error) {
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Failed to get SSG election ballots for ${req.params.id}: ${error.message}`,
+      req
+    )
+    next(error)
+  }
+}
+
+// Get SSG election positions
+static async getSSGElectionPositions(req, res, next) {
+  try {
+    const { id } = req.params
+    const { status = 'active' } = req.query
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election positions - Invalid election ID: ${id}`,
+        req
+      )
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await SSGElection.findById(id)
+    if (!election) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election positions - Election not found: ${id}`,
+        req
+      )
+      const error = new Error("SSG election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Build filter
+    const filter = { ssgElectionId: id }
+    if (status === 'active') filter.isActive = true
+    else if (status === 'inactive') filter.isActive = false
+
+    const positions = await Position.find(filter)
+      .sort({ positionOrder: 1 })
+      .lean()
+
+    // Get candidate count for each position
+    const positionsWithCandidates = await Promise.all(
+      positions.map(async (position) => {
+        const candidateCount = await Candidate.countDocuments({
+          ssgElectionId: id,
+          positionId: position._id,
+          isActive: true
+        })
+
+        const candidates = await Candidate.find({
+          ssgElectionId: id,
+          positionId: position._id,
+          isActive: true
+        })
+          .populate("voterId", "firstName middleName lastName schoolId")
+          .populate("partylistId", "partylistName")
+          .sort({ candidateNumber: 1 })
+
+        return {
+          ...position,
+          candidateCount,
+          candidates: candidates.map(candidate => ({
+            id: candidate._id,
+            candidateNumber: candidate.candidateNumber,
+            name: candidate.voterId ? 
+              `${candidate.voterId.firstName} ${candidate.voterId.middleName ? candidate.voterId.middleName + ' ' : ''}${candidate.voterId.lastName}` : 
+              'Unknown Candidate',
+            schoolId: candidate.voterId?.schoolId,
+            partylist: candidate.partylistId?.partylistName || 'Independent',
+            voteCount: candidate.voteCount
+          }))
+        }
+      })
+    )
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Accessed SSG election positions - ${election.title} - ${positions.length} positions`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election: {
+          id: election._id,
+          title: election.title,
+          ssgElectionId: election.ssgElectionId,
+          status: election.status
+        },
+        positions: positionsWithCandidates,
+        summary: {
+          totalPositions: positions.length,
+          activePositions: positions.filter(p => p.isActive).length,
+          inactivePositions: positions.filter(p => !p.isActive).length,
+          totalCandidates: positionsWithCandidates.reduce((sum, pos) => sum + pos.candidateCount, 0)
+        }
+      }
+    })
+  } catch (error) {
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Failed to get SSG election positions for ${req.params.id}: ${error.message}`,
+      req
+    )
+    next(error)
+  }
+}
 }
 
 module.exports = SSGElectionController

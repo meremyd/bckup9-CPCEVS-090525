@@ -112,6 +112,189 @@ class CandidateController {
     }
   }
 
+  // Get all SSG candidates
+  static async getAllSSGCandidates(req, res, next) {
+    try {
+      const { page = 1, limit = 10, electionId, positionId, status } = req.query
+      
+      const query = {
+        ssgElectionId: { $ne: null },
+        deptElectionId: null
+      }
+      
+      // Filter by specific election
+      if (electionId) {
+        if (!mongoose.Types.ObjectId.isValid(electionId)) {
+          await AuditLog.logUserAction(
+            'UNAUTHORIZED_ACCESS_ATTEMPT',
+            req.user || {},
+            `Invalid SSG election ID format: ${electionId}`,
+            req
+          )
+          
+          const error = new Error("Invalid election ID format")
+          error.statusCode = 400
+          return next(error)
+        }
+        query.ssgElectionId = electionId
+      }
+      
+      // Filter by position
+      if (positionId) {
+        if (!mongoose.Types.ObjectId.isValid(positionId)) {
+          await AuditLog.logUserAction(
+            'UNAUTHORIZED_ACCESS_ATTEMPT',
+            req.user || {},
+            `Invalid position ID format: ${positionId}`,
+            req
+          )
+          
+          const error = new Error("Invalid position ID format")
+          error.statusCode = 400
+          return next(error)
+        }
+        query.positionId = positionId
+      }
+      
+      // Filter by status
+      if (status) query.isActive = status === 'active'
+
+      const candidates = await Candidate.find(query)
+        .populate('voterId', 'schoolId firstName middleName lastName departmentId yearLevel')
+        .populate('voterId.departmentId', 'departmentCode degreeProgram college')
+        .populate('ssgElectionId', 'title electionDate status')
+        .populate('positionId', 'positionName positionOrder maxVotes')
+        .populate('partylistId', 'partylistName')
+        .sort({ candidateNumber: 1 })
+        .limit(limit * 1)
+        .skip((page - 1) * limit)
+
+      const total = await Candidate.countDocuments(query)
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Retrieved ${candidates.length} SSG candidates`,
+        req
+      )
+
+      res.json({
+        success: true,
+        data: {
+          candidates,
+          totalPages: Math.ceil(total / limit),
+          currentPage: page,
+          total
+        },
+        message: "SSG candidates retrieved successfully"
+      })
+    } catch (error) {
+      console.error("Error fetching SSG candidates:", error)
+      
+      await AuditLog.logUserAction(
+        'UNAUTHORIZED_ACCESS_ATTEMPT',
+        req.user || {},
+        `Failed to fetch SSG candidates: ${error.message}`,
+        req
+      )
+      
+      const err = new Error("Failed to fetch SSG candidates")
+      err.statusCode = 500
+      next(err)
+    }
+  }
+
+  // Get all Departmental candidates
+  static async getAllDepartmentalCandidates(req, res, next) {
+    try {
+      const { page = 1, limit = 10, electionId, positionId, status } = req.query
+      
+      const query = {
+        deptElectionId: { $ne: null },
+        ssgElectionId: null
+      }
+      
+      // Filter by specific election
+      if (electionId) {
+        if (!mongoose.Types.ObjectId.isValid(electionId)) {
+          await AuditLog.logUserAction(
+            'UNAUTHORIZED_ACCESS_ATTEMPT',
+            req.user || {},
+            `Invalid departmental election ID format: ${electionId}`,
+            req
+          )
+          
+          const error = new Error("Invalid election ID format")
+          error.statusCode = 400
+          return next(error)
+        }
+        query.deptElectionId = electionId
+      }
+      
+      // Filter by position
+      if (positionId) {
+        if (!mongoose.Types.ObjectId.isValid(positionId)) {
+          await AuditLog.logUserAction(
+            'UNAUTHORIZED_ACCESS_ATTEMPT',
+            req.user || {},
+            `Invalid position ID format: ${positionId}`,
+            req
+          )
+          
+          const error = new Error("Invalid position ID format")
+          error.statusCode = 400
+          return next(error)
+        }
+        query.positionId = positionId
+      }
+      
+      // Filter by status
+      if (status) query.isActive = status === 'active'
+
+      const candidates = await Candidate.find(query)
+        .populate('voterId', 'schoolId firstName middleName lastName departmentId yearLevel')
+        .populate('voterId.departmentId', 'departmentCode degreeProgram college')
+        .populate('deptElectionId', 'title electionDate status department')
+        .populate('positionId', 'positionName positionOrder maxVotes')
+        .sort({ candidateNumber: 1 })
+        .limit(limit * 1)
+        .skip((page - 1) * limit)
+
+      const total = await Candidate.countDocuments(query)
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Retrieved ${candidates.length} departmental candidates`,
+        req
+      )
+
+      res.json({
+        success: true,
+        data: {
+          candidates,
+          totalPages: Math.ceil(total / limit),
+          currentPage: page,
+          total
+        },
+        message: "Departmental candidates retrieved successfully"
+      })
+    } catch (error) {
+      console.error("Error fetching departmental candidates:", error)
+      
+      await AuditLog.logUserAction(
+        'UNAUTHORIZED_ACCESS_ATTEMPT',
+        req.user || {},
+        `Failed to fetch departmental candidates: ${error.message}`,
+        req
+      )
+      
+      const err = new Error("Failed to fetch departmental candidates")
+      err.statusCode = 500
+      next(err)
+    }
+  }
+
   // Get candidate by ID (SSG and Departmental)
   static async getCandidateById(req, res, next) {
     try {
@@ -174,6 +357,145 @@ class CandidateController {
       )
       
       const err = new Error("Failed to fetch candidate")
+      err.statusCode = 500
+      next(err)
+    }
+  }
+
+  // Get SSG candidate by ID
+  static async getSSGCandidateById(req, res, next) {
+    try {
+      const { id } = req.params
+      
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        await AuditLog.logUserAction(
+          'UNAUTHORIZED_ACCESS_ATTEMPT',
+          req.user || {},
+          `Invalid SSG candidate ID format: ${id}`,
+          req
+        )
+        
+        const error = new Error("Invalid candidate ID")
+        error.statusCode = 400
+        return next(error)
+      }
+      
+      const candidate = await Candidate.findOne({ 
+        _id: id, 
+        ssgElectionId: { $ne: null },
+        deptElectionId: null 
+      })
+        .populate('voterId', 'schoolId firstName middleName lastName departmentId yearLevel email')
+        .populate('voterId.departmentId', 'departmentCode degreeProgram college')
+        .populate('ssgElectionId', 'title electionDate status')
+        .populate('positionId', 'positionName positionOrder maxVotes')
+        .populate('partylistId', 'partylistName description')
+
+      if (!candidate) {
+        await AuditLog.logUserAction(
+          'UNAUTHORIZED_ACCESS_ATTEMPT',
+          req.user || {},
+          `Attempted to access non-existent SSG candidate: ${id}`,
+          req
+        )
+        
+        const error = new Error("SSG candidate not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Retrieved SSG candidate ${id} - ${candidate.getDisplayName()}`,
+        req
+      )
+
+      res.json({
+        success: true,
+        data: candidate,
+        message: "SSG candidate retrieved successfully"
+      })
+    } catch (error) {
+      console.error("Error fetching SSG candidate:", error)
+      
+      await AuditLog.logUserAction(
+        'UNAUTHORIZED_ACCESS_ATTEMPT',
+        req.user || {},
+        `Failed to fetch SSG candidate ${req.params.id}: ${error.message}`,
+        req
+      )
+      
+      const err = new Error("Failed to fetch SSG candidate")
+      err.statusCode = 500
+      next(err)
+    }
+  }
+
+  // Get Departmental candidate by ID
+  static async getDepartmentalCandidateById(req, res, next) {
+    try {
+      const { id } = req.params
+      
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        await AuditLog.logUserAction(
+          'UNAUTHORIZED_ACCESS_ATTEMPT',
+          req.user || {},
+          `Invalid departmental candidate ID format: ${id}`,
+          req
+        )
+        
+        const error = new Error("Invalid candidate ID")
+        error.statusCode = 400
+        return next(error)
+      }
+      
+      const candidate = await Candidate.findOne({ 
+        _id: id, 
+        deptElectionId: { $ne: null },
+        ssgElectionId: null 
+      })
+        .populate('voterId', 'schoolId firstName middleName lastName departmentId yearLevel email')
+        .populate('voterId.departmentId', 'departmentCode degreeProgram college')
+        .populate('deptElectionId', 'title electionDate status department')
+        .populate('positionId', 'positionName positionOrder maxVotes')
+
+      if (!candidate) {
+        await AuditLog.logUserAction(
+          'UNAUTHORIZED_ACCESS_ATTEMPT',
+          req.user || {},
+          `Attempted to access non-existent departmental candidate: ${id}`,
+          req
+        )
+        
+        const error = new Error("Departmental candidate not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Retrieved departmental candidate ${id} - ${candidate.getDisplayName()}`,
+        req
+      )
+
+      res.json({
+        success: true,
+        data: candidate,
+        message: "Departmental candidate retrieved successfully"
+      })
+    } catch (error) {
+      console.error("Error fetching departmental candidate:", error)
+      
+      await AuditLog.logUserAction(
+        'UNAUTHORIZED_ACCESS_ATTEMPT',
+        req.user || {},
+        `Failed to fetch departmental candidate ${req.params.id}: ${error.message}`,
+        req
+      )
+      
+      const err = new Error("Failed to fetch departmental candidate")
       err.statusCode = 500
       next(err)
     }
@@ -487,6 +809,91 @@ class CandidateController {
     }
   }
 
+  // Create SSG candidate
+  static async createSSGCandidate(req, res, next) {
+    try {
+      const {
+        voterId,
+        ssgElectionId,
+        positionId,
+        partylistId,
+        candidateNumber,
+        platform,
+        isActive = true
+      } = req.body
+
+      // Ensure this is for SSG election only
+      const candidateData = {
+        voterId,
+        ssgElectionId,
+        deptElectionId: null,
+        positionId,
+        partylistId,
+        candidateNumber,
+        platform,
+        isActive
+      }
+
+      req.body = candidateData
+      await CandidateController.createCandidate(req, res, next)
+    } catch (error) {
+      console.error("Error creating SSG candidate:", error)
+      
+      await AuditLog.logUserAction(
+        'UNAUTHORIZED_ACCESS_ATTEMPT',
+        req.user || {},
+        `Failed to create SSG candidate: ${error.message}`,
+        req
+      )
+      
+      const err = new Error("Failed to create SSG candidate")
+      err.statusCode = 500
+      next(err)
+    }
+  }
+
+  // Create Departmental candidate
+  static async createDepartmentalCandidate(req, res, next) {
+    try {
+      const {
+        voterId,
+        deptElectionId,
+        positionId,
+        candidateNumber,
+        platform,
+        isActive = true
+      } = req.body
+
+      // Ensure this is for departmental election only
+      const candidateData = {
+        voterId,
+        ssgElectionId: null,
+        deptElectionId,
+        positionId,
+        partylistId: null, // Departmental candidates don't have partylists
+        candidateNumber,
+        platform,
+        isActive
+      }
+
+      req.body = candidateData
+      await CandidateController.createCandidate(req, res, next)
+    } catch (error) {
+      console.error("Error creating departmental candidate:", error)
+      
+      await AuditLog.logUserAction(
+        'UNAUTHORIZED_ACCESS_ATTEMPT',
+        req.user || {},
+        `Failed to create departmental candidate: ${error.message}`,
+        req
+      )
+      
+      const err = new Error("Failed to create departmental candidate")
+      err.statusCode = 500
+      next(err)
+    }
+  }
+
   // Update candidate (SSG and Departmental)
   static async updateCandidate(req, res, next) {
     try {
@@ -725,6 +1132,106 @@ class CandidateController {
     }
   }
 
+  // Update SSG candidate
+  static async updateSSGCandidate(req, res, next) {
+    try {
+      const { id } = req.params
+      
+      // Verify this is an SSG candidate first
+      const candidate = await Candidate.findOne({
+        _id: id,
+        ssgElectionId: { $ne: null },
+        deptElectionId: null
+      })
+
+      if (!candidate) {
+        await AuditLog.logUserAction(
+          'UNAUTHORIZED_ACCESS_ATTEMPT',
+          req.user || {},
+          `Attempted to update non-existent SSG candidate: ${id}`,
+          req
+        )
+        
+        const error = new Error("SSG candidate not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      // Call the generic update method
+      await CandidateController.updateCandidate(req, res, next)
+    } catch (error) {
+      console.error("Error updating SSG candidate:", error)
+      
+      await AuditLog.logUserAction(
+        'UNAUTHORIZED_ACCESS_ATTEMPT',
+        req.user || {},
+        `Failed to update SSG candidate ${req.params.id}: ${error.message}`,
+        req
+      )
+      
+      const err = new Error("Failed to update SSG candidate")
+      err.statusCode = 500
+      next(err)
+    }
+  }
+
+  // Update Departmental candidate
+  static async updateDepartmentalCandidate(req, res, next) {
+    try {
+      const { id } = req.params
+      
+      // Verify this is a departmental candidate first
+      const candidate = await Candidate.findOne({
+        _id: id,
+        deptElectionId: { $ne: null },
+        ssgElectionId: null
+      })
+
+      if (!candidate) {
+        await AuditLog.logUserAction(
+          'UNAUTHORIZED_ACCESS_ATTEMPT',
+          req.user || {},
+          `Attempted to update non-existent departmental candidate: ${id}`,
+          req
+        )
+        
+        const error = new Error("Departmental candidate not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      // Ensure partylistId is not being set for departmental candidates
+      if (req.body.partylistId) {
+        await AuditLog.logUserAction(
+          'UNAUTHORIZED_ACCESS_ATTEMPT',
+          req.user || {},
+          `Attempted to set partylist for departmental candidate: ${id}`,
+          req
+        )
+        
+        const error = new Error("Departmental candidates cannot have partylists")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Call the generic update method
+      await CandidateController.updateCandidate(req, res, next)
+    } catch (error) {
+      console.error("Error updating departmental candidate:", error)
+      
+      await AuditLog.logUserAction(
+        'UNAUTHORIZED_ACCESS_ATTEMPT',
+        req.user || {},
+        `Failed to update departmental candidate ${req.params.id}: ${error.message}`,
+        req
+      )
+      
+      const err = new Error("Failed to update departmental candidate")
+      err.statusCode = 500
+      next(err)
+    }
+  }
+
   // Delete candidate (SSG and Departmental)
   static async deleteCandidate(req, res, next) {
     try {
@@ -818,6 +1325,92 @@ class CandidateController {
       )
 
       const err = new Error("Failed to delete candidate")
+      err.statusCode = 500
+      next(err)
+    }
+  }
+
+  // Delete SSG candidate
+  static async deleteSSGCandidate(req, res, next) {
+    try {
+      const { id } = req.params
+      
+      // Verify this is an SSG candidate first
+      const candidate = await Candidate.findOne({
+        _id: id,
+        ssgElectionId: { $ne: null },
+        deptElectionId: null
+      })
+
+      if (!candidate) {
+        await AuditLog.logUserAction(
+          'UNAUTHORIZED_ACCESS_ATTEMPT',
+          req.user || {},
+          `Attempted to delete non-existent SSG candidate: ${id}`,
+          req
+        )
+        
+        const error = new Error("SSG candidate not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      // Call the generic delete method
+      await CandidateController.deleteCandidate(req, res, next)
+    } catch (error) {
+      console.error("Error deleting SSG candidate:", error)
+      
+      await AuditLog.logUserAction(
+        'UNAUTHORIZED_ACCESS_ATTEMPT',
+        req.user || {},
+        `Failed to delete SSG candidate ${req.params.id}: ${error.message}`,
+        req
+      )
+      
+      const err = new Error("Failed to delete SSG candidate")
+      err.statusCode = 500
+      next(err)
+    }
+  }
+
+  // Delete Departmental candidate
+  static async deleteDepartmentalCandidate(req, res, next) {
+    try {
+      const { id } = req.params
+      
+      // Verify this is a departmental candidate first
+      const candidate = await Candidate.findOne({
+        _id: id,
+        deptElectionId: { $ne: null },
+        ssgElectionId: null
+      })
+
+      if (!candidate) {
+        await AuditLog.logUserAction(
+          'UNAUTHORIZED_ACCESS_ATTEMPT',
+          req.user || {},
+          `Attempted to delete non-existent departmental candidate: ${id}`,
+          req
+        )
+        
+        const error = new Error("Departmental candidate not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      // Call the generic delete method
+      await CandidateController.deleteCandidate(req, res, next)
+    } catch (error) {
+      console.error("Error deleting departmental candidate:", error)
+      
+      await AuditLog.logUserAction(
+        'UNAUTHORIZED_ACCESS_ATTEMPT',
+        req.user || {},
+        `Failed to delete departmental candidate ${req.params.id}: ${error.message}`,
+        req
+      )
+      
+      const err = new Error("Failed to delete departmental candidate")
       err.statusCode = 500
       next(err)
     }
@@ -1095,6 +1688,56 @@ class CandidateController {
       )
 
       const err = new Error("Failed to fetch election candidates")
+      err.statusCode = 500
+      next(err)
+    }
+  }
+
+  // Get candidates by SSG election
+  static async getCandidatesBySSGElection(req, res, next) {
+    try {
+      const { electionId } = req.params
+      
+      // Override the query type to ensure SSG
+      req.query.type = 'ssg'
+      
+      await CandidateController.getCandidatesByElection(req, res, next)
+    } catch (error) {
+      console.error("Error fetching SSG election candidates:", error)
+
+      await AuditLog.logUserAction(
+        'UNAUTHORIZED_ACCESS_ATTEMPT',
+        req.user || {},
+        `Failed to fetch SSG candidates for election ${req.params.electionId}: ${error.message}`,
+        req
+      )
+
+      const err = new Error("Failed to fetch SSG election candidates")
+      err.statusCode = 500
+      next(err)
+    }
+  }
+
+  // Get candidates by Departmental election
+  static async getCandidatesByDepartmentalElection(req, res, next) {
+    try {
+      const { electionId } = req.params
+      
+      // Override the query type to ensure departmental
+      req.query.type = 'departmental'
+      
+      await CandidateController.getCandidatesByElection(req, res, next)
+    } catch (error) {
+      console.error("Error fetching departmental election candidates:", error)
+
+      await AuditLog.logUserAction(
+        'UNAUTHORIZED_ACCESS_ATTEMPT',
+        req.user || {},
+        `Failed to fetch departmental candidates for election ${req.params.electionId}: ${error.message}`,
+        req
+      )
+
+      const err = new Error("Failed to fetch departmental election candidates")
       err.statusCode = 500
       next(err)
     }

@@ -14,7 +14,7 @@ export const ballotAPI = {
       ...(electionId && { electionId })
     })
     
-    const response = await api.get(`/ballots/?${queryParams}`)
+    const response = await api.get(`/ballots?${queryParams}`)
     return response.data
   },
 
@@ -27,6 +27,21 @@ export const ballotAPI = {
     })
     
     const response = await api.get(`/ballots/statistics?${queryParams}`)
+    return response.data
+  },
+
+  // Export ballot data (Admin/Committee)
+  exportBallotData: async (params = {}) => {
+    const { type = 'all', electionId, format = 'csv' } = params
+    const queryParams = new URLSearchParams({
+      format,
+      ...(type !== 'all' && { type }),
+      ...(electionId && { electionId })
+    })
+    
+    const response = await api.get(`/ballots/export?${queryParams}`, {
+      responseType: 'blob'
+    })
     return response.data
   },
 
@@ -73,7 +88,7 @@ export const ballotAPI = {
     return response.data
   },
 
-  // Delete SSG ballot (Admin only)
+  // Delete SSG ballot (Admin/Committee only - FIXED)
   deleteSSGBallot: async (id) => {
     const response = await api.delete(`/ballots/ssg/${id}`)
     return response.data
@@ -151,7 +166,7 @@ export const ballotAPI = {
     return response.data
   },
 
-  // Delete Departmental ballot (Admin only)
+  // Delete Departmental ballot (Admin/Committee only - FIXED)
   deleteDepartmentalBallot: async (id) => {
     const response = await api.delete(`/ballots/departmental/${id}`)
     return response.data
@@ -176,8 +191,11 @@ export const ballotAPI = {
   },
 
   // Voter - Get Departmental voting status for specific election and position
+  // FIXED: Updated to match controller parameter expectations
   getVoterDepartmentalBallotStatus: async (electionId, positionId = null) => {
-    const path = positionId ? `/ballots/departmental/status/${electionId}/${positionId}` : `/ballots/departmental/status/${electionId}`
+    const path = positionId 
+      ? `/ballots/departmental/status/${electionId}/${positionId}` 
+      : `/ballots/departmental/status/${electionId}`
     const response = await api.get(path)
     return response.data
   },
@@ -337,7 +355,7 @@ export const ballotAPI = {
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
   },
 
-  // Previous combined functions (updated to use new endpoints)
+  // UPDATED: Legacy combined functions now use new endpoints
   
   // Get all ballots for admin dashboard (UPDATED to use new endpoint)
   getAllBallotsForDashboard: async (params = {}) => {
@@ -380,20 +398,5 @@ export const ballotAPI = {
         }
       }
     }
-  },
-
-  // Export ballot data (Admin/Committee)
-  exportBallotData: async (params = {}) => {
-    const { type = 'all', electionId, format = 'csv' } = params
-    const queryParams = new URLSearchParams({
-      format,
-      ...(type !== 'all' && { type }),
-      ...(electionId && { electionId })
-    })
-    
-    const response = await api.get(`/ballots/export?${queryParams}`, {
-      responseType: 'blob'
-    })
-    return response.data
   }
 }
