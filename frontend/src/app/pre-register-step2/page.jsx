@@ -219,10 +219,10 @@ export default function PreRegisterStep2() {
       return
     }
 
-    if (!faceRecognitionComplete) {
-      setError("Please complete face recognition before proceeding")
-      return
-    }
+    // if (!faceRecognitionComplete) {
+    //   setError("Please complete face recognition before proceeding")
+    //   return
+    // }
 
     setLoading(true)
     setError("")

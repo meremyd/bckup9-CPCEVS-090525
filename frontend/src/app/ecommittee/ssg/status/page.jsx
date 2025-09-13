@@ -144,6 +144,28 @@ export default function SSGStatusPage() {
     }
   }
 
+  const updateElectionData = (updatedData) => {
+    // Update the local state
+    setElection(updatedData)
+    
+    // Update localStorage if it exists
+    const storedElection = localStorage.getItem('selectedSSGElection')
+    if (storedElection) {
+      localStorage.setItem('selectedSSGElection', JSON.stringify(updatedData))
+    }
+    
+    // Broadcast the update to other components/tabs that might be listening
+    // This helps with real-time updates across the application
+    window.dispatchEvent(new CustomEvent('electionUpdated', { 
+      detail: { electionId: ssgElectionId, updatedData } 
+    }))
+    
+    // Update any cached data that might exist
+    if (window.ssgElectionCache) {
+      window.ssgElectionCache[ssgElectionId] = updatedData
+    }
+  }
+
   const handleSave = async () => {
     try {
       setFormLoading(true)
@@ -173,18 +195,29 @@ export default function SSGStatusPage() {
         updatedElectionData = response
       } else {
         // If the response doesn't contain the updated data, fetch it again
-        await fetchElection()
-        updatedElectionData = null
+        const freshData = await ssgElectionsAPI.getById(ssgElectionId)
+        if (freshData.success && freshData.data) {
+          updatedElectionData = freshData.data
+        } else if (freshData.election) {
+          updatedElectionData = freshData.election
+        } else {
+          updatedElectionData = freshData
+        }
       }
       
-      // Update the election state with the new data
+      // Use the new update function to ensure all references are updated
       if (updatedElectionData) {
-        setElection(updatedElectionData)
-        // Also update localStorage if it exists
-        const storedElection = localStorage.getItem('selectedSSGElection')
-        if (storedElection) {
-          localStorage.setItem('selectedSSGElection', JSON.stringify(updatedElectionData))
-        }
+        updateElectionData(updatedElectionData)
+        
+        // Also update formData to reflect the saved changes
+        setFormData({
+          ssgElectionId: updatedElectionData.ssgElectionId || '',
+          electionYear: updatedElectionData.electionYear || new Date().getFullYear(),
+          title: updatedElectionData.title || '',
+          status: updatedElectionData.status || 'upcoming',
+          electionDate: updatedElectionData.electionDate ? 
+            new Date(updatedElectionData.electionDate).toISOString().slice(0, 16) : ''
+        })
       }
       
       setIsEditing(false)
@@ -357,6 +390,12 @@ export default function SSGStatusPage() {
 
           {election && (
             <>
+             {/* Election Title Display */}
+              <div className="bg-[#b0c8fe]/10 rounded-lg p-4 mb-6">
+                <h3 className="text-lg font-semibold text-[#001f65] mb-2">Election Title</h3>
+                <p className="text-[#001f65]/80">{election.title || 'No title set'}</p>
+              </div>
+              
               {/* Quick Info Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className="bg-[#b0c8fe]/20 rounded-lg p-4">
@@ -385,6 +424,8 @@ export default function SSGStatusPage() {
                   </p>
                 </div>
               </div>
+
+             
 
               {/* Action Button */}
               <div className="flex justify-end">

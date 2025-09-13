@@ -70,9 +70,9 @@ export const positionsAPI = {
     },
 
     // Reorder positions within an SSG election
-    reorder: async (ssgElectionId, positionOrders) => {
+    reorder: async (ssgElectionId, positions) => {
       try {
-        const response = await api.put(`/positions/ssg/elections/${ssgElectionId}/reorder`, { positionOrders })
+        const response = await api.put(`/positions/ssg/elections/${ssgElectionId}/reorder`, { positions })
         return response.data
       } catch (error) {
         console.error(`Error reordering positions for SSG election ${ssgElectionId}:`, error)
@@ -172,9 +172,9 @@ export const positionsAPI = {
     },
 
     // Reorder positions within a departmental election
-    reorder: async (deptElectionId, positionOrders) => {
+    reorder: async (deptElectionId, positions) => {
       try {
-        const response = await api.put(`/positions/departmental/elections/${deptElectionId}/reorder`, { positionOrders })
+        const response = await api.put(`/positions/departmental/elections/${deptElectionId}/reorder`, { positions })
         return response.data
       } catch (error) {
         console.error(`Error reordering positions for departmental election ${deptElectionId}:`, error)
@@ -200,6 +200,93 @@ export const positionsAPI = {
         return response.data
       } catch (error) {
         console.error(`Error checking if departmental position ${positionId} can be deleted:`, error)
+        throw error
+      }
+    }
+  },
+
+  // Utility methods that work for both SSG and Departmental positions
+  utils: {
+    // Get position by ID (works for both types)
+    getPositionById: async (id) => {
+      try {
+        // Try SSG first
+        try {
+          return await positionsAPI.ssg.getById(id)
+        } catch (ssgError) {
+          // If SSG fails, try departmental
+          return await positionsAPI.departmental.getById(id)
+        }
+      } catch (error) {
+        console.error(`Error fetching position ${id}:`, error)
+        throw error
+      }
+    },
+
+    // Get all positions (both SSG and departmental)
+    getAllPositions: async (params = {}) => {
+      try {
+        const [ssgResponse, deptResponse] = await Promise.allSettled([
+          positionsAPI.ssg.getAll(params),
+          positionsAPI.departmental.getAll(params)
+        ])
+
+        const ssgPositions = ssgResponse.status === 'fulfilled' ? ssgResponse.value.data : []
+        const deptPositions = deptResponse.status === 'fulfilled' ? deptResponse.value.data : []
+
+        return {
+          success: true,
+          message: "All positions retrieved successfully",
+          data: {
+            ssg: ssgPositions,
+            departmental: deptPositions,
+            total: ssgPositions.length + deptPositions.length
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching all positions:', error)
+        throw error
+      }
+    },
+
+    // Search positions across both types
+    searchPositions: async (searchTerm, params = {}) => {
+      try {
+        const searchParams = {
+          ...params,
+          search: searchTerm
+        }
+
+        const [ssgResponse, deptResponse] = await Promise.allSettled([
+          positionsAPI.ssg.getAll(searchParams),
+          positionsAPI.departmental.getAll(searchParams)
+        ])
+
+        const ssgPositions = ssgResponse.status === 'fulfilled' ? ssgResponse.value.data : []
+        const deptPositions = deptResponse.status === 'fulfilled' ? deptResponse.value.data : []
+
+        // Filter positions by search term (client-side fallback)
+        const filteredSSG = ssgPositions.filter(pos => 
+          pos.positionName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (pos.description && pos.description.toLowerCase().includes(searchTerm.toLowerCase()))
+        )
+        
+        const filteredDept = deptPositions.filter(pos => 
+          pos.positionName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (pos.description && pos.description.toLowerCase().includes(searchTerm.toLowerCase()))
+        )
+
+        return {
+          success: true,
+          message: `Search results for "${searchTerm}"`,
+          data: {
+            ssg: filteredSSG,
+            departmental: filteredDept,
+            total: filteredSSG.length + filteredDept.length
+          }
+        }
+      } catch (error) {
+        console.error(`Error searching positions for "${searchTerm}":`, error)
         throw error
       }
     }

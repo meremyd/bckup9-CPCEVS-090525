@@ -1,544 +1,664 @@
-const mongoose = require("mongoose")
 const Position = require("../models/Position")
+const Candidate = require("../models/Candidate")
 const SSGElection = require("../models/SSGElection")
 const DepartmentalElection = require("../models/DepartmentalElection")
-const Candidate = require("../models/Candidate")
-const Vote = require("../models/Vote")
-const Voter = require("../models/Voter")
 const AuditLog = require("../models/AuditLog")
+const mongoose = require("mongoose")
 
 class PositionController {
-  // Get all SSG positions
-  static async getAllSSGPositions(req, res, next) {
+  // SSG Position Controllers
+  static async getAllSSGPositions(req, res) {
     try {
-      const { 
-        page = 1, 
-        limit = 10, 
-        ssgElectionId, 
-        isActive, 
-        sortBy = 'positionOrder',
-        sortOrder = 'asc',
-        search 
-      } = req.query
-
-      const query = {}
-      
-      if (ssgElectionId) {
-        if (!mongoose.Types.ObjectId.isValid(ssgElectionId)) {
-          await AuditLog.logUserAction(
-            "SYSTEM_ACCESS",
-            req.user,
-            `Failed to retrieve SSG positions - Invalid SSG election ID: ${ssgElectionId}`,
-            req
-          )
-          const error = new Error("Invalid SSG election ID")
-          error.statusCode = 400
-          return next(error)
-        }
-        query.ssgElectionId = ssgElectionId
-      } else {
-        query.ssgElectionId = { $ne: null }
-      }
-      
-      if (isActive !== undefined) {
-        query.isActive = isActive === 'true'
-      }
-
-      if (search) {
-        query.$or = [
-          { positionName: { $regex: search, $options: 'i' } },
-          { description: { $regex: search, $options: 'i' } }
-        ]
-      }
-
-      const sortOptions = {}
-      sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1
-
-      const skip = (page - 1) * limit
-      const limitNum = Math.min(Number.parseInt(limit), 100)
-
-      const positions = await Position.find(query)
-        .populate('ssgElectionId', 'title electionYear status ssgElectionId')
-        .sort(sortOptions)
-        .skip(skip)
-        .limit(limitNum)
-        .lean()
-
-      const total = await Position.countDocuments(query)
-      const totalPages = Math.ceil(total / limitNum)
+      const positions = await Position.find({ 
+        ssgElectionId: { $ne: null },
+        deptElectionId: null 
+      })
+      .populate('ssgElectionId', 'title electionYear status')
+      .sort({ positionOrder: 1 })
 
       await AuditLog.logUserAction(
         "SYSTEM_ACCESS",
         req.user,
-        `Retrieved ${positions.length} SSG positions with filters: ${JSON.stringify({ ssgElectionId, isActive, page, limit, search })}`,
+        "Retrieved all SSG positions",
         req
       )
 
-      res.json({
+      res.status(200).json({
         success: true,
-        data: positions,
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages,
-          totalItems: total,
-          itemsPerPage: limitNum
-        }
+        message: "SSG positions retrieved successfully",
+        data: positions
       })
     } catch (error) {
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Failed to retrieve SSG positions: ${error.message}`,
-        req
-      )
-      next(error)
+      console.error("Error getting SSG positions:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to retrieve SSG positions",
+        error: error.message
+      })
     }
   }
 
-  // Get all departmental positions
-  static async getAllDepartmentalPositions(req, res, next) {
-    try {
-      const { 
-        page = 1, 
-        limit = 10, 
-        deptElectionId, 
-        isActive, 
-        sortBy = 'positionOrder',
-        sortOrder = 'asc',
-        search 
-      } = req.query
-
-      const query = {}
-      
-      if (deptElectionId) {
-        if (!mongoose.Types.ObjectId.isValid(deptElectionId)) {
-          await AuditLog.logUserAction(
-            "SYSTEM_ACCESS",
-            req.user,
-            `Failed to retrieve departmental positions - Invalid departmental election ID: ${deptElectionId}`,
-            req
-          )
-          const error = new Error("Invalid departmental election ID")
-          error.statusCode = 400
-          return next(error)
-        }
-        query.deptElectionId = deptElectionId
-      } else {
-        query.deptElectionId = { $ne: null }
-      }
-      
-      if (isActive !== undefined) {
-        query.isActive = isActive === 'true'
-      }
-
-      if (search) {
-        query.$or = [
-          { positionName: { $regex: search, $options: 'i' } },
-          { description: { $regex: search, $options: 'i' } }
-        ]
-      }
-
-      const sortOptions = {}
-      sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1
-
-      const skip = (page - 1) * limit
-      const limitNum = Math.min(Number.parseInt(limit), 100)
-
-      const positions = await Position.find(query)
-        .populate('deptElectionId', 'title electionYear status deptElectionId departmentId')
-        .populate({
-          path: 'deptElectionId',
-          populate: {
-            path: 'departmentId',
-            select: 'departmentCode degreeProgram college'
-          }
-        })
-        .sort(sortOptions)
-        .skip(skip)
-        .limit(limitNum)
-        .lean()
-
-      const total = await Position.countDocuments(query)
-      const totalPages = Math.ceil(total / limitNum)
-
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Retrieved ${positions.length} departmental positions with filters: ${JSON.stringify({ deptElectionId, isActive, page, limit, search })}`,
-        req
-      )
-
-      res.json({
-        success: true,
-        data: positions,
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages,
-          totalItems: total,
-          itemsPerPage: limitNum
-        }
-      })
-    } catch (error) {
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Failed to retrieve departmental positions: ${error.message}`,
-        req
-      )
-      next(error)
-    }
-  }
-
-  // Get SSG position by ID
-  static async getSSGPositionById(req, res, next) {
+  static async getSSGPositionById(req, res) {
     try {
       const { id } = req.params
-
+      
       if (!mongoose.Types.ObjectId.isValid(id)) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
-          `Failed to retrieve SSG position - Invalid position ID: ${id}`,
-          req
-        )
-        const error = new Error("Invalid position ID")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const position = await Position.findOne({ _id: id, ssgElectionId: { $ne: null } })
-        .populate('ssgElectionId', 'title electionYear status ssgElectionId')
-        .lean()
-
-      if (!position) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
-          `Attempted to access non-existent SSG position: ${id}`,
-          req
-        )
-        
-        const error = new Error("SSG position not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      const candidateCount = await Candidate.countDocuments({ positionId: id })
-      const voteCount = await Vote.countDocuments({ positionId: id })
-
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Retrieved SSG position: ${position.positionName} (${id}) - Candidates: ${candidateCount}, Votes: ${voteCount}`,
-        req
-      )
-
-      res.json({
-        success: true,
-        data: {
-          ...position,
-          candidateCount,
-          voteCount
-        }
-      })
-    } catch (error) {
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Failed to retrieve SSG position ${req.params.id}: ${error.message}`,
-        req
-      )
-      next(error)
-    }
-  }
-
-  // Get departmental position by ID
-  static async getDepartmentalPositionById(req, res, next) {
-    try {
-      const { id } = req.params
-
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
-          `Failed to retrieve departmental position - Invalid position ID: ${id}`,
-          req
-        )
-        const error = new Error("Invalid position ID")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const position = await Position.findOne({ _id: id, deptElectionId: { $ne: null } })
-        .populate({
-          path: 'deptElectionId',
-          select: 'title electionYear status deptElectionId departmentId',
-          populate: {
-            path: 'departmentId',
-            select: 'departmentCode degreeProgram college'
-          }
+        return res.status(400).json({
+          success: false,
+          message: "Invalid position ID format"
         })
-        .lean()
-
-      if (!position) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
-          `Attempted to access non-existent departmental position: ${id}`,
-          req
-        )
-        
-        const error = new Error("Departmental position not found")
-        error.statusCode = 404
-        return next(error)
       }
 
-      const candidateCount = await Candidate.countDocuments({ positionId: id })
-      const voteCount = await Vote.countDocuments({ positionId: id })
+      const position = await Position.findOne({
+        _id: id,
+        ssgElectionId: { $ne: null },
+        deptElectionId: null
+      }).populate('ssgElectionId', 'title electionYear status')
+
+      if (!position) {
+        return res.status(404).json({
+          success: false,
+          message: "SSG position not found"
+        })
+      }
 
       await AuditLog.logUserAction(
         "SYSTEM_ACCESS",
         req.user,
-        `Retrieved departmental position: ${position.positionName} (${id}) - Candidates: ${candidateCount}, Votes: ${voteCount}`,
+        `Retrieved SSG position: ${position.positionName}`,
         req
       )
 
-      res.json({
+      res.status(200).json({
         success: true,
-        data: {
-          ...position,
-          candidateCount,
-          voteCount
-        }
+        message: "SSG position retrieved successfully",
+        data: position
       })
     } catch (error) {
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Failed to retrieve departmental position ${req.params.id}: ${error.message}`,
-        req
-      )
-      next(error)
+      console.error("Error getting SSG position:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to retrieve SSG position",
+        error: error.message
+      })
     }
   }
 
-  // Create SSG position
-  static async createSSGPosition(req, res, next) {
+  static async createSSGPosition(req, res) {
     try {
-      const { 
-        ssgElectionId, 
-        positionName, 
-        positionOrder = 1,
-        maxVotes = 1,
-        maxCandidates = 10,
-        description 
-      } = req.body
+      const { ssgElectionId, positionName, positionOrder, maxVotes, maxCandidates, description } = req.body
 
+      // Validation
       if (!ssgElectionId || !positionName) {
-        await AuditLog.logUserAction(
-          "CREATE_POSITION",
-          req.user,
-          `Failed to create SSG position - Missing required fields: ssgElectionId=${!!ssgElectionId}, positionName=${!!positionName}`,
-          req
-        )
-        
-        const error = new Error("SSG Election ID and position name are required")
-        error.statusCode = 400
-        return next(error)
+        return res.status(400).json({
+          success: false,
+          message: "SSG Election ID and position name are required"
+        })
       }
 
-      if (!mongoose.Types.ObjectId.isValid(ssgElectionId)) {
-        await AuditLog.logUserAction(
-          "CREATE_POSITION",
-          req.user,
-          `Failed to create SSG position - Invalid SSG election ID: ${ssgElectionId}`,
-          req
-        )
-        
-        const error = new Error("Invalid SSG election ID")
-        error.statusCode = 400
-        return next(error)
-      }
-
+      // Check if SSG election exists
       const ssgElection = await SSGElection.findById(ssgElectionId)
       if (!ssgElection) {
-        await AuditLog.logUserAction(
-          "CREATE_POSITION",
-          req.user,
-          `Failed to create SSG position - SSG election not found: ${ssgElectionId}`,
-          req
-        )
-        
-        const error = new Error("SSG election not found")
-        error.statusCode = 404
-        return next(error)
+        return res.status(404).json({
+          success: false,
+          message: "SSG election not found"
+        })
       }
 
-      const existingPosition = await Position.findOne({ 
-        ssgElectionId, 
-        positionName: { $regex: new RegExp(`^${positionName.trim()}$`, 'i') }
+      // Check for duplicate position name in the same election
+      const existingPosition = await Position.findOne({
+        ssgElectionId,
+        positionName: { $regex: new RegExp(`^${positionName}$`, 'i') }
       })
-      
+
       if (existingPosition) {
-        await AuditLog.logUserAction(
-          "CREATE_POSITION",
-          req.user,
-          `Failed to create SSG position - Position already exists: ${positionName.trim()} for election ${ssgElection.title}`,
-          req
-        )
-        
-        const error = new Error("Position already exists for this SSG election")
-        error.statusCode = 400
-        return next(error)
+        return res.status(400).json({
+          success: false,
+          message: "Position name already exists in this SSG election"
+        })
       }
 
-      if (maxVotes < 1) {
-        const error = new Error("Maximum votes must be at least 1")
-        error.statusCode = 400
-        return next(error)
+      // Get next position order if not provided
+      let finalPositionOrder = positionOrder
+      if (!finalPositionOrder) {
+        const lastPosition = await Position.findOne({ ssgElectionId })
+          .sort({ positionOrder: -1 })
+        finalPositionOrder = lastPosition ? lastPosition.positionOrder + 1 : 1
       }
 
-      if (maxCandidates < 1) {
-        const error = new Error("Maximum candidates must be at least 1")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const position = new Position({
+      const newPosition = new Position({
         ssgElectionId,
         positionName: positionName.trim(),
-        positionOrder: parseInt(positionOrder),
-        maxVotes: parseInt(maxVotes),
-        maxCandidates: parseInt(maxCandidates),
+        positionOrder: finalPositionOrder,
+        maxVotes: maxVotes || 1,
+        maxCandidates: maxCandidates || 10,
         description: description?.trim() || null
       })
 
-      await position.save()
-      await position.populate('ssgElectionId', 'title electionYear ssgElectionId')
+      await newPosition.save()
+      await newPosition.populate('ssgElectionId', 'title electionYear status')
 
       await AuditLog.logUserAction(
         "CREATE_POSITION",
         req.user,
-        `Created SSG position: ${position.positionName} for election ${ssgElection.title} (Order: ${position.positionOrder}, Max Votes: ${position.maxVotes})`,
+        `Created SSG position: ${newPosition.positionName} for election ${ssgElection.title}`,
         req
       )
 
       res.status(201).json({
         success: true,
         message: "SSG position created successfully",
-        data: position
+        data: newPosition
       })
     } catch (error) {
-      await AuditLog.logUserAction(
-        "CREATE_POSITION",
-        req.user,
-        `Failed to create SSG position: ${error.message}`,
-        req
-      )
-      
-      if (error.code === 11000) {
-        error.message = "Position already exists for this SSG election"
-        error.statusCode = 400
-      }
-      next(error)
+      console.error("Error creating SSG position:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to create SSG position",
+        error: error.message
+      })
     }
   }
 
-  // Create departmental position
-  static async createDepartmentalPosition(req, res, next) {
+  static async updateSSGPosition(req, res) {
     try {
-      const { 
-        deptElectionId, 
-        positionName, 
-        positionOrder = 1,
-        maxVotes = 1,
-        maxCandidates = 10,
-        description 
-      } = req.body
+      const { id } = req.params
+      const { positionName, positionOrder, maxVotes, maxCandidates, description, isActive } = req.body
 
-      if (!deptElectionId || !positionName) {
-        await AuditLog.logUserAction(
-          "CREATE_POSITION",
-          req.user,
-          `Failed to create departmental position - Missing required fields: deptElectionId=${!!deptElectionId}, positionName=${!!positionName}`,
-          req
-        )
-        
-        const error = new Error("Departmental Election ID and position name are required")
-        error.statusCode = 400
-        return next(error)
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid position ID format"
+        })
       }
 
-      if (!mongoose.Types.ObjectId.isValid(deptElectionId)) {
-        await AuditLog.logUserAction(
-          "CREATE_POSITION",
-          req.user,
-          `Failed to create departmental position - Invalid departmental election ID: ${deptElectionId}`,
-          req
-        )
-        
-        const error = new Error("Invalid departmental election ID")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const deptElection = await DepartmentalElection.findById(deptElectionId).populate('departmentId', 'departmentCode degreeProgram')
-      if (!deptElection) {
-        await AuditLog.logUserAction(
-          "CREATE_POSITION",
-          req.user,
-          `Failed to create departmental position - Departmental election not found: ${deptElectionId}`,
-          req
-        )
-        
-        const error = new Error("Departmental election not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      const existingPosition = await Position.findOne({ 
-        deptElectionId, 
-        positionName: { $regex: new RegExp(`^${positionName.trim()}$`, 'i') }
+      const position = await Position.findOne({
+        _id: id,
+        ssgElectionId: { $ne: null },
+        deptElectionId: null
       })
+
+      if (!position) {
+        return res.status(404).json({
+          success: false,
+          message: "SSG position not found"
+        })
+      }
+
+      // Check for duplicate position name if name is being changed
+      if (positionName && positionName !== position.positionName) {
+        const existingPosition = await Position.findOne({
+          ssgElectionId: position.ssgElectionId,
+          positionName: { $regex: new RegExp(`^${positionName}$`, 'i') },
+          _id: { $ne: id }
+        })
+
+        if (existingPosition) {
+          return res.status(400).json({
+            success: false,
+            message: "Position name already exists in this SSG election"
+          })
+        }
+      }
+
+      // Update fields
+      if (positionName) position.positionName = positionName.trim()
+      if (positionOrder !== undefined) position.positionOrder = positionOrder
+      if (maxVotes !== undefined) position.maxVotes = maxVotes
+      if (maxCandidates !== undefined) position.maxCandidates = maxCandidates
+      if (description !== undefined) position.description = description?.trim() || null
+      if (isActive !== undefined) position.isActive = isActive
+
+      await position.save()
+      await position.populate('ssgElectionId', 'title electionYear status')
+
+      await AuditLog.logUserAction(
+        "UPDATE_POSITION",
+        req.user,
+        `Updated SSG position: ${position.positionName}`,
+        req
+      )
+
+      res.status(200).json({
+        success: true,
+        message: "SSG position updated successfully",
+        data: position
+      })
+    } catch (error) {
+      console.error("Error updating SSG position:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to update SSG position",
+        error: error.message
+      })
+    }
+  }
+
+  static async deleteSSGPosition(req, res) {
+    try {
+      const { id } = req.params
+
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid position ID format"
+        })
+      }
+
+      const position = await Position.findOne({
+        _id: id,
+        ssgElectionId: { $ne: null },
+        deptElectionId: null
+      })
+
+      if (!position) {
+        return res.status(404).json({
+          success: false,
+          message: "SSG position not found"
+        })
+      }
+
+      // Check if position has candidates
+      const candidateCount = await Candidate.countDocuments({ positionId: id })
+      if (candidateCount > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot delete position. It has ${candidateCount} candidate(s) assigned.`
+        })
+      }
+
+      const positionName = position.positionName
+      await Position.findByIdAndDelete(id)
+
+      await AuditLog.logUserAction(
+        "DELETE_POSITION",
+        req.user,
+        `Deleted SSG position: ${positionName}`,
+        req
+      )
+
+      res.status(200).json({
+        success: true,
+        message: "SSG position deleted successfully"
+      })
+    } catch (error) {
+      console.error("Error deleting SSG position:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to delete SSG position",
+        error: error.message
+      })
+    }
+  }
+
+  static async getPositionsBySSGElection(req, res) {
+  try {
+    const { ssgElectionId } = req.params
+
+    if (!mongoose.Types.ObjectId.isValid(ssgElectionId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid SSG election ID format"
+      })
+    }
+
+    const ssgElection = await SSGElection.findById(ssgElectionId)
+    if (!ssgElection) {
+      return res.status(404).json({
+        success: false,
+        message: "SSG election not found"
+      })
+    }
+
+    // Get positions with candidate counts
+    const positions = await Position.aggregate([
+      {
+        $match: {
+          ssgElectionId: new mongoose.Types.ObjectId(ssgElectionId),
+          deptElectionId: null
+        }
+      },
+      {
+        $lookup: {
+          from: 'candidates',
+          localField: '_id',
+          foreignField: 'positionId',
+          as: 'candidates'
+        }
+      },
+      {
+        $addFields: {
+          candidateCount: { $size: '$candidates' },
+          activeCandidateCount: {
+            $size: {
+              $filter: {
+                input: '$candidates',
+                cond: { $eq: ['$$this.isActive', true] }
+              }
+            }
+          }
+        }
+      },
+      {
+        $lookup: {
+          from: 'ssgelections',
+          localField: 'ssgElectionId',
+          foreignField: '_id',
+          as: 'ssgElection'
+        }
+      },
+      {
+        $addFields: {
+          ssgElectionId: {
+            $let: {
+              vars: {
+                election: { $arrayElemAt: ['$ssgElection', 0] }
+              },
+              in: {
+                _id: '$$election._id',
+                title: '$$election.title',
+                electionYear: '$$election.electionYear',
+                status: '$$election.status'
+              }
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          candidates: 0,
+          ssgElection: 0
+        }
+      },
+      {
+        $sort: { positionOrder: 1 }
+      }
+    ])
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Retrieved positions for SSG election: ${ssgElection.title}`,
+      req
+    )
+
+    res.status(200).json({
+      success: true,
+      message: "SSG election positions retrieved successfully",
+      data: positions
+    })
+  } catch (error) {
+    console.error("Error getting SSG election positions:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve SSG election positions",
+      error: error.message
+    })
+  }
+}
+
+  static async getSSGPositionStats(req, res) {
+    try {
+      const { positionId } = req.params
+
+      if (!mongoose.Types.ObjectId.isValid(positionId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid position ID format"
+        })
+      }
+
+      const position = await Position.findOne({
+        _id: positionId,
+        ssgElectionId: { $ne: null },
+        deptElectionId: null
+      }).populate('ssgElectionId', 'title electionYear status')
+
+      if (!position) {
+        return res.status(404).json({
+          success: false,
+          message: "SSG position not found"
+        })
+      }
+
+      // Get candidate statistics
+      const candidateStats = await Candidate.aggregate([
+        { $match: { positionId: new mongoose.Types.ObjectId(positionId) } },
+        {
+          $group: {
+            _id: null,
+            totalCandidates: { $sum: 1 },
+            activeCandidates: { $sum: { $cond: ["$isActive", 1, 0] } },
+            inactiveCandidates: { $sum: { $cond: ["$isActive", 0, 1] } }
+          }
+        }
+      ])
+
+      const stats = candidateStats[0] || {
+        totalCandidates: 0,
+        activeCandidates: 0,
+        inactiveCandidates: 0
+      }
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Retrieved stats for SSG position: ${position.positionName}`,
+        req
+      )
+
+      res.status(200).json({
+        success: true,
+        message: "SSG position statistics retrieved successfully",
+        data: {
+          position,
+          statistics: stats
+        }
+      })
+    } catch (error) {
+      console.error("Error getting SSG position stats:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to retrieve SSG position statistics",
+        error: error.message
+      })
+    }
+  }
+
+  static async canDeleteSSGPosition(req, res) {
+    try {
+      const { positionId } = req.params
+
+      if (!mongoose.Types.ObjectId.isValid(positionId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid position ID format"
+        })
+      }
+
+      const position = await Position.findOne({
+        _id: positionId,
+        ssgElectionId: { $ne: null },
+        deptElectionId: null
+      })
+
+      if (!position) {
+        return res.status(404).json({
+          success: false,
+          message: "SSG position not found"
+        })
+      }
+
+      const candidateCount = await Candidate.countDocuments({ positionId })
+      const canDelete = candidateCount === 0
+
+      res.status(200).json({
+        success: true,
+        message: "Delete eligibility checked successfully",
+        data: {
+          canDelete,
+          candidateCount,
+          reason: canDelete ? "Position can be deleted" : `Position has ${candidateCount} candidate(s) assigned`
+        }
+      })
+    } catch (error) {
+      console.error("Error checking SSG position delete eligibility:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to check delete eligibility",
+        error: error.message
+      })
+    }
+  }
+
+  // Departmental Position Controllers
+  static async getAllDepartmentalPositions(req, res) {
+    try {
+      const positions = await Position.find({ 
+        deptElectionId: { $ne: null },
+        ssgElectionId: null 
+      })
+      .populate({
+        path: 'deptElectionId',
+        select: 'title electionYear status departmentId',
+        populate: {
+          path: 'departmentId',
+          select: 'departmentCode degreeProgram college'
+        }
+      })
+      .sort({ positionOrder: 1 })
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        "Retrieved all departmental positions",
+        req
+      )
+
+      res.status(200).json({
+        success: true,
+        message: "Departmental positions retrieved successfully",
+        data: positions
+      })
+    } catch (error) {
+      console.error("Error getting departmental positions:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to retrieve departmental positions",
+        error: error.message
+      })
+    }
+  }
+
+  static async getDepartmentalPositionById(req, res) {
+    try {
+      const { id } = req.params
       
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid position ID format"
+        })
+      }
+
+      const position = await Position.findOne({
+        _id: id,
+        deptElectionId: { $ne: null },
+        ssgElectionId: null
+      }).populate({
+        path: 'deptElectionId',
+        select: 'title electionYear status departmentId',
+        populate: {
+          path: 'departmentId',
+          select: 'departmentCode degreeProgram college'
+        }
+      })
+
+      if (!position) {
+        return res.status(404).json({
+          success: false,
+          message: "Departmental position not found"
+        })
+      }
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Retrieved departmental position: ${position.positionName}`,
+        req
+      )
+
+      res.status(200).json({
+        success: true,
+        message: "Departmental position retrieved successfully",
+        data: position
+      })
+    } catch (error) {
+      console.error("Error getting departmental position:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to retrieve departmental position",
+        error: error.message
+      })
+    }
+  }
+
+  static async createDepartmentalPosition(req, res) {
+    try {
+      const { deptElectionId, positionName, positionOrder, maxVotes, maxCandidates, description } = req.body
+
+      // Validation
+      if (!deptElectionId || !positionName) {
+        return res.status(400).json({
+          success: false,
+          message: "Departmental Election ID and position name are required"
+        })
+      }
+
+      // Check if departmental election exists
+      const deptElection = await DepartmentalElection.findById(deptElectionId)
+        .populate('departmentId', 'departmentCode degreeProgram')
+      if (!deptElection) {
+        return res.status(404).json({
+          success: false,
+          message: "Departmental election not found"
+        })
+      }
+
+      // Check for duplicate position name in the same election
+      const existingPosition = await Position.findOne({
+        deptElectionId,
+        positionName: { $regex: new RegExp(`^${positionName}$`, 'i') }
+      })
+
       if (existingPosition) {
-        await AuditLog.logUserAction(
-          "CREATE_POSITION",
-          req.user,
-          `Failed to create departmental position - Position already exists: ${positionName.trim()} for election ${deptElection.title}`,
-          req
-        )
-        
-        const error = new Error("Position already exists for this departmental election")
-        error.statusCode = 400
-        return next(error)
+        return res.status(400).json({
+          success: false,
+          message: "Position name already exists in this departmental election"
+        })
       }
 
-      if (maxVotes < 1) {
-        const error = new Error("Maximum votes must be at least 1")
-        error.statusCode = 400
-        return next(error)
+      // Get next position order if not provided
+      let finalPositionOrder = positionOrder
+      if (!finalPositionOrder) {
+        const lastPosition = await Position.findOne({ deptElectionId })
+          .sort({ positionOrder: -1 })
+        finalPositionOrder = lastPosition ? lastPosition.positionOrder + 1 : 1
       }
 
-      if (maxCandidates < 1) {
-        const error = new Error("Maximum candidates must be at least 1")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const position = new Position({
+      const newPosition = new Position({
         deptElectionId,
         positionName: positionName.trim(),
-        positionOrder: parseInt(positionOrder),
-        maxVotes: parseInt(maxVotes),
-        maxCandidates: parseInt(maxCandidates),
+        positionOrder: finalPositionOrder,
+        maxVotes: maxVotes || 1,
+        maxCandidates: maxCandidates || 10,
         description: description?.trim() || null
       })
 
-      await position.save()
-      await position.populate({
+      await newPosition.save()
+      await newPosition.populate({
         path: 'deptElectionId',
-        select: 'title electionYear deptElectionId departmentId',
+        select: 'title electionYear status departmentId',
         populate: {
           path: 'departmentId',
           select: 'departmentCode degreeProgram college'
@@ -548,1110 +668,440 @@ class PositionController {
       await AuditLog.logUserAction(
         "CREATE_POSITION",
         req.user,
-        `Created departmental position: ${position.positionName} for election ${deptElection.title} in ${deptElection.departmentId.degreeProgram} (Order: ${position.positionOrder}, Max Votes: ${position.maxVotes})`,
+        `Created departmental position: ${newPosition.positionName} for election ${deptElection.title}`,
         req
       )
 
       res.status(201).json({
         success: true,
         message: "Departmental position created successfully",
-        data: position
+        data: newPosition
       })
     } catch (error) {
-      await AuditLog.logUserAction(
-        "CREATE_POSITION",
-        req.user,
-        `Failed to create departmental position: ${error.message}`,
-        req
-      )
-      
-      if (error.code === 11000) {
-        error.message = "Position already exists for this departmental election"
-        error.statusCode = 400
-      }
-      next(error)
+      console.error("Error creating departmental position:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to create departmental position",
+        error: error.message
+      })
     }
   }
 
-  // Update SSG position
-  static async updateSSGPosition(req, res, next) {
+  static async updateDepartmentalPosition(req, res) {
     try {
       const { id } = req.params
-      const updates = req.body
+      const { positionName, positionOrder, maxVotes, maxCandidates, description, isActive } = req.body
 
       if (!mongoose.Types.ObjectId.isValid(id)) {
-        await AuditLog.logUserAction(
-          "UPDATE_POSITION",
-          req.user,
-          `Failed to update SSG position - Invalid position ID: ${id}`,
-          req
-        )
-        const error = new Error("Invalid position ID")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const position = await Position.findOne({ _id: id, ssgElectionId: { $ne: null } }).populate('ssgElectionId', 'title')
-      if (!position) {
-        await AuditLog.logUserAction(
-          "UPDATE_POSITION",
-          req.user,
-          `Failed to update SSG position - Position not found: ${id}`,
-          req
-        )
-        
-        const error = new Error("SSG position not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      const originalData = {
-        positionName: position.positionName,
-        positionOrder: position.positionOrder,
-        maxVotes: position.maxVotes,
-        maxCandidates: position.maxCandidates,
-        description: position.description,
-        isActive: position.isActive
-      }
-
-      const allowedUpdates = ['positionName', 'positionOrder', 'maxVotes', 'maxCandidates', 'description', 'isActive']
-      const actualUpdates = {}
-
-      allowedUpdates.forEach(field => {
-        if (updates[field] !== undefined) {
-          if (field === 'positionName' && updates[field]) {
-            actualUpdates[field] = updates[field].trim()
-          } else if (field === 'positionOrder' || field === 'maxVotes' || field === 'maxCandidates') {
-            const numValue = parseInt(updates[field])
-            if ((field === 'maxVotes' || field === 'maxCandidates') && numValue < 1) {
-              throw new Error(`${field === 'maxVotes' ? 'Maximum votes' : 'Maximum candidates'} must be at least 1`)
-            }
-            actualUpdates[field] = numValue
-          } else if (field === 'description') {
-            actualUpdates[field] = updates[field]?.trim() || null
-          } else {
-            actualUpdates[field] = updates[field]
-          }
-        }
-      })
-
-      if (actualUpdates.positionName && actualUpdates.positionName !== position.positionName) {
-        const existingPosition = await Position.findOne({
-          ssgElectionId: position.ssgElectionId,
-          positionName: { $regex: new RegExp(`^${actualUpdates.positionName}$`, 'i') },
-          _id: { $ne: id }
+        return res.status(400).json({
+          success: false,
+          message: "Invalid position ID format"
         })
-
-        if (existingPosition) {
-          await AuditLog.logUserAction(
-            "UPDATE_POSITION",
-            req.user,
-            `Failed to update SSG position - Name already exists: ${actualUpdates.positionName} in election ${position.ssgElectionId.title}`,
-            req
-          )
-          
-          const error = new Error("Position name already exists for this SSG election")
-          error.statusCode = 400
-          return next(error)
-        }
       }
 
-      const updatedPosition = await Position.findByIdAndUpdate(
-        id,
-        actualUpdates,
-        { new: true, runValidators: true }
-      ).populate('ssgElectionId', 'title electionYear ssgElectionId')
-
-      const changes = []
-      Object.keys(actualUpdates).forEach(key => {
-        if (originalData[key] !== actualUpdates[key]) {
-          changes.push(`${key}: "${originalData[key]}" → "${actualUpdates[key]}"`)
-        }
+      const position = await Position.findOne({
+        _id: id,
+        deptElectionId: { $ne: null },
+        ssgElectionId: null
       })
 
-      await AuditLog.logUserAction(
-        "UPDATE_POSITION",
-        req.user,
-        `Updated SSG position: ${updatedPosition.positionName} in election ${position.ssgElectionId.title}. Changes: ${changes.join(', ')}`,
-        req
-      )
-
-      res.json({
-        success: true,
-        message: "SSG position updated successfully",
-        data: updatedPosition
-      })
-    } catch (error) {
-      await AuditLog.logUserAction(
-        "UPDATE_POSITION",
-        req.user,
-        `Failed to update SSG position ${req.params.id}: ${error.message}`,
-        req
-      )
-      
-      if (error.code === 11000) {
-        error.message = "Position name already exists for this SSG election"
-        error.statusCode = 400
-      }
-      next(error)
-    }
-  }
-
-  // Update departmental position
-  static async updateDepartmentalPosition(req, res, next) {
-    try {
-      const { id } = req.params
-      const updates = req.body
-
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        await AuditLog.logUserAction(
-          "UPDATE_POSITION",
-          req.user,
-          `Failed to update departmental position - Invalid position ID: ${id}`,
-          req
-        )
-        const error = new Error("Invalid position ID")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const position = await Position.findOne({ _id: id, deptElectionId: { $ne: null } }).populate('deptElectionId', 'title')
       if (!position) {
-        await AuditLog.logUserAction(
-          "UPDATE_POSITION",
-          req.user,
-          `Failed to update departmental position - Position not found: ${id}`,
-          req
-        )
-        
-        const error = new Error("Departmental position not found")
-        error.statusCode = 404
-        return next(error)
+        return res.status(404).json({
+          success: false,
+          message: "Departmental position not found"
+        })
       }
 
-      const originalData = {
-        positionName: position.positionName,
-        positionOrder: position.positionOrder,
-        maxVotes: position.maxVotes,
-        maxCandidates: position.maxCandidates,
-        description: position.description,
-        isActive: position.isActive
-      }
-
-      const allowedUpdates = ['positionName', 'positionOrder', 'maxVotes', 'maxCandidates', 'description', 'isActive']
-      const actualUpdates = {}
-
-      allowedUpdates.forEach(field => {
-        if (updates[field] !== undefined) {
-          if (field === 'positionName' && updates[field]) {
-            actualUpdates[field] = updates[field].trim()
-          } else if (field === 'positionOrder' || field === 'maxVotes' || field === 'maxCandidates') {
-            const numValue = parseInt(updates[field])
-            if ((field === 'maxVotes' || field === 'maxCandidates') && numValue < 1) {
-              throw new Error(`${field === 'maxVotes' ? 'Maximum votes' : 'Maximum candidates'} must be at least 1`)
-            }
-            actualUpdates[field] = numValue
-          } else if (field === 'description') {
-            actualUpdates[field] = updates[field]?.trim() || null
-          } else {
-            actualUpdates[field] = updates[field]
-          }
-        }
-      })
-
-      if (actualUpdates.positionName && actualUpdates.positionName !== position.positionName) {
+      // Check for duplicate position name if name is being changed
+      if (positionName && positionName !== position.positionName) {
         const existingPosition = await Position.findOne({
           deptElectionId: position.deptElectionId,
-          positionName: { $regex: new RegExp(`^${actualUpdates.positionName}$`, 'i') },
+          positionName: { $regex: new RegExp(`^${positionName}$`, 'i') },
           _id: { $ne: id }
         })
 
         if (existingPosition) {
-          await AuditLog.logUserAction(
-            "UPDATE_POSITION",
-            req.user,
-            `Failed to update departmental position - Name already exists: ${actualUpdates.positionName} in election ${position.deptElectionId.title}`,
-            req
-          )
-          
-          const error = new Error("Position name already exists for this departmental election")
-          error.statusCode = 400
-          return next(error)
+          return res.status(400).json({
+            success: false,
+            message: "Position name already exists in this departmental election"
+          })
         }
       }
 
-      const updatedPosition = await Position.findByIdAndUpdate(
-        id,
-        actualUpdates,
-        { new: true, runValidators: true }
-      ).populate({
+      // Update fields
+      if (positionName) position.positionName = positionName.trim()
+      if (positionOrder !== undefined) position.positionOrder = positionOrder
+      if (maxVotes !== undefined) position.maxVotes = maxVotes
+      if (maxCandidates !== undefined) position.maxCandidates = maxCandidates
+      if (description !== undefined) position.description = description?.trim() || null
+      if (isActive !== undefined) position.isActive = isActive
+
+      await position.save()
+      await position.populate({
         path: 'deptElectionId',
-        select: 'title electionYear deptElectionId departmentId',
+        select: 'title electionYear status departmentId',
         populate: {
           path: 'departmentId',
           select: 'departmentCode degreeProgram college'
         }
       })
 
-      const changes = []
-      Object.keys(actualUpdates).forEach(key => {
-        if (originalData[key] !== actualUpdates[key]) {
-          changes.push(`${key}: "${originalData[key]}" → "${actualUpdates[key]}"`)
-        }
-      })
-
       await AuditLog.logUserAction(
         "UPDATE_POSITION",
         req.user,
-        `Updated departmental position: ${updatedPosition.positionName} in election ${position.deptElectionId.title}. Changes: ${changes.join(', ')}`,
+        `Updated departmental position: ${position.positionName}`,
         req
       )
 
-      res.json({
+      res.status(200).json({
         success: true,
         message: "Departmental position updated successfully",
-        data: updatedPosition
+        data: position
       })
     } catch (error) {
-      await AuditLog.logUserAction(
-        "UPDATE_POSITION",
-        req.user,
-        `Failed to update departmental position ${req.params.id}: ${error.message}`,
-        req
-      )
-      
-      if (error.code === 11000) {
-        error.message = "Position name already exists for this departmental election"
-        error.statusCode = 400
-      }
-      next(error)
+      console.error("Error updating departmental position:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to update departmental position",
+        error: error.message
+      })
     }
   }
 
-  // Delete SSG position
-  static async deleteSSGPosition(req, res, next) {
+  static async deleteDepartmentalPosition(req, res) {
     try {
       const { id } = req.params
 
       if (!mongoose.Types.ObjectId.isValid(id)) {
-        await AuditLog.logUserAction(
-          "DELETE_POSITION",
-          req.user,
-          `Failed to delete SSG position - Invalid position ID: ${id}`,
-          req
-        )
-        const error = new Error("Invalid position ID")
-        error.statusCode = 400
-        return next(error)
+        return res.status(400).json({
+          success: false,
+          message: "Invalid position ID format"
+        })
       }
 
-      const position = await Position.findOne({ _id: id, ssgElectionId: { $ne: null } }).populate('ssgElectionId', 'title')
+      const position = await Position.findOne({
+        _id: id,
+        deptElectionId: { $ne: null },
+        ssgElectionId: null
+      })
+
       if (!position) {
-        await AuditLog.logUserAction(
-          "DELETE_POSITION",
-          req.user,
-          `Failed to delete SSG position - Position not found: ${id}`,
-          req
-        )
-        
-        const error = new Error("SSG position not found")
-        error.statusCode = 404
-        return next(error)
+        return res.status(404).json({
+          success: false,
+          message: "Departmental position not found"
+        })
       }
 
+      // Check if position has candidates
       const candidateCount = await Candidate.countDocuments({ positionId: id })
-      
       if (candidateCount > 0) {
-        await AuditLog.logUserAction(
-          "DELETE_POSITION",
-          req.user,
-          `Failed to delete SSG position - Has ${candidateCount} candidates: ${position.positionName} in election ${position.ssgElectionId.title}`,
-          req
-        )
-        
-        const error = new Error(`Cannot delete SSG position. It has ${candidateCount} candidate(s) associated with it.`)
-        error.statusCode = 400
-        return next(error)
+        return res.status(400).json({
+          success: false,
+          message: `Cannot delete position. It has ${candidateCount} candidate(s) assigned.`
+        })
       }
 
-      const voteCount = await Vote.countDocuments({ positionId: id })
-      
-      if (voteCount > 0) {
-        await AuditLog.logUserAction(
-          "DELETE_POSITION",
-          req.user,
-          `Failed to delete SSG position - Has ${voteCount} votes: ${position.positionName} in election ${position.ssgElectionId.title}`,
-          req
-        )
-        
-        const error = new Error(`Cannot delete SSG position. It has ${voteCount} vote(s) associated with it.`)
-        error.statusCode = 400
-        return next(error)
-      }
-
+      const positionName = position.positionName
       await Position.findByIdAndDelete(id)
 
       await AuditLog.logUserAction(
         "DELETE_POSITION",
         req.user,
-        `Deleted SSG position: ${position.positionName} from election ${position.ssgElectionId.title} (Order: ${position.positionOrder})`,
+        `Deleted departmental position: ${positionName}`,
         req
       )
 
-      res.json({
-        success: true,
-        message: "SSG position deleted successfully"
-      })
-    } catch (error) {
-      await AuditLog.logUserAction(
-        "DELETE_POSITION",
-        req.user,
-        `Failed to delete SSG position ${req.params.id}: ${error.message}`,
-        req
-      )
-      next(error)
-    }
-  }
-
-  // Delete departmental position
-  static async deleteDepartmentalPosition(req, res, next) {
-    try {
-      const { id } = req.params
-
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        await AuditLog.logUserAction(
-          "DELETE_POSITION",
-          req.user,
-          `Failed to delete departmental position - Invalid position ID: ${id}`,
-          req
-        )
-        const error = new Error("Invalid position ID")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const position = await Position.findOne({ _id: id, deptElectionId: { $ne: null } }).populate('deptElectionId', 'title')
-      if (!position) {
-        await AuditLog.logUserAction(
-          "DELETE_POSITION",
-          req.user,
-          `Failed to delete departmental position - Position not found: ${id}`,
-          req
-        )
-        
-        const error = new Error("Departmental position not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      const candidateCount = await Candidate.countDocuments({ positionId: id })
-      
-      if (candidateCount > 0) {
-        await AuditLog.logUserAction(
-          "DELETE_POSITION",
-          req.user,
-          `Failed to delete departmental position - Has ${candidateCount} candidates: ${position.positionName} in election ${position.deptElectionId.title}`,
-          req
-        )
-        
-        const error = new Error(`Cannot delete departmental position. It has ${candidateCount} candidate(s) associated with it.`)
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const voteCount = await Vote.countDocuments({ positionId: id })
-      
-      if (voteCount > 0) {
-        await AuditLog.logUserAction(
-          "DELETE_POSITION",
-          req.user,
-          `Failed to delete departmental position - Has ${voteCount} votes: ${position.positionName} in election ${position.deptElectionId.title}`,
-          req
-        )
-        
-        const error = new Error(`Cannot delete departmental position. It has ${voteCount} vote(s) associated with it.`)
-        error.statusCode = 400
-        return next(error)
-      }
-
-      await Position.findByIdAndDelete(id)
-
-      await AuditLog.logUserAction(
-        "DELETE_POSITION",
-        req.user,
-        `Deleted departmental position: ${position.positionName} from election ${position.deptElectionId.title} (Order: ${position.positionOrder})`,
-        req
-      )
-
-      res.json({
+      res.status(200).json({
         success: true,
         message: "Departmental position deleted successfully"
       })
     } catch (error) {
-      await AuditLog.logUserAction(
-        "DELETE_POSITION",
-        req.user,
-        `Failed to delete departmental position ${req.params.id}: ${error.message}`,
-        req
-      )
-      next(error)
-    }
-  }
-
-  // Get positions by SSG election
-  static async getPositionsBySSGElection(req, res, next) {
-    try {
-      const { ssgElectionId } = req.params
-      const { isActive, sortBy = 'positionOrder', sortOrder = 'asc' } = req.query
-
-      if (!mongoose.Types.ObjectId.isValid(ssgElectionId)) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user || { username: "anonymous" },
-          `Failed to retrieve SSG positions - Invalid SSG election ID: ${ssgElectionId}`,
-          req
-        )
-        const error = new Error("Invalid SSG election ID")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const ssgElection = await SSGElection.findById(ssgElectionId)
-      if (!ssgElection) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user || { username: "anonymous" },
-          `Failed to retrieve SSG positions - SSG election not found: ${ssgElectionId}`,
-          req
-        )
-        const error = new Error("SSG election not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      const query = { ssgElectionId }
-      if (isActive !== undefined) {
-        query.isActive = isActive === 'true'
-      }
-
-      const sortOptions = {}
-      sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1
-
-      const positions = await Position.find(query)
-        .sort(sortOptions)
-        .lean()
-
-      const positionsWithCounts = await Promise.all(
-        positions.map(async (position) => {
-          const candidateCount = await Candidate.countDocuments({ positionId: position._id })
-          const voteCount = await Vote.countDocuments({ positionId: position._id })
-          return {
-            ...position,
-            candidateCount,
-            voteCount
-          }
-        })
-      )
-
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user || { username: "anonymous" },
-        `Retrieved ${positions.length} positions for SSG election: ${ssgElection.title} (${ssgElectionId})`,
-        req
-      )
-
-      res.json({
-        success: true,
-        data: positionsWithCounts,
-        election: {
-          id: ssgElection._id,
-          title: ssgElection.title,
-          electionYear: ssgElection.electionYear,
-          status: ssgElection.status,
-          type: 'ssg'
-        }
+      console.error("Error deleting departmental position:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to delete departmental position",
+        error: error.message
       })
-    } catch (error) {
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user || { username: "anonymous" },
-        `Failed to retrieve positions for SSG election ${req.params.ssgElectionId}: ${error.message}`,
-        req
-      )
-      next(error)
     }
   }
 
-  // Get positions by departmental election
-  static async getPositionsByDepartmentalElection(req, res, next) {
+  static async getPositionsByDepartmentalElection(req, res) {
     try {
       const { deptElectionId } = req.params
-      const { isActive, sortBy = 'positionOrder', sortOrder = 'asc' } = req.query
 
       if (!mongoose.Types.ObjectId.isValid(deptElectionId)) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user || { username: "anonymous" },
-          `Failed to retrieve departmental positions - Invalid departmental election ID: ${deptElectionId}`,
-          req
-        )
-        const error = new Error("Invalid departmental election ID")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const deptElection = await DepartmentalElection.findById(deptElectionId).populate('departmentId', 'departmentCode degreeProgram college')
-      if (!deptElection) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user || { username: "anonymous" },
-          `Failed to retrieve departmental positions - Departmental election not found: ${deptElectionId}`,
-          req
-        )
-        const error = new Error("Departmental election not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      const query = { deptElectionId }
-      if (isActive !== undefined) {
-        query.isActive = isActive === 'true'
-      }
-
-      const sortOptions = {}
-      sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1
-
-      const positions = await Position.find(query)
-        .sort(sortOptions)
-        .lean()
-
-      const positionsWithCounts = await Promise.all(
-        positions.map(async (position) => {
-          const candidateCount = await Candidate.countDocuments({ positionId: position._id })
-          const voteCount = await Vote.countDocuments({ positionId: position._id })
-          return {
-            ...position,
-            candidateCount,
-            voteCount
-          }
+        return res.status(400).json({
+          success: false,
+          message: "Invalid departmental election ID format"
         })
-      )
+      }
 
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user || { username: "anonymous" },
-        `Retrieved ${positions.length} positions for departmental election: ${deptElection.title} (${deptElectionId})`,
-        req
-      )
+      const deptElection = await DepartmentalElection.findById(deptElectionId)
+        .populate('departmentId', 'departmentCode degreeProgram')
+      if (!deptElection) {
+        return res.status(404).json({
+          success: false,
+          message: "Departmental election not found"
+        })
+      }
 
-      res.json({
-        success: true,
-        data: positionsWithCounts,
-        election: {
-          id: deptElection._id,
-          title: deptElection.title,
-          electionYear: deptElection.electionYear,
-          status: deptElection.status,
-          department: deptElection.departmentId,
-          type: 'departmental'
+      const positions = await Position.find({ 
+        deptElectionId,
+        ssgElectionId: null 
+      })
+      .populate({
+        path: 'deptElectionId',
+        select: 'title electionYear status departmentId',
+        populate: {
+          path: 'departmentId',
+          select: 'departmentCode degreeProgram college'
         }
       })
-    } catch (error) {
+      .sort({ positionOrder: 1 })
+
       await AuditLog.logUserAction(
         "SYSTEM_ACCESS",
-        req.user || { username: "anonymous" },
-        `Failed to retrieve positions for departmental election ${req.params.deptElectionId}: ${error.message}`,
+        req.user,
+        `Retrieved positions for departmental election: ${deptElection.title}`,
         req
       )
-      next(error)
+
+      res.status(200).json({
+        success: true,
+        message: "Departmental election positions retrieved successfully",
+        data: positions
+      })
+    } catch (error) {
+      console.error("Error getting departmental election positions:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to retrieve departmental election positions",
+        error: error.message
+      })
     }
   }
 
-  // Reorder SSG positions
-  static async reorderSSGPositions(req, res, next) {
+  static async getDepartmentalPositionStats(req, res) {
     try {
-      const { ssgElectionId } = req.params
-      const { positionOrders } = req.body
+      const { positionId } = req.params
 
-      if (!mongoose.Types.ObjectId.isValid(ssgElectionId)) {
-        await AuditLog.logUserAction(
-          "UPDATE_POSITION",
-          req.user,
-          `Failed to reorder SSG positions - Invalid SSG election ID: ${ssgElectionId}`,
-          req
-        )
-        const error = new Error("Invalid SSG election ID")
-        error.statusCode = 400
-        return next(error)
+      if (!mongoose.Types.ObjectId.isValid(positionId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid position ID format"
+        })
       }
 
-      if (!Array.isArray(positionOrders) || positionOrders.length === 0) {
-        await AuditLog.logUserAction(
-          "UPDATE_POSITION",
-          req.user,
-          `Failed to reorder SSG positions - Invalid position orders format for election: ${ssgElectionId}`,
-          req
-        )
-        const error = new Error("Position orders must be a non-empty array")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const ssgElection = await SSGElection.findById(ssgElectionId)
-      if (!ssgElection) {
-        await AuditLog.logUserAction(
-          "UPDATE_POSITION",
-          req.user,
-          `Failed to reorder SSG positions - SSG election not found: ${ssgElectionId}`,
-          req
-        )
-        const error = new Error("SSG election not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      const positionIds = positionOrders.map(po => po.positionId)
-      const validPositions = await Position.find({ 
-        _id: { $in: positionIds }, 
-        ssgElectionId 
+      const position = await Position.findOne({
+        _id: positionId,
+        deptElectionId: { $ne: null },
+        ssgElectionId: null
+      }).populate({
+        path: 'deptElectionId',
+        select: 'title electionYear status departmentId',
+        populate: {
+          path: 'departmentId',
+          select: 'departmentCode degreeProgram college'
+        }
       })
 
-      if (validPositions.length !== positionIds.length) {
-        await AuditLog.logUserAction(
-          "UPDATE_POSITION",
-          req.user,
-          `Failed to reorder SSG positions - Some positions don't belong to election: ${ssgElectionId}`,
-          req
-        )
-        const error = new Error("Some positions don't belong to this SSG election")
-        error.statusCode = 400
-        return next(error)
+      if (!position) {
+        return res.status(404).json({
+          success: false,
+          message: "Departmental position not found"
+        })
       }
 
-      for (const { positionId, positionOrder } of positionOrders) {
-        await Position.findByIdAndUpdate(positionId, { positionOrder: parseInt(positionOrder) })
+      // Get candidate statistics
+      const candidateStats = await Candidate.aggregate([
+        { $match: { positionId: new mongoose.Types.ObjectId(positionId) } },
+        {
+          $group: {
+            _id: null,
+            totalCandidates: { $sum: 1 },
+            activeCandidates: { $sum: { $cond: ["$isActive", 1, 0] } },
+            inactiveCandidates: { $sum: { $cond: ["$isActive", 0, 1] } }
+          }
+        }
+      ])
+
+      const stats = candidateStats[0] || {
+        totalCandidates: 0,
+        activeCandidates: 0,
+        inactiveCandidates: 0
       }
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Retrieved stats for departmental position: ${position.positionName}`,
+        req
+      )
+
+      res.status(200).json({
+        success: true,
+        message: "Departmental position statistics retrieved successfully",
+        data: {
+          position,
+          statistics: stats
+        }
+      })
+    } catch (error) {
+      console.error("Error getting departmental position stats:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to retrieve departmental position statistics",
+        error: error.message
+      })
+    }
+  }
+
+  static async canDeleteDepartmentalPosition(req, res) {
+    try {
+      const { positionId } = req.params
+
+      if (!mongoose.Types.ObjectId.isValid(positionId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid position ID format"
+        })
+      }
+
+      const position = await Position.findOne({
+        _id: positionId,
+        deptElectionId: { $ne: null },
+        ssgElectionId: null
+      })
+
+      if (!position) {
+        return res.status(404).json({
+          success: false,
+          message: "Departmental position not found"
+        })
+      }
+
+      const candidateCount = await Candidate.countDocuments({ positionId })
+      const canDelete = candidateCount === 0
+
+      res.status(200).json({
+        success: true,
+        message: "Delete eligibility checked successfully",
+        data: {
+          canDelete,
+          candidateCount,
+          reason: canDelete ? "Position can be deleted" : `Position has ${candidateCount} candidate(s) assigned`
+        }
+      })
+    } catch (error) {
+      console.error("Error checking departmental position delete eligibility:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to check delete eligibility",
+        error: error.message
+      })
+    }
+  }
+
+  // Utility methods for reordering positions
+  static async reorderSSGPositions(req, res) {
+    try {
+      const { ssgElectionId } = req.params
+      const { positions } = req.body // Array of { id, positionOrder }
+
+      if (!mongoose.Types.ObjectId.isValid(ssgElectionId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid SSG election ID format"
+        })
+      }
+
+      if (!Array.isArray(positions)) {
+        return res.status(400).json({
+          success: false,
+          message: "Positions array is required"
+        })
+      }
+
+      // Update position orders
+      const updatePromises = positions.map(({ id, positionOrder }) => 
+        Position.findOneAndUpdate(
+          { _id: id, ssgElectionId, deptElectionId: null },
+          { positionOrder },
+          { new: true }
+        )
+      )
+
+      await Promise.all(updatePromises)
 
       await AuditLog.logUserAction(
         "UPDATE_POSITION",
         req.user,
-        `Reordered ${positionOrders.length} positions for SSG election: ${ssgElection.title}`,
+        `Reordered SSG positions for election ID: ${ssgElectionId}`,
         req
       )
 
-      res.json({
+      res.status(200).json({
         success: true,
         message: "SSG positions reordered successfully"
       })
     } catch (error) {
-      await AuditLog.logUserAction(
-        "UPDATE_POSITION",
-        req.user,
-        `Failed to reorder positions for SSG election ${req.params.ssgElectionId}: ${error.message}`,
-        req
-      )
-      next(error)
+      console.error("Error reordering SSG positions:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to reorder SSG positions",
+        error: error.message
+      })
     }
   }
 
-  // Reorder departmental positions
-  static async reorderDepartmentalPositions(req, res, next) {
+  static async reorderDepartmentalPositions(req, res) {
     try {
       const { deptElectionId } = req.params
-      const { positionOrders } = req.body
+      const { positions } = req.body // Array of { id, positionOrder }
 
       if (!mongoose.Types.ObjectId.isValid(deptElectionId)) {
-        await AuditLog.logUserAction(
-          "UPDATE_POSITION",
-          req.user,
-          `Failed to reorder departmental positions - Invalid departmental election ID: ${deptElectionId}`,
-          req
+        return res.status(400).json({
+          success: false,
+          message: "Invalid departmental election ID format"
+        })
+      }
+
+      if (!Array.isArray(positions)) {
+        return res.status(400).json({
+          success: false,
+          message: "Positions array is required"
+        })
+      }
+
+      // Update position orders
+      const updatePromises = positions.map(({ id, positionOrder }) => 
+        Position.findOneAndUpdate(
+          { _id: id, deptElectionId, ssgElectionId: null },
+          { positionOrder },
+          { new: true }
         )
-        const error = new Error("Invalid departmental election ID")
-        error.statusCode = 400
-        return next(error)
-      }
+      )
 
-      if (!Array.isArray(positionOrders) || positionOrders.length === 0) {
-        await AuditLog.logUserAction(
-          "UPDATE_POSITION",
-          req.user,
-          `Failed to reorder departmental positions - Invalid position orders format for election: ${deptElectionId}`,
-          req
-        )
-        const error = new Error("Position orders must be a non-empty array")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const deptElection = await DepartmentalElection.findById(deptElectionId)
-      if (!deptElection) {
-        await AuditLog.logUserAction(
-          "UPDATE_POSITION",
-          req.user,
-          `Failed to reorder departmental positions - Departmental election not found: ${deptElectionId}`,
-          req
-        )
-        const error = new Error("Departmental election not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      const positionIds = positionOrders.map(po => po.positionId)
-      const validPositions = await Position.find({ 
-        _id: { $in: positionIds }, 
-        deptElectionId 
-      })
-
-      if (validPositions.length !== positionIds.length) {
-        await AuditLog.logUserAction(
-          "UPDATE_POSITION",
-          req.user,
-          `Failed to reorder departmental positions - Some positions don't belong to election: ${deptElectionId}`,
-          req
-        )
-        const error = new Error("Some positions don't belong to this departmental election")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      for (const { positionId, positionOrder } of positionOrders) {
-        await Position.findByIdAndUpdate(positionId, { positionOrder: parseInt(positionOrder) })
-      }
+      await Promise.all(updatePromises)
 
       await AuditLog.logUserAction(
         "UPDATE_POSITION",
         req.user,
-        `Reordered ${positionOrders.length} positions for departmental election: ${deptElection.title}`,
+        `Reordered departmental positions for election ID: ${deptElectionId}`,
         req
       )
 
-      res.json({
+      res.status(200).json({
         success: true,
         message: "Departmental positions reordered successfully"
       })
     } catch (error) {
-      await AuditLog.logUserAction(
-        "UPDATE_POSITION",
-        req.user,
-        `Failed to reorder positions for departmental election ${req.params.deptElectionId}: ${error.message}`,
-        req
-      )
-      next(error)
-    }
-  }
-
-  // Get SSG position statistics
-  static async getSSGPositionStats(req, res, next) {
-    try {
-      const { positionId } = req.params
-
-      if (!mongoose.Types.ObjectId.isValid(positionId)) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
-          `Failed to get SSG position stats - Invalid position ID: ${positionId}`,
-          req
-        )
-        const error = new Error("Invalid position ID")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const position = await Position.findOne({ _id: positionId, ssgElectionId: { $ne: null } })
-        .populate('ssgElectionId', 'title electionYear')
-      
-      if (!position) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
-          `Failed to get SSG position stats - Position not found: ${positionId}`,
-          req
-        )
-        const error = new Error("SSG position not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      const candidateCount = await Candidate.countDocuments({ positionId })
-      const voteCount = await Vote.countDocuments({ positionId })
-
-      const candidates = await Candidate.find({ positionId })
-        .populate('voterId', 'firstName middleName lastName schoolId')
-        .populate('partylistId', 'partylistName')
-        .lean()
-
-      const candidatesWithVotes = await Promise.all(
-        candidates.map(async (candidate) => {
-          const candidateVotes = await Vote.countDocuments({ candidateId: candidate._id })
-          return {
-            ...candidate,
-            voteCount: candidateVotes
-          }
-        })
-      )
-
-      const stats = {
-        positionId,
-        positionName: position.positionName,
-        maxVotes: position.maxVotes,
-        maxCandidates: position.maxCandidates,
-        candidateCount,
-        totalVotes: voteCount,
-        candidates: candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount),
-        election: position.ssgElectionId,
-        electionType: 'ssg'
-      }
-
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Retrieved stats for SSG position: ${position.positionName} (Candidates: ${candidateCount}, Votes: ${voteCount})`,
-        req
-      )
-
-      res.json({
-        success: true,
-        data: stats
+      console.error("Error reordering departmental positions:", error)
+      res.status(500).json({
+        success: false,
+        message: "Failed to reorder departmental positions",
+        error: error.message
       })
-    } catch (error) {
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Failed to retrieve SSG position stats for ${req.params.positionId}: ${error.message}`,
-        req
-      )
-      next(error)
-    }
-  }
-
-  // Get departmental position statistics
-  static async getDepartmentalPositionStats(req, res, next) {
-    try {
-      const { positionId } = req.params
-
-      if (!mongoose.Types.ObjectId.isValid(positionId)) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
-          `Failed to get departmental position stats - Invalid position ID: ${positionId}`,
-          req
-        )
-        const error = new Error("Invalid position ID")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const position = await Position.findOne({ _id: positionId, deptElectionId: { $ne: null } })
-        .populate({
-          path: 'deptElectionId',
-          select: 'title electionYear departmentId',
-          populate: {
-            path: 'departmentId',
-            select: 'departmentCode degreeProgram college'
-          }
-        })
-      
-      if (!position) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
-          `Failed to get departmental position stats - Position not found: ${positionId}`,
-          req
-        )
-        const error = new Error("Departmental position not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      const candidateCount = await Candidate.countDocuments({ positionId })
-      const voteCount = await Vote.countDocuments({ positionId })
-
-      const candidates = await Candidate.find({ positionId })
-        .populate('voterId', 'firstName middleName lastName schoolId')
-        .lean()
-
-      const candidatesWithVotes = await Promise.all(
-        candidates.map(async (candidate) => {
-          const candidateVotes = await Vote.countDocuments({ candidateId: candidate._id })
-          return {
-            ...candidate,
-            voteCount: candidateVotes
-          }
-        })
-      )
-
-      const stats = {
-        positionId,
-        positionName: position.positionName,
-        maxVotes: position.maxVotes,
-        maxCandidates: position.maxCandidates,
-        candidateCount,
-        totalVotes: voteCount,
-        candidates: candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount),
-        election: position.deptElectionId,
-        electionType: 'departmental'
-      }
-
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Retrieved stats for departmental position: ${position.positionName} (Candidates: ${candidateCount}, Votes: ${voteCount})`,
-        req
-      )
-
-      res.json({
-        success: true,
-        data: stats
-      })
-    } catch (error) {
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Failed to retrieve departmental position stats for ${req.params.positionId}: ${error.message}`,
-        req
-      )
-      next(error)
-    }
-  }
-
-  // Check if SSG position can be deleted
-  static async canDeleteSSGPosition(req, res, next) {
-    try {
-      const { positionId } = req.params
-
-      if (!mongoose.Types.ObjectId.isValid(positionId)) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
-          `Failed to check SSG position deletion - Invalid position ID: ${positionId}`,
-          req
-        )
-        const error = new Error("Invalid position ID")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const position = await Position.findOne({ _id: positionId, ssgElectionId: { $ne: null } })
-      if (!position) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
-          `Failed to check SSG position deletion - Position not found: ${positionId}`,
-          req
-        )
-        const error = new Error("SSG position not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      const candidateCount = await Candidate.countDocuments({ positionId })
-      const voteCount = await Vote.countDocuments({ positionId })
-      
-      const canDelete = candidateCount === 0 && voteCount === 0
-      const reasons = []
-      
-      if (candidateCount > 0) {
-        reasons.push(`${candidateCount} candidate(s) associated`)
-      }
-      if (voteCount > 0) {
-        reasons.push(`${voteCount} vote(s) associated`)
-      }
-
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Checked deletion eligibility for SSG position: ${position.positionName} (Can delete: ${canDelete}, Reasons: ${reasons.join(', ') || 'None'})`,
-        req
-      )
-
-      res.json({
-        success: true,
-        data: {
-          canDelete,
-          reasons,
-          candidateCount,
-          voteCount
-        }
-      })
-    } catch (error) {
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Failed to check SSG position deletion eligibility for ${req.params.positionId}: ${error.message}`,
-        req
-      )
-      next(error)
-    }
-  }
-
-  // Check if departmental position can be deleted
-  static async canDeleteDepartmentalPosition(req, res, next) {
-    try {
-      const { positionId } = req.params
-
-      if (!mongoose.Types.ObjectId.isValid(positionId)) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
-          `Failed to check departmental position deletion - Invalid position ID: ${positionId}`,
-          req
-        )
-        const error = new Error("Invalid position ID")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const position = await Position.findOne({ _id: positionId, deptElectionId: { $ne: null } })
-      if (!position) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
-          `Failed to check departmental position deletion - Position not found: ${positionId}`,
-          req
-        )
-        const error = new Error("Departmental position not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      const candidateCount = await Candidate.countDocuments({ positionId })
-      const voteCount = await Vote.countDocuments({ positionId })
-      
-      const canDelete = candidateCount === 0 && voteCount === 0
-      const reasons = []
-      
-      if (candidateCount > 0) {
-        reasons.push(`${candidateCount} candidate(s) associated`)
-      }
-      if (voteCount > 0) {
-        reasons.push(`${voteCount} vote(s) associated`)
-      }
-
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Checked deletion eligibility for departmental position: ${position.positionName} (Can delete: ${canDelete}, Reasons: ${reasons.join(', ') || 'None'})`,
-        req
-      )
-
-      res.json({
-        success: true,
-        data: {
-          canDelete,
-          reasons,
-          candidateCount,
-          voteCount
-        }
-      })
-    } catch (error) {
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Failed to check departmental position deletion eligibility for ${req.params.positionId}: ${error.message}`,
-        req
-      )
-      next(error)
     }
   }
 }

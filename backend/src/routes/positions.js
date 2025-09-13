@@ -3,8 +3,10 @@ const router = express.Router()
 const PositionController = require("../controllers/positionController")
 const { authMiddleware, authorizeRoles, authorizeStaffAndVoters } = require("../middleware/authMiddleware")
 
+// Apply authentication middleware to all routes
 router.use(authMiddleware)
 
+// SSG Position Routes
 router.get("/ssg", authorizeRoles("election_committee", "sao", "voter"), PositionController.getAllSSGPositions)
 router.get("/ssg/:id", authorizeRoles("election_committee", "sao", "voter"), PositionController.getSSGPositionById)
 router.post("/ssg", authorizeRoles("election_committee"), PositionController.createSSGPosition)
@@ -15,6 +17,7 @@ router.put("/ssg/elections/:ssgElectionId/reorder", authorizeRoles("election_com
 router.get("/ssg/:positionId/stats", authorizeStaffAndVoters("election_committee", "sao", "voter"), PositionController.getSSGPositionStats)
 router.get("/ssg/:positionId/can-delete", authorizeRoles("election_committee"), PositionController.canDeleteSSGPosition)
 
+// Departmental Position Routes
 router.get("/departmental", authorizeRoles("election_committee", "sao", "voter"), PositionController.getAllDepartmentalPositions)
 router.get("/departmental/:id", authorizeRoles("election_committee", "sao", "voter"), PositionController.getDepartmentalPositionById)
 router.post("/departmental", authorizeRoles("election_committee"), PositionController.createDepartmentalPosition)

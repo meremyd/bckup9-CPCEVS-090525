@@ -12,15 +12,9 @@ import {
   Plus,
   Edit,
   Trash2,
-  Eye,
   AlertCircle,
-  CheckCircle,
-  XCircle,
   Loader2,
-  Search,
-  Filter,
-  MoreVertical,
-  Building2
+  Search
 } from "lucide-react"
 
 export default function SSGPositionsPartylistsPage() {
@@ -30,7 +24,6 @@ export default function SSGPositionsPartylistsPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
 
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -79,14 +72,19 @@ export default function SSGPositionsPartylistsPage() {
   }
 
   const fetchPositions = async () => {
-    try {
-      const response = await positionsAPI.ssg.getByElection(ssgElectionId)
-      setPositions(response.positions || [])
-    } catch (error) {
-      console.error("Error fetching positions:", error)
-      handleAPIError(error, 'Failed to load positions')
-    }
+  try {
+    console.log('Fetching positions for SSG Election ID:', ssgElectionId) // Add debug log
+    const response = await positionsAPI.ssg.getByElection(ssgElectionId)
+    console.log('API Response:', response) // Add debug log
+    
+    // Fix: Access 'data' instead of 'positions' from response
+    setPositions(response.data || [])
+  } catch (error) {
+    console.error("Error fetching positions:", error)
+    console.error("Error details:", error.response?.data) // Add more detailed error logging
+    handleAPIError(error, 'Failed to load positions')
   }
+}
 
   const fetchPartylists = async () => {
     try {
@@ -506,35 +504,45 @@ export default function SSGPositionsPartylistsPage() {
       activeItem="positions"
     >
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* Tab Navigation */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20">
-          <div className="flex border-b border-gray-200">
-            <button
-              onClick={() => setActiveTab('positions')}
-              className={`flex items-center px-6 py-4 text-sm font-medium ${
-                activeTab === 'positions'
-                  ? 'border-b-2 border-[#001f65] text-[#001f65] bg-blue-50/50'
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <Users className="w-5 h-5 mr-2" />
-              Positions ({positions.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('partylists')}
-              className={`flex items-center px-6 py-4 text-sm font-medium ${
-                activeTab === 'partylists'
-                  ? 'border-b-2 border-[#001f65] text-[#001f65] bg-blue-50/50'
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <Flag className="w-5 h-5 mr-2" />
-              Partylists ({partylists.length})
-            </button>
+        {/* Clickable Cards for Positions and Partylists */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div 
+            onClick={() => setActiveTab('positions')}
+            className={`cursor-pointer transition-all duration-200 transform hover:scale-105 bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border ${
+              activeTab === 'positions' 
+                ? 'border-[#001f65] ring-2 ring-[#001f65]/20' 
+                : 'border-white/20 hover:border-[#001f65]/50'
+            } p-6`}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-medium text-[#001f65] mb-2">Total Positions</h3>
+                <p className="text-3xl font-bold text-[#001f65]">{positions.length}</p>
+                <p className="text-sm text-gray-600 mt-1">Election positions configured</p>
+              </div>
+              <Users className={`w-12 h-12 ${activeTab === 'positions' ? 'text-[#001f65]' : 'text-[#001f65]/20'}`} />
+            </div>
+          </div>
+
+          <div 
+            onClick={() => setActiveTab('partylists')}
+            className={`cursor-pointer transition-all duration-200 transform hover:scale-105 bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border ${
+              activeTab === 'partylists' 
+                ? 'border-[#001f65] ring-2 ring-[#001f65]/20' 
+                : 'border-white/20 hover:border-[#001f65]/50'
+            } p-6`}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-medium text-[#001f65] mb-2">Total Partylists</h3>
+                <p className="text-3xl font-bold text-[#001f65]">{partylists.length}</p>
+                <p className="text-sm text-gray-600 mt-1">Political parties registered</p>
+              </div>
+              <Flag className={`w-12 h-12 ${activeTab === 'partylists' ? 'text-[#001f65]' : 'text-[#001f65]/20'}`} />
+            </div>
           </div>
         </div>
-
-        {/* Content Area */}
+        
         <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
           {/* Header with Search and Actions */}
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
@@ -744,31 +752,6 @@ export default function SSGPositionsPartylistsPage() {
               </table>
             </div>
           )}
-        </div>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-medium text-[#001f65] mb-2">Total Positions</h3>
-                <p className="text-3xl font-bold text-[#001f65]">{positions.length}</p>
-                <p className="text-sm text-gray-600 mt-1">Election positions configured</p>
-              </div>
-              <Users className="w-12 h-12 text-[#001f65]/20" />
-            </div>
-          </div>
-
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-medium text-[#001f65] mb-2">Total Partylists</h3>
-                <p className="text-3xl font-bold text-[#001f65]">{partylists.length}</p>
-                <p className="text-sm text-gray-600 mt-1">Political parties registered</p>
-              </div>
-              <Flag className="w-12 h-12 text-[#001f65]/20" />
-            </div>
-          </div>
         </div>
 
         {/* Error Alert */}

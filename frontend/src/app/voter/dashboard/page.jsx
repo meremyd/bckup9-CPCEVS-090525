@@ -8,7 +8,7 @@ import { dashboardAPI } from '@/lib/api/dashboard'
 import { ssgElectionsAPI } from '@/lib/api/ssgElections'
 import { departmentalElectionsAPI } from '@/lib/api/departmentalElections'
 import { getVoterFromToken, voterLogout } from '../../../lib/auth'
-import VoterBackground from '@/components/VoterBackground'
+import VoterLayout from '@/components/VoterLayout'
 
 export default function VoterDashboard() {
   const [dashboardData, setDashboardData] = useState(null)
@@ -19,83 +19,145 @@ export default function VoterDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [voter, setVoter] = useState(null)
+  const [authChecked, setAuthChecked] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
     const checkAuthAndLoadData = async () => {
       try {
+        console.log("Starting auth check...")
+        
+        // First check if token exists and is valid
         const voterToken = localStorage.getItem("voterToken")
+        console.log("Voter token exists:", !!voterToken)
 
         if (!voterToken) {
+          console.log("No voter token found, redirecting to login")
           router.push("/voterlogin")
           return
         }
 
+        // Check token validity without automatic logout
+        // if (!isVoterTokenValid()) {
+        //   console.log("Token is invalid or expired")
+        //   voterLogout()
+        //   router.push("/voterlogin")
+        //   return
+        // }
+
+        // Get voter from token
         const voterFromToken = getVoterFromToken()
+        console.log("Voter from token:", voterFromToken ? "Valid" : "Invalid")
+        
         if (!voterFromToken) {
+          console.log("Could not get voter from token, redirecting to login")
           router.push("/voterlogin")
           return
         }
 
+        console.log("Auth check passed, loading data...")
         setVoter(voterFromToken)
-        await Promise.all([fetchDashboardData(), fetchVotingStatus()])
+        setAuthChecked(true)
+        
+        // Load data with individual error handling
+        await loadDashboardDataSafely()
+        
       } catch (error) {
         console.error("Auth check error:", error)
         setError("Authentication error occurred")
-        voterLogout()
-        router.push("/voterlogin")
+        // Don't auto-redirect on auth check errors, let user decide
       } 
     }
 
     checkAuthAndLoadData()
   }, [router])
 
-  const fetchDashboardData = async () => {
-    try {
-      const data = await dashboardAPI.getVoterDashboard()
-      setDashboardData(data)
-    } catch (error) {
-      console.error("Dashboard error:", error)
-      if (error.response?.status === 401 || error.response?.status === 403) {
-        voterLogout()
-        router.push("/voterlogin")
-      } else {
-        let errorMessage = "Failed to load dashboard data"
-        
-        if (error.code === 'NETWORK_ERROR' || error.message?.includes('Network Error')) {
-          errorMessage = "Network error - please check if the server is running"
-        } else if (error.response?.status >= 500) {
-          errorMessage = "Server error - please try again later"
-        } else if (error.message) {
-          errorMessage = error.message
-        }
-        
-        setError(errorMessage)
-      }
+  // FIXED: Separate data loading with better error handling
+  const loadDashboardDataSafely = async () => {
+    const promises = []
+    let dashboardError = null
+    let votingError = null
+
+    // Load dashboard data
+    promises.push(
+      dashboardAPI.getVoterDashboard()
+        .then(data => setDashboardData(data))
+        .catch(error => {
+          console.error("Dashboard API error:", error)
+          dashboardError = error
+        })
+    )
+
+    // Load voting status
+    promises.push(
+      loadVotingStatusSafely()
+        .catch(error => {
+          console.error("Voting status error:", error)
+          votingError = error
+        })
+    )
+
+    // Wait for all promises to resolve
+    await Promise.allSettled(promises)
+
+    // Handle errors after all calls complete
+    if (dashboardError && dashboardError.response?.status === 401) {
+      console.log("Dashboard auth error, redirecting to login")
+      voterLogout()
+      router.push("/voterlogin")
+      return
     }
+
+    if (dashboardError || votingError) {
+      let errorMessage = "Failed to load some dashboard data"
+      
+      if (dashboardError?.code === 'NETWORK_ERROR' || dashboardError?.message?.includes('Network Error')) {
+        errorMessage = "Network error - please check if the server is running"
+      } else if (dashboardError?.response?.status >= 500) {
+        errorMessage = "Server error - please try again later"
+      } else if (dashboardError?.message) {
+        errorMessage = dashboardError.message
+      }
+      
+      setError(errorMessage)
+    }
+
+    setLoading(false)
   }
 
-  const fetchVotingStatus = async () => {
+  const loadVotingStatusSafely = async () => {
     try {
-      // Fetch SSG elections
-      const ssgResponse = await ssgElectionsAPI.getForVoting()
+      // Set default values first
       let ssgElections = []
-      if (ssgResponse.elections) {
-        ssgElections = ssgResponse.elections
-      } else if (Array.isArray(ssgResponse)) {
-        ssgElections = ssgResponse
-      }
-
-      // Fetch departmental elections
-      const deptResponse = await departmentalElectionsAPI.getAll({ status: 'active' })
       let departmentalElections = []
-      if (deptResponse.elections) {
-        departmentalElections = deptResponse.elections
-      } else if (Array.isArray(deptResponse)) {
-        departmentalElections = deptResponse
+
+      // Fetch SSG elections with individual error handling
+      try {
+        const ssgResponse = await ssgElectionsAPI.getForVoting()
+        if (ssgResponse.elections) {
+          ssgElections = ssgResponse.elections
+        } else if (Array.isArray(ssgResponse)) {
+          ssgElections = ssgResponse
+        }
+      } catch (error) {
+        console.error("SSG elections error:", error)
+        // Continue with empty array
       }
 
-      // Check voting status (this would need to be implemented in the API)
+      // Fetch departmental elections with individual error handling
+      try {
+        const deptResponse = await departmentalElectionsAPI.getAll({ status: 'active' })
+        if (deptResponse.elections) {
+          departmentalElections = deptResponse.elections
+        } else if (Array.isArray(deptResponse)) {
+          departmentalElections = deptResponse
+        }
+      } catch (error) {
+        console.error("Departmental elections error:", error)
+        // Continue with empty array
+      }
+
+      // Update voting status
       setVotingStatus({
         ssg: { 
           hasVoted: false, // This should come from API
@@ -106,19 +168,14 @@ export default function VoterDashboard() {
           availableElections: departmentalElections.length 
         }
       })
+
     } catch (error) {
-      console.error("Fetch voting status error:", error)
-      if (error.response?.status === 401 || error.response?.status === 403) {
-        voterLogout()
-        router.push("/voterlogin")
-      }
+      console.error("Voting status error:", error)
       // Set default values on error
       setVotingStatus({
         ssg: { hasVoted: false, availableElections: 0 },
         departmental: { hasVoted: false, availableElections: 0 }
       })
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -175,25 +232,28 @@ export default function VoterDashboard() {
   const handleRetry = () => {
     setError("")
     setLoading(true)
-    Promise.all([fetchDashboardData(), fetchVotingStatus()])
+    loadDashboardDataSafely()
   }
 
-  if (loading) {
+  // Show loading while auth is being checked
+  if (!authChecked || loading) {
     return (
-      <VoterBackground>
+      <VoterLayout>
         <div className="min-h-screen flex items-center justify-center">
           <div className="text-center bg-white/10 backdrop-blur-md p-8 rounded-2xl border border-white/20">
             <Loader2 className="animate-spin rounded-full h-12 w-12 mx-auto text-white" />
-            <p className="mt-4 text-white font-medium">Loading dashboard...</p>
+            <p className="mt-4 text-white font-medium">
+              {!authChecked ? "Checking authentication..." : "Loading dashboard..."}
+            </p>
           </div>
         </div>
-      </VoterBackground>
+      </VoterLayout>
     )
   }
 
   if (error) {
     return (
-      <VoterBackground>
+      <VoterLayout>
         <div className="min-h-screen flex items-center justify-center">
           <div className="bg-white/95 backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-md mx-auto border border-white/20">
             <div className="text-red-500 text-6xl mb-4 text-center">⚠️</div>
@@ -215,7 +275,7 @@ export default function VoterDashboard() {
             </div>
           </div>
         </div>
-      </VoterBackground>
+      </VoterLayout>
     )
   }
 
@@ -289,7 +349,7 @@ export default function VoterDashboard() {
   }
 
   return (
-    <VoterBackground>
+    <VoterLayout>
       {/* Header with Logout */}
       <div className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/30 px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between">
@@ -389,6 +449,6 @@ export default function VoterDashboard() {
           </div>
         </div>
       </div>
-    </VoterBackground>
+    </VoterLayout>
   )
 }

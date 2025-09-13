@@ -37,12 +37,14 @@ export default function SSGCandidatesPage() {
   const [formLoading, setFormLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterPosition, setFilterPosition] = useState('')
+  const [selectedPartylist, setSelectedPartylist] = useState('')
   
   // Voter lookup states
   const [voterSearchId, setVoterSearchId] = useState('')
-  const [voterLookupLoading, setVoterLookupLoading] = useState(false)
-  const [foundVoter, setFoundVoter] = useState(null)
-  const [voterLookupError, setVoterLookupError] = useState('')
+  const [voterSearchResults, setVoterSearchResults] = useState([])
+  const [voterSearchLoading, setVoterSearchLoading] = useState(false)
+  const [selectedVoter, setSelectedVoter] = useState(null)
+  const [showVoterDropdown, setShowVoterDropdown] = useState(false)
   
   const [candidateStats, setCandidateStats] = useState({
     total: 0,
@@ -51,6 +53,7 @@ export default function SSGCandidatesPage() {
     byPosition: {},
     byPartylist: {}
   })
+  
   const [formData, setFormData] = useState({
     voterId: '',
     positionId: '',
@@ -145,182 +148,210 @@ export default function SSGCandidatesPage() {
     }
   }, [router, ssgElectionId])
 
-  const fetchData = async () => {
-    try {
-      setLoading(true)
+ const fetchData = async () => {
+  try {
+    setLoading(true)
 
-      // Fetch candidates using multiple API strategies
-      const candidatesData = await fetchCandidatesWithFallback()
-      
-      // Fetch other data in parallel
-      const [positionsResponse, partylistsResponse, votersResponse] = await Promise.allSettled([
-        positionsAPI.ssg.getByElection(ssgElectionId),
-        partylistsAPI.getBySSGElection(ssgElectionId),
-        votersAPI.getRegistered({ limit: 1000 })
-      ])
+    console.log('Fetching data for SSG election:', ssgElectionId)
 
-      // Set candidates data and calculate stats
-      setSsgCandidates(candidatesData)
-      setCandidateStats(calculateCandidateStats(candidatesData))
+    const [candidatesResponse, positionsResponse, partylistsResponse, votersResponse] = await Promise.all([
+      candidatesAPI.ssg.getByElection(ssgElectionId, {}),
+      positionsAPI.ssg.getByElection(ssgElectionId),      // This gets SSG-specific positions
+      partylistsAPI.getBySSGElection(ssgElectionId),      // This gets SSG-specific partylists
+      votersAPI.getRegistered({ limit: 1000 })
+    ])
 
-      // Handle positions response
-      if (positionsResponse.status === 'fulfilled') {
-        const positionsData = positionsResponse.value
-        setSsgPositions(Array.isArray(positionsData) ? positionsData : 
-                       positionsData.positions || positionsData.data || [])
-      } else {
-        console.error("Error fetching positions:", positionsResponse.reason)
-        setSsgPositions([])
-      }
+    console.log('Raw API Responses:')
+    console.log('Candidates Response:', candidatesResponse)
+    console.log('Positions Response:', positionsResponse)
+    console.log('Partylists Response:', partylistsResponse)
 
-      // Handle partylists response
-      if (partylistsResponse.status === 'fulfilled') {
-        const partylistsData = partylistsResponse.value
-        setSsgPartylists(Array.isArray(partylistsData) ? partylistsData : 
-                        partylistsData.partylists || partylistsData.data || [])
-      } else {
-        console.error("Error fetching partylists:", partylistsResponse.reason)
-        setSsgPartylists([])
-      }
-
-      // Handle voters response
-      if (votersResponse.status === 'fulfilled') {
-        const votersData = votersResponse.value
-        setRegisteredVoters(Array.isArray(votersData) ? votersData : 
-                           votersData.voters || votersData.data || [])
-      } else {
-        console.error("Error fetching voters:", votersResponse.reason)
-        setRegisteredVoters([])
-      }
-      
-    } catch (error) {
-      console.error("Error fetching data:", error)
-      showErrorAlert(error)
-      // Set empty arrays to prevent undefined errors
-      setSsgCandidates([])
-      setCandidateStats({
-        total: 0,
-        active: 0,
-        inactive: 0,
-        byPosition: {},
-        byPartylist: {}
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const fetchCandidatesWithFallback = async () => {
-    const fallbackStrategies = [
-      // Strategy 1: SSG specific API
-      async () => {
-        const result = await candidatesAPI.ssg.getByElection(ssgElectionId)
-        return result
-      },
-      
-      // Strategy 2: General candidates API with type filter
-      async () => {
-        const result = await candidatesAPI.getByElection(ssgElectionId, 'ssg')
-        return result
-      },
-      
-      // Strategy 3: Get all candidates with filters
-      async () => {
-        const result = await candidatesAPI.getAll({ 
-          electionId: ssgElectionId, 
-          type: 'ssg',
-          limit: 1000 
-        })
-        return result
-      },
-      
-      // Strategy 4: SSG getAll with election filter
-      async () => {
-        const result = await candidatesAPI.ssg.getAll({ 
-          electionId: ssgElectionId,
-          limit: 1000 
-        })
-        return result
-      }
-    ]
-
-    let lastError = null
+    // CORRECTED: Extract data based on actual controller response structures
+    const candidatesData = candidatesResponse?.data?.candidates || []
     
-    for (let i = 0; i < fallbackStrategies.length; i++) {
-      try {
-        const result = await fallbackStrategies[i]()
-        
-        // Normalize the response - handle different response structures
-        let candidates = []
-        if (Array.isArray(result)) {
-          candidates = result
-        } else if (result.candidates && Array.isArray(result.candidates)) {
-          candidates = result.candidates
-        } else if (result.data) {
-          if (Array.isArray(result.data)) {
-            candidates = result.data
-          } else if (result.data.candidates && Array.isArray(result.data.candidates)) {
-            candidates = result.data.candidates
-          } else if (result.data.data && Array.isArray(result.data.data)) {
-            candidates = result.data.data
-          }
-        }
-        
-        // Additional filtering to ensure we only get candidates for this election
-        const filteredCandidates = candidates.filter(candidate => {
-          const matchesElection = candidate.ssgElectionId === ssgElectionId ||
-                 candidate.ssgElectionId?._id === ssgElectionId ||
-                 candidate.electionId === ssgElectionId ||
-                 candidate.electionId?._id === ssgElectionId
-          
-          // Also ensure it's an SSG candidate
-          const isSSGCandidate = candidate.electionType === 'ssg' || 
-                               candidate.ssgElectionId || 
-                               !candidate.deptElectionId
-          
-          return matchesElection && isSSGCandidate
-        })
-        
-        // Return results even if empty (for last strategy) or if we found candidates
-        if (filteredCandidates.length > 0 || i === fallbackStrategies.length - 1) {
-          return filteredCandidates
-        }
-        
-      } catch (error) {
-        lastError = error
-        continue
-      }
-    }
+    // Positions Controller returns: { success: true, data: positions }
+    const positionsData = positionsResponse?.data?.data || positionsResponse?.data || []
     
-    // If all strategies failed, return empty array
-    console.error('All candidate fetching strategies failed. Last error:', lastError)
-    return []
-  }
+    // Partylists Controller returns: { ssgElection: {...}, partylists: [...] }
+    const partylistsData = partylistsResponse?.partylists || []
+    
+    const votersData = votersResponse?.data?.voters || votersResponse?.data?.data || votersResponse?.data || []
 
-  // Voter lookup by school ID
-  const lookupVoterBySchoolId = async (schoolId) => {
-    if (!schoolId.trim()) {
-      setFoundVoter(null)
-      setVoterLookupError('')
+    console.log('Extracted Data Counts:')
+    console.log('Candidates:', candidatesData.length)
+    console.log('Positions:', positionsData.length)
+    console.log('Partylists:', partylistsData.length)
+    console.log('Voters:', votersData.length)
+
+    // Log the structure of positions to see if candidate counts are included
+    console.log('First position structure:', positionsData[0])
+
+    // Process candidates (same as before)
+    const processedCandidates = candidatesData.map((candidate, index) => {
+      const processed = {
+        ...candidate,
+        _id: candidate._id || candidate.id || `candidate-${ssgElectionId}-${index}`,
+        
+        fullName: candidate.fullName || 
+                 candidate.displayName || 
+                 candidate.name || 
+                 (candidate.voterId ? `${candidate.voterId.firstName || ''} ${candidate.voterId.middleName || ''} ${candidate.voterId.lastName || ''}`.replace(/\s+/g, ' ').trim() : '') ||
+                 'Unknown',
+                 
+        position: candidate.position || 
+                 candidate.positionId?.positionName || 
+                 'Unknown Position',
+                 
+        positionOrder: candidate.positionOrder || 
+                      candidate.positionId?.positionOrder || 
+                      999,
+                      
+        partylist: candidate.partylist || 
+                  candidate.partylistId?.partylistName || 
+                  'Independent',
+                  
+        department: candidate.department || 
+                   candidate.voterId?.departmentId?.departmentCode || 
+                   'Unknown',
+                   
+        schoolId: candidate.schoolId || 
+                 candidate.voterId?.schoolId || 
+                 'N/A',
+                 
+        yearLevel: candidate.yearLevel || 
+                  candidate.voterId?.yearLevel || 
+                  'N/A',
+        
+        electionType: 'ssg',
+        isActive: candidate.isActive !== false,
+        candidateNumber: candidate.candidateNumber || 'N/A',
+        platform: candidate.platform || 'No platform provided',
+        hasCampaignPicture: !!candidate.campaignPicture
+      }
+      
+      return processed
+    })
+
+    // Process positions WITH candidate counts
+    const processedPositions = positionsData.map((position, index) => ({
+      ...position,
+      _id: position._id || position.id || `position-${ssgElectionId}-${index}`,
+      // Include candidate counts from aggregation
+      candidateCount: position.candidateCount || 0,
+      activeCandidateCount: position.activeCandidateCount || 0
+    }))
+
+    // Process SSG-specific partylists
+    const processedPartylists = partylistsData.map((partylist, index) => ({
+      ...partylist,
+      _id: partylist._id || partylist.id || `partylist-${ssgElectionId}-${index}`,
+      // Include candidate counts if they exist
+      candidateCount: partylist.candidateCount || 0,
+      totalVotes: partylist.totalVotes || 0
+    }))
+
+    const processedVoters = votersData.map((voter, index) => ({
+      ...voter,
+      _id: voter._id || voter.id || `voter-${index}`,
+      fullName: voter.fullName || `${voter.firstName || ''} ${voter.middleName || ''} ${voter.lastName || ''}`.replace(/\s+/g, ' ').trim() || 'Unknown'
+    }))
+
+    console.log('Final Processed Data:')
+    console.log('Candidates:', processedCandidates.length, 'items')
+    console.log('SSG Positions with counts:', processedPositions.map(p => ({
+      name: p.positionName,
+      candidateCount: p.candidateCount,
+      activeCandidateCount: p.activeCandidateCount
+    })))
+    console.log('SSG Partylists:', processedPartylists.map(p => ({
+      name: p.partylistName,
+      candidateCount: p.candidateCount
+    })))
+
+    // Update state
+    setSsgCandidates(processedCandidates)
+    setSsgPositions(processedPositions)
+    setSsgPartylists(processedPartylists)
+    setRegisteredVoters(processedVoters)
+    setCandidateStats(calculateCandidateStats(processedCandidates))
+    
+    console.log('State updated successfully')
+    
+  } catch (error) {
+    console.error("Detailed error in fetchData:", error)
+    console.error("Error response:", error.response?.data)
+    console.error("Error status:", error.response?.status)
+    showErrorAlert(error)
+    
+    setSsgCandidates([])
+    setSsgPositions([])
+    setSsgPartylists([])
+    setRegisteredVoters([])
+    setCandidateStats({
+      total: 0,
+      active: 0,
+      inactive: 0,
+      byPosition: {},
+      byPartylist: {}
+    })
+  } finally {
+    setLoading(false)
+  }
+}
+
+  // Search voters by school ID or name with debouncing
+  const searchVoters = async (searchValue) => {
+    if (!searchValue.trim()) {
+      setVoterSearchResults([])
+      setShowVoterDropdown(false)
       return
     }
 
-    setVoterLookupLoading(true)
-    setVoterLookupError('')
-
+    setVoterSearchLoading(true)
+    
     try {
-      const voter = await votersAPI.lookupBySchoolId(schoolId.trim())
-      setFoundVoter(voter)
-      setFormData(prev => ({ ...prev, voterId: voter._id }))
+      const filteredVoters = registeredVoters.filter(voter => 
+        voter.schoolId?.toString().includes(searchValue.toLowerCase()) ||
+        voter.fullName?.toLowerCase().includes(searchValue.toLowerCase())
+      )
+      
+      setVoterSearchResults(filteredVoters.slice(0, 10)) // Limit to 10 results
+      setShowVoterDropdown(true)
     } catch (error) {
-      console.error('Error looking up voter:', error)
-      setFoundVoter(null)
-      setVoterLookupError(getErrorMessage(error))
-      setFormData(prev => ({ ...prev, voterId: '' }))
+      console.error('Error searching voters:', error)
+      setVoterSearchResults([])
     } finally {
-      setVoterLookupLoading(false)
+      setVoterSearchLoading(false)
     }
   }
+
+  // Handle voter selection
+  const selectVoter = (voter) => {
+    setSelectedVoter(voter)
+    setVoterSearchId(voter.fullName)
+    setFormData(prev => ({ ...prev, voterId: voter._id }))
+    setShowVoterDropdown(false)
+    setVoterSearchResults([])
+  }
+
+  const PositionFilterDropdown = () => (
+  <select
+    value={filterPosition}
+    onChange={(e) => setFilterPosition(e.target.value)}
+    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+  >
+    <option value="">All Positions ({Object.keys(candidateStats.byPosition).length})</option>
+    {Array.isArray(ssgPositions) && ssgPositions.map(position => {
+      // Use the count from the aggregation if available, otherwise fall back to local stats
+      const count = position.activeCandidateCount ?? candidateStats.byPosition[position.positionName] ?? 0
+      return (
+        <option key={position._id} value={position._id}>
+          {position.positionName} ({count})
+        </option>
+      )
+    })}
+  </select>
+)
 
   // Handle image upload
   const handleImageUpload = (e) => {
@@ -372,8 +403,9 @@ export default function SSGCandidatesPage() {
       isActive: true
     })
     setVoterSearchId('')
-    setFoundVoter(null)
-    setVoterLookupError('')
+    setSelectedVoter(null)
+    setVoterSearchResults([])
+    setShowVoterDropdown(false)
   }
 
   const handleEditCandidate = (candidate) => {
@@ -391,14 +423,14 @@ export default function SSGCandidatesPage() {
     
     // Set voter search data for editing
     if (candidate.voterId) {
-      setVoterSearchId(candidate.voterId.schoolId || '')
-      setFoundVoter(candidate.voterId)
-      setVoterLookupError('')
+      setVoterSearchId(candidate.voterId.fullName || '')
+      setSelectedVoter(candidate.voterId)
     } else {
       setVoterSearchId('')
-      setFoundVoter(null)
-      setVoterLookupError('')
+      setSelectedVoter(null)
     }
+    setVoterSearchResults([])
+    setShowVoterDropdown(false)
   }
 
   const handleDeleteCandidate = async (candidateId, candidateName) => {
@@ -459,7 +491,7 @@ export default function SSGCandidatesPage() {
     }
   }
 
-  // Filter candidates based on search and filters
+  // Filter candidates based on search, position, and partylist
   const filteredCandidates = Array.isArray(ssgCandidates) ? ssgCandidates.filter(candidate => {
     const matchesSearch = searchTerm === '' || 
       candidate.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -469,7 +501,10 @@ export default function SSGCandidatesPage() {
 
     const matchesPosition = filterPosition === '' || candidate.positionId?._id === filterPosition
 
-    return matchesSearch && matchesPosition
+    const matchesPartylist = selectedPartylist === '' || 
+      (selectedPartylist === 'independent' ? !candidate.partylistId : candidate.partylistId?._id === selectedPartylist)
+
+    return matchesSearch && matchesPosition && matchesPartylist
   }) : []
 
   if (loading) {
@@ -496,58 +531,7 @@ export default function SSGCandidatesPage() {
       title="Candidates Management"
       subtitle={`Managing ${candidateStats.total} candidates in this election`}
       activeItem="candidates"
-      headerAction={
-        <button
-          onClick={handleAddCandidate}
-          className="flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors border border-white/20 backdrop-blur-sm"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Candidate
-        </button>
-      }
     >
-      {/* Partylist Statistics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white/90 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Total Candidates</p>
-              <p className="text-2xl font-bold text-[#001f65]">{candidateStats.total}</p>
-            </div>
-            <Users className="w-8 h-8 text-[#001f65]" />
-          </div>
-        </div>
-        
-        <div className="bg-white/90 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Active</p>
-              <p className="text-2xl font-bold text-green-600">{candidateStats.active}</p>
-            </div>
-            <CheckCircle className="w-8 h-8 text-green-600" />
-          </div>
-        </div>
-        
-        <div className="bg-white/90 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Inactive</p>
-              <p className="text-2xl font-bold text-red-600">{candidateStats.inactive}</p>
-            </div>
-            <AlertCircle className="w-8 h-8 text-red-600" />
-          </div>
-        </div>
-        
-        <div className="bg-white/90 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Available Partylists</p>
-              <p className="text-2xl font-bold text-[#001f65]">{ssgPartylists.length}</p>
-            </div>
-            <Info className="w-8 h-8 text-[#001f65]" />
-          </div>
-        </div>
-      </div>
 
       {/* Add/Edit Candidate Form Modal */}
       {showAddForm && (
@@ -568,10 +552,10 @@ export default function SSGCandidatesPage() {
 
               <form onSubmit={handleFormSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Voter Lookup by School ID */}
+                  {/* Voter Search with Dropdown */}
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Voter School ID *
+                      Search and Select Voter *
                     </label>
                     <div className="relative">
                       <input
@@ -579,42 +563,57 @@ export default function SSGCandidatesPage() {
                         value={voterSearchId}
                         onChange={(e) => {
                           setVoterSearchId(e.target.value)
-                          // Debounce the lookup call
-                          clearTimeout(window.voterLookupTimeout)
-                          window.voterLookupTimeout = setTimeout(() => {
-                            lookupVoterBySchoolId(e.target.value)
-                          }, 500)
+                          // Debounce the search call
+                          clearTimeout(window.voterSearchTimeout)
+                          window.voterSearchTimeout = setTimeout(() => {
+                            searchVoters(e.target.value)
+                          }, 300)
                         }}
-                        placeholder="Enter voter's school ID..."
+                        placeholder="Type student name or school ID..."
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-10"
+                        onFocus={() => {
+                          if (voterSearchResults.length > 0) {
+                            setShowVoterDropdown(true)
+                          }
+                        }}
                       />
-                      {voterLookupLoading && (
+                      {voterSearchLoading && (
                         <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
                           <Loader2 className="animate-spin h-4 w-4 text-gray-400" />
                         </div>
                       )}
+                      
+                      {/* Dropdown with search results */}
+                      {showVoterDropdown && voterSearchResults.length > 0 && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                          {voterSearchResults.map((voter) => (
+                            <button
+                              key={voter._id}
+                              type="button"
+                              onClick={() => selectVoter(voter)}
+                              className="w-full px-3 py-2 text-left hover:bg-blue-50 focus:bg-blue-50 border-b border-gray-100 last:border-b-0"
+                            >
+                              <div className="font-medium text-gray-900">{voter.fullName}</div>
+                              <div className="text-sm text-gray-500">
+                                ID: {voter.schoolId} • {voter.departmentId?.departmentCode || 'N/A'}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     
-                    {/* Voter lookup results */}
-                    {foundVoter && (
+                    {/* Selected voter display */}
+                    {selectedVoter && (
                       <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
                         <div className="flex items-center">
                           <UserCheck className="w-4 h-4 text-green-600 mr-2" />
                           <div className="text-sm">
-                            <p className="font-medium text-green-800">{foundVoter.fullName}</p>
+                            <p className="font-medium text-green-800">{selectedVoter.fullName}</p>
                             <p className="text-green-600">
-                              {foundVoter.departmentId?.departmentCode || 'N/A'} - Year {foundVoter.yearLevel}
+                              ID: {selectedVoter.schoolId} • {selectedVoter.departmentId?.departmentCode || 'N/A'} - Year {selectedVoter.yearLevel}
                             </p>
                           </div>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {voterLookupError && (
-                      <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-                        <div className="flex items-center">
-                          <AlertCircle className="w-4 h-4 text-red-600 mr-2" />
-                          <p className="text-sm text-red-600">{voterLookupError}</p>
                         </div>
                       </div>
                     )}
@@ -740,7 +739,7 @@ export default function SSGCandidatesPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={formLoading || !foundVoter}
+                    disabled={formLoading || !selectedVoter}
                     className="flex-1 flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {formLoading ? (
@@ -759,6 +758,48 @@ export default function SSGCandidatesPage() {
         </div>
       )}
 
+      {/* Partylist Filter Buttons */}
+      {ssgPartylists.length > 0 && (
+        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 mb-6">
+          <h3 className="text-lg font-semibold text-[#001f65] mb-4">Filter by Partylist</h3>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setSelectedPartylist('')}
+              className={`px-4 py-2 rounded-lg transition-colors ${
+                selectedPartylist === '' 
+                  ? 'bg-[#001f65] text-white' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              All ({candidateStats.total})
+            </button>
+            <button
+              onClick={() => setSelectedPartylist('independent')}
+              className={`px-4 py-2 rounded-lg transition-colors ${
+                selectedPartylist === 'independent' 
+                  ? 'bg-[#001f65] text-white' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Independent ({candidateStats.byPartylist['Independent'] || 0})
+            </button>
+            {ssgPartylists.map(partylist => (
+              <button
+                key={partylist._id}
+                onClick={() => setSelectedPartylist(partylist._id)}
+                className={`px-4 py-2 rounded-lg transition-colors ${
+                  selectedPartylist === partylist._id 
+                    ? 'bg-[#001f65] text-white' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {partylist.partylistName} ({candidateStats.byPartylist[partylist.partylistName] || 0})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Candidates Table */}
       <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 overflow-hidden">
         {/* Table Header */}
@@ -768,7 +809,7 @@ export default function SSGCandidatesPage() {
               <h2 className="text-xl font-bold text-[#001f65]">
                 Candidates 
                 <span className="text-lg font-normal text-gray-600 ml-2">
-                  ({filteredCandidates.length}{searchTerm || filterPosition ? ` of ${candidateStats.total}` : ''})
+                  ({filteredCandidates.length}{searchTerm || filterPosition || selectedPartylist ? ` of ${candidateStats.total}` : ''})
                 </span>
               </h2>
             </div>
@@ -796,20 +837,22 @@ export default function SSGCandidatesPage() {
             </div>
             
             <select
-              value={filterPosition}
-              onChange={(e) => setFilterPosition(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
-            >
-              <option value="">All Positions ({Object.keys(candidateStats.byPosition).length})</option>
-              {Array.isArray(ssgPositions) && ssgPositions.map(position => {
-                const count = candidateStats.byPosition[position.positionName] || 0
-                return (
-                  <option key={position._id} value={position._id}>
-                    {position.positionName} ({count})
-                  </option>
-                )
-              })}
-            </select>
+  value={filterPosition}
+  onChange={(e) => setFilterPosition(e.target.value)}
+  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+>
+  <option value="">All Positions</option>
+  {Array.isArray(ssgPositions) && ssgPositions.map(position => {
+    // Use aggregated count from controller if available
+    const count = position.activeCandidateCount ?? 
+                  candidateStats.byPosition[position.positionName] ?? 0
+    return (
+      <option key={position._id} value={position._id}>
+        {position.positionName} ({count} candidates)
+      </option>
+    )
+  })}
+</select>
 
             <button
               onClick={handleAddCandidate}
@@ -827,10 +870,16 @@ export default function SSGCandidatesPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Profile
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Candidate
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Position
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Department
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Partylist
@@ -847,124 +896,167 @@ export default function SSGCandidatesPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredCandidates.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center">
-                    <div className="flex flex-col items-center">
-                      <Users className="w-12 h-12 text-gray-400 mb-4" />
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">
-                        {candidateStats.total === 0 ? 'No candidates found' : 'No matching candidates'}
-                      </h3>
-                      <p className="text-gray-500 mb-4">
-                        {candidateStats.total === 0 ? 
-                          'Get started by adding the first candidate for this election.' :
-                          searchTerm || filterPosition ? 
-                            'Try adjusting your search or filters to see more candidates.' :
-                            'All candidates are currently filtered out.'
-                        }
-                      </p>
-                      {candidateStats.total === 0 && (
-                        <button
-                          onClick={handleAddCandidate}
-                          className="flex items-center px-4 py-2 bg-[#001f65] hover:bg-[#003399] text-white rounded-lg transition-colors"
-                        >
-                          <Plus className="w-4 h-4 mr-2" />
-                          Add First Candidate
-                        </button>
-                      )}
-                      {candidateStats.total > 0 && (searchTerm || filterPosition) && (
-                        <button
-                          onClick={() => {
-                            setSearchTerm('')
-                            setFilterPosition('')
-                          }}
-                          className="text-[#001f65] hover:text-[#003399] font-medium"
-                        >
-                          Clear all filters
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
+  {filteredCandidates.length === 0 ? (
+    <tr>
+      <td colSpan="8" className="px-6 py-12 text-center">
+        <div className="flex flex-col items-center">
+          <Users className="w-12 h-12 text-gray-400 mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            {candidateStats.total === 0 ? 'No candidates found' : 'No matching candidates'}
+          </h3>
+          <p className="text-gray-500 mb-4">
+            {candidateStats.total === 0 ? 
+              'Get started by adding the first candidate for this election.' :
+              searchTerm || filterPosition || selectedPartylist ? 
+                'Try adjusting your search or filters to see more candidates.' :
+                'All candidates are currently filtered out.'
+            }
+          </p>
+          {candidateStats.total === 0 && (
+            <button
+              onClick={handleAddCandidate}
+              className="flex items-center px-4 py-2 bg-[#001f65] hover:bg-[#003399] text-white rounded-lg transition-colors"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add First Candidate
+            </button>
+          )}
+          {candidateStats.total > 0 && (searchTerm || filterPosition || selectedPartylist) && (
+            <button
+              onClick={() => {
+                setSearchTerm('')
+                setFilterPosition('')
+                setSelectedPartylist('')
+              }}
+              className="text-[#001f65] hover:text-[#003399] font-medium"
+            >
+              Clear all filters
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
+  ) : (
+    filteredCandidates.map((candidate, index) => {
+      // Generate a reliable key - use multiple fallbacks
+      const candidateKey = candidate._id || 
+                          candidate.id || 
+                          `${candidate.voterId?._id || candidate.voterId}-${candidate.positionId?._id || candidate.positionId}-${index}` ||
+                          `candidate-${index}`
+      
+      return (
+        <tr key={candidateKey} className="hover:bg-gray-50">
+          {/* Profile Picture Column */}
+          <td className="px-6 py-4 whitespace-nowrap">
+            <div className="flex-shrink-0 h-12 w-12">
+              {candidate.campaignPicture ? (
+                <img
+                  className="h-12 w-12 rounded-full object-cover border-2 border-gray-200"
+                  src={`data:image/jpeg;base64,${candidate.campaignPicture}`}
+                  alt={candidate.fullName || candidate.voterId?.fullName || 'Candidate'}
+                />
               ) : (
-                filteredCandidates.map((candidate) => (
-                  <tr key={candidate._id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-10 w-10">
-                          {candidate.campaignPicture ? (
-                            <img
-                              className="h-10 w-10 rounded-full object-cover"
-                              src={`data:image/jpeg;base64,${candidate.campaignPicture}`}
-                              alt={candidate.fullName || candidate.voterId?.fullName || 'Candidate'}
-                            />
-                          ) : (
-                            <div className="h-10 w-10 rounded-full bg-[#b0c8fe]/30 flex items-center justify-center">
-                              <UserCheck className="h-5 w-5 text-[#001f65]" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">
-                            {candidate.fullName || candidate.voterId?.fullName || 'Unknown Name'}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            ID: {candidate.voterId?.schoolId || 'N/A'}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {candidate.positionId?.positionName || 'Unknown Position'}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        candidate.partylistId 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {candidate.partylistId?.partylistName || 'Independent'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {candidate.candidateNumber || 'N/A'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        candidate.isActive !== false
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {candidate.isActive !== false ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
-                      <div className="flex items-center justify-center space-x-2">
-                        <button
-                          onClick={() => handleEditCandidate(candidate)}
-                          className="text-indigo-600 hover:text-indigo-900 p-1 rounded hover:bg-indigo-50 transition-colors"
-                          title="Edit candidate"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteCandidate(candidate._id, candidate.fullName || candidate.voterId?.fullName)}
-                          className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
-                          title="Delete candidate"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                <div className="h-12 w-12 rounded-full bg-[#b0c8fe]/30 flex items-center justify-center border-2 border-gray-200">
+                  <UserCheck className="h-6 w-6 text-[#001f65]" />
+                </div>
               )}
-            </tbody>
+            </div>
+          </td>
+
+          {/* Candidate Info Column */}
+          <td className="px-6 py-4 whitespace-nowrap">
+            <div>
+              <div className="text-sm font-medium text-gray-900">
+                {candidate.fullName || 
+                 candidate.displayName || 
+                 candidate.voterId?.fullName || 
+                 (candidate.voterId ? `${candidate.voterId.firstName || ''} ${candidate.voterId.lastName || ''}`.trim() : '') ||
+                 'Unknown Name'}
+              </div>
+              <div className="text-sm text-gray-500">
+                ID: {candidate.voterId?.schoolId || candidate.schoolId || 'N/A'}
+              </div>
+            </div>
+          </td>
+
+          {/* Position Column */}
+          <td className="px-6 py-4 whitespace-nowrap">
+            <div className="text-sm text-gray-900">
+              {candidate.positionId?.positionName || candidate.position || 'Unknown Position'}
+            </div>
+          </td>
+
+          {/* Department Column */}
+          <td className="px-6 py-4 whitespace-nowrap">
+            <div className="text-sm text-gray-900">
+              {candidate.voterId?.departmentId?.departmentCode || 
+               candidate.department || 
+               'N/A'}
+            </div>
+            <div className="text-sm text-gray-500">
+              Year {candidate.voterId?.yearLevel || candidate.yearLevel || 'N/A'}
+            </div>
+          </td>
+
+          {/* Partylist Column */}
+          <td className="px-6 py-4 whitespace-nowrap">
+            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+              candidate.partylistId || candidate.partylist 
+                ? 'bg-blue-100 text-blue-800' 
+                : 'bg-gray-100 text-gray-800'
+            }`}>
+              {candidate.partylistId?.partylistName || 
+               candidate.partylist || 
+               'Independent'}
+            </span>
+          </td>
+
+          {/* Number Column */}
+          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+            {candidate.candidateNumber || 'N/A'}
+          </td>
+
+          {/* Status Column */}
+          <td className="px-6 py-4 whitespace-nowrap">
+            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+              candidate.isActive !== false
+                ? 'bg-green-100 text-green-800'
+                : 'bg-red-100 text-red-800'
+            }`}>
+              {candidate.isActive !== false ? 'Active' : 'Inactive'}
+            </span>
+          </td>
+
+          {/* Actions Column */}
+          <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
+            <div className="flex items-center justify-center space-x-2">
+              <button
+                onClick={() => handleEditCandidate(candidate)}
+                className="text-indigo-600 hover:text-indigo-900 p-1 rounded hover:bg-indigo-50 transition-colors"
+                title="Edit candidate"
+              >
+                <Edit className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => handleDeleteCandidate(
+                  candidate._id || candidate.id,
+                  candidate.fullName || candidate.displayName || candidate.voterId?.fullName || 'this candidate'
+                )}
+                className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
+                title="Delete candidate"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          </td>
+        </tr>
+      )
+    })
+  )}
+</tbody>
           </table>
         </div>
       </div>
     </SSGLayout>
   )
-}
+} 

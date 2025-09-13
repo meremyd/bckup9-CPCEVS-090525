@@ -320,11 +320,11 @@ class AuthController {
         return next(error)
       }
 
-      if (!photoCompleted) {
-        const error = new Error("Face recognition must be completed")
-        error.statusCode = 400
-        return next(error)
-      }
+      // if (!photoCompleted) {
+      //   const error = new Error("Face recognition must be completed")
+      //   error.statusCode = 400
+      //   return next(error)
+      // }
 
       // Find voter and populate department
       const voter = await Voter.findById(voterId).populate("departmentId")

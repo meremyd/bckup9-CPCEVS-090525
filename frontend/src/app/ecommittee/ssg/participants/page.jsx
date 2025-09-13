@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { electionParticipationAPI } from "@/lib/api/electionParticipation"
 import { departmentsAPI } from "@/lib/api/departments"
+import { votersAPI } from "@/lib/api/voters"
 import SSGLayout from "@/components/SSGLayout"
 import Swal from 'sweetalert2'
 import { 
@@ -32,6 +33,7 @@ export default function SSGVoterParticipantsPage() {
   const [selectedDepartment, setSelectedDepartment] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [stats, setStats] = useState(null)
+  const [voterStats, setVoterStats] = useState(null)
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
@@ -68,7 +70,8 @@ export default function SSGVoterParticipantsPage() {
       Promise.all([
         fetchParticipants(),
         fetchDepartments(),
-        fetchStats()
+        fetchStats(),
+        fetchVoterStats()
       ])
     } else {
       setError('No election ID provided')
@@ -108,7 +111,6 @@ export default function SSGVoterParticipantsPage() {
       setDepartments(response.departments || [])
     } catch (error) {
       console.error("Error fetching departments:", error)
-      // Don't show error for departments as it's not critical
     }
   }
 
@@ -118,7 +120,15 @@ export default function SSGVoterParticipantsPage() {
       setStats(response)
     } catch (error) {
       console.error("Error fetching stats:", error)
-      // Don't show error for stats as it's not critical
+    }
+  }
+
+  const fetchVoterStats = async () => {
+    try {
+      const response = await votersAPI.getStatistics()
+      setVoterStats(response)
+    } catch (error) {
+      console.error("Error fetching voter stats:", error)
     } finally {
       setLoading(false)
     }
@@ -161,7 +171,6 @@ export default function SSGVoterParticipantsPage() {
 
     setError(errorMessage)
     
-    // Show error with SweetAlert for critical errors
     if (error.response?.status === 403 || error.response?.status === 404) {
       Swal.fire({
         icon: 'error',
@@ -177,7 +186,6 @@ export default function SSGVoterParticipantsPage() {
     
     let filtered = [...participants]
 
-    // Apply department filter
     if (selectedDepartment !== 'all') {
       filtered = filtered.filter(participant => 
         participant.voterId?.departmentId?._id === selectedDepartment ||
@@ -185,7 +193,6 @@ export default function SSGVoterParticipantsPage() {
       )
     }
 
-    // Apply status filter
     if (statusFilter !== 'all') {
       switch (statusFilter) {
         case 'confirmed':
@@ -200,7 +207,6 @@ export default function SSGVoterParticipantsPage() {
       }
     }
 
-    // Apply search filter
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase()
       filtered = filtered.filter(participant => {
@@ -220,8 +226,6 @@ export default function SSGVoterParticipantsPage() {
     }
 
     setFilteredParticipants(filtered)
-    
-    // Simulate loading delay for better UX
     setTimeout(() => setSearchLoading(false), 300)
   }
 
@@ -230,12 +234,12 @@ export default function SSGVoterParticipantsPage() {
     setError('')
     await Promise.all([
       fetchParticipants(),
-      fetchStats()
+      fetchStats(),
+      fetchVoterStats()
     ])
   }
 
   const handleExport = () => {
-    // Create CSV data
     const headers = ['School ID', 'Name', 'Department', 'Year Level', 'Status', 'Has Voted', 'Participation Date']
     const csvData = filteredParticipants.map(participant => {
       const voter = participant.voterId
@@ -272,6 +276,14 @@ export default function SSGVoterParticipantsPage() {
     return colors[index % colors.length]
   }
 
+  // Calculate voter turnout percentage
+  const calculateVoterTurnout = () => {
+    if (!voterStats || !stats) return 0
+    const totalVoters = voterStats.total || 0
+    const participantsCount = stats.totalParticipants || 0
+    return totalVoters > 0 ? Math.round((participantsCount / totalVoters) * 100) : 0
+  }
+
   if (!ssgElectionId) {
     return (
       <SSGLayout
@@ -305,15 +317,15 @@ export default function SSGVoterParticipantsPage() {
       activeItem="participants"
     >
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* Statistics Cards */}
-        {stats && (
+        {/* Statistics Cards - Only 4 cards */}
+        {(stats || voterStats) && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-4">
               <div className="flex items-center">
                 <Users className="w-8 h-8 text-[#001f65] mr-3" />
                 <div>
-                  <p className="text-sm text-gray-600">Total Participants</p>
-                  <p className="text-xl font-bold text-[#001f65]">{stats.totalParticipants || 0}</p>
+                  <p className="text-sm text-gray-600">Total Voters</p>
+                  <p className="text-xl font-bold text-[#001f65]">{voterStats?.total || 0}</p>
                 </div>
               </div>
             </div>
@@ -322,8 +334,8 @@ export default function SSGVoterParticipantsPage() {
               <div className="flex items-center">
                 <UserCheck className="w-8 h-8 text-green-600 mr-3" />
                 <div>
-                  <p className="text-sm text-gray-600">Confirmed</p>
-                  <p className="text-xl font-bold text-green-600">{stats.confirmedParticipants || 0}</p>
+                  <p className="text-sm text-gray-600">Registered Voters</p>
+                  <p className="text-xl font-bold text-green-600">{voterStats?.registered || 0}</p>
                 </div>
               </div>
             </div>
@@ -332,8 +344,8 @@ export default function SSGVoterParticipantsPage() {
               <div className="flex items-center">
                 <CheckCircle className="w-8 h-8 text-blue-600 mr-3" />
                 <div>
-                  <p className="text-sm text-gray-600">Voted</p>
-                  <p className="text-xl font-bold text-blue-600">{stats.votedParticipants || 0}</p>
+                  <p className="text-sm text-gray-600">Participants</p>
+                  <p className="text-xl font-bold text-blue-600">{stats?.totalParticipants || 0}</p>
                 </div>
               </div>
             </div>
@@ -342,12 +354,9 @@ export default function SSGVoterParticipantsPage() {
               <div className="flex items-center">
                 <Clock className="w-8 h-8 text-orange-600 mr-3" />
                 <div>
-                  <p className="text-sm text-gray-600">Turnout Rate</p>
+                  <p className="text-sm text-gray-600">Voter Turnout</p>
                   <p className="text-xl font-bold text-orange-600">
-                    {stats.totalParticipants > 0 
-                      ? `${Math.round((stats.votedParticipants / stats.totalParticipants) * 100)}%`
-                      : '0%'
-                    }
+                    {calculateVoterTurnout()}%
                   </p>
                 </div>
               </div>
@@ -401,58 +410,6 @@ export default function SSGVoterParticipantsPage() {
           </div>
         </div>
 
-        {/* Filters and Search */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center">
-                <Filter className="w-5 h-5 text-[#001f65] mr-2" />
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
-                >
-                  <option value="all">All Status</option>
-                  <option value="confirmed">Confirmed Only</option>
-                  <option value="voted">Voted</option>
-                  <option value="not_voted">Not Voted</option>
-                </select>
-              </div>
-              
-              <button
-                onClick={handleRefresh}
-                disabled={loading}
-                className="flex items-center px-3 py-2 text-[#001f65] hover:bg-[#001f65]/10 rounded-lg transition-colors"
-              >
-                <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
-
-              <button
-                onClick={handleExport}
-                className="flex items-center px-3 py-2 text-[#001f65] hover:bg-[#001f65]/10 rounded-lg transition-colors"
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Export CSV
-              </button>
-            </div>
-
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                type="text"
-                placeholder="Search participants..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent w-full md:w-64"
-              />
-              {searchLoading && (
-                <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 animate-spin w-4 h-4 text-gray-400" />
-              )}
-            </div>
-          </div>
-        </div>
-
         {/* Error Alert */}
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center">
@@ -467,16 +424,60 @@ export default function SSGVoterParticipantsPage() {
           </div>
         )}
 
-        {/* Participants Table */}
+        {/* Participants Table with integrated search and filters */}
         <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 overflow-hidden">
+          {/* Table Header with Search and Filters */}
           <div className="p-6 border-b border-gray-200">
-            <h2 className="text-xl font-bold text-[#001f65] flex items-center">
-              <Users className="w-6 h-6 mr-2" />
-              Voter Participants
-              <span className="ml-2 text-sm font-normal text-gray-600">
-                ({filteredParticipants.length} of {totalParticipants})
-              </span>
-            </h2>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              {/* Left side - Search */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="text"
+                  placeholder="Search participants..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent w-full md:w-64"
+                />
+                {searchLoading && (
+                  <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 animate-spin w-4 h-4 text-gray-400" />
+                )}
+              </div>
+
+              {/* Right side - Filters and Actions */}
+              <div className="flex items-center gap-4">
+                <div className="flex items-center">
+                  <Filter className="w-5 h-5 text-[#001f65] mr-2" />
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="confirmed">Confirmed Only</option>
+                    <option value="voted">Voted</option>
+                    <option value="not_voted">Not Voted</option>
+                  </select>
+                </div>
+                
+                <button
+                  onClick={handleRefresh}
+                  disabled={loading}
+                  className="flex items-center px-3 py-2 text-[#001f65] hover:bg-[#001f65]/10 rounded-lg transition-colors"
+                >
+                  <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
+
+                <button
+                  onClick={handleExport}
+                  className="flex items-center px-3 py-2 text-[#001f65] hover:bg-[#001f65]/10 rounded-lg transition-colors"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Export CSV
+                </button>
+              </div>
+            </div>
           </div>
 
           {loading ? (
@@ -579,7 +580,7 @@ export default function SSGVoterParticipantsPage() {
           <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
             <div className="flex items-center justify-between">
               <div className="text-sm text-gray-600">
-                Showing page {currentPage} of {totalPages}
+                Showing page {currentPage} of {totalPages} ({totalParticipants} total participants)
               </div>
               <div className="flex gap-2">
                 <button

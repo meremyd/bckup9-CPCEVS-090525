@@ -1,6 +1,6 @@
 "use client"
 
-export default function VoterBackground({ children, className = "" }) {
+export default function VoterLayout({ children, className = "" }) {
   return (
     <div className={`min-h-screen relative ${className}`}>
       {/* Main gradient background */}

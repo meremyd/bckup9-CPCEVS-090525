@@ -113,7 +113,7 @@ candidateSchema.methods.getDisplayName = function() {
   if (this.populated('voterId') && this.voterId) {
     const voter = this.voterId
     const middle = voter.middleName ? ` ${voter.middleName}` : ''
-    return `${voter.firstName}${middle} ${voter.lastName}`
+    return `${voter.firstName}${middle} ${voter.lastName}`.replace(/\s+/g, ' ').trim()
   }
   return null
 }
@@ -379,8 +379,14 @@ candidateSchema.statics.getByElectionWithDetails = async function(electionId, el
   if (filters.status !== undefined) query.isActive = filters.status === 'active'
   
   return await this.find(query)
-    .populate('voterId', 'schoolId firstName middleName lastName departmentId yearLevel')
-    .populate('voterId.departmentId', 'departmentCode degreeProgram college')
+    .populate({
+      path: 'voterId',
+      select: 'schoolId firstName middleName lastName departmentId yearLevel',
+      populate: {
+        path: 'departmentId',
+        select: 'departmentCode degreeProgram college'
+      }
+    })
     .populate('positionId', 'positionName positionOrder maxVotes')
     .populate('partylistId', 'partylistName description')
     .sort({ 'positionId.positionOrder': 1, candidateNumber: 1 })
