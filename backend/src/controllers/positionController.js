@@ -302,6 +302,7 @@ class PositionController {
       })
     }
 
+    // Check if SSG election exists
     const ssgElection = await SSGElection.findById(ssgElectionId)
     if (!ssgElection) {
       return res.status(404).json({
@@ -310,82 +311,90 @@ class PositionController {
       })
     }
 
-    // Get positions with candidate counts
-    const positions = await Position.aggregate([
-      {
-        $match: {
+    // Get all SSG positions (not filtered by specific election)
+    const allSSGPositions = await Position.find({ 
+      ssgElectionId: { $ne: null },
+      deptElectionId: null 
+    })
+    .populate('ssgElectionId', 'title electionYear status')
+    .sort({ positionOrder: 1 })
+
+    // For each position, count candidates in the selected election
+    const positionsWithCandidateCounts = await Promise.all(
+      allSSGPositions.map(async (position) => {
+        // Count total candidates for this position in the selected election
+        const totalCandidates = await Candidate.countDocuments({ 
+          positionId: position._id,
+          ssgElectionId: new mongoose.Types.ObjectId(ssgElectionId)
+        })
+
+        // Count active candidates for this position in the selected election
+        const activeCandidates = await Candidate.countDocuments({ 
+          positionId: position._id,
           ssgElectionId: new mongoose.Types.ObjectId(ssgElectionId),
-          deptElectionId: null
+          isActive: true
+        })
+
+        return {
+          _id: position._id,
+          positionName: position.positionName,
+          description: position.description,
+          positionOrder: position.positionOrder,
+          maxVotes: position.maxVotes,
+          maxCandidates: position.maxCandidates,
+          ssgElectionId: position.ssgElectionId,
+          originalElection: {
+            _id: position.ssgElectionId._id,
+            title: position.ssgElectionId.title,
+            electionYear: position.ssgElectionId.electionYear,
+            status: position.ssgElectionId.status
+          },
+          selectedElection: {
+            _id: ssgElection._id,
+            title: ssgElection.title,
+            electionYear: ssgElection.electionYear,
+            status: ssgElection.status
+          },
+          candidateCount: totalCandidates,
+          activeCandidateCount: activeCandidates,
+          isFromSelectedElection: position.ssgElectionId._id.toString() === ssgElectionId,
+          createdAt: position.createdAt,
+          updatedAt: position.updatedAt
         }
-      },
-      {
-        $lookup: {
-          from: 'candidates',
-          localField: '_id',
-          foreignField: 'positionId',
-          as: 'candidates'
-        }
-      },
-      {
-        $addFields: {
-          candidateCount: { $size: '$candidates' },
-          activeCandidateCount: {
-            $size: {
-              $filter: {
-                input: '$candidates',
-                cond: { $eq: ['$$this.isActive', true] }
-              }
-            }
-          }
-        }
-      },
-      {
-        $lookup: {
-          from: 'ssgelections',
-          localField: 'ssgElectionId',
-          foreignField: '_id',
-          as: 'ssgElection'
-        }
-      },
-      {
-        $addFields: {
-          ssgElectionId: {
-            $let: {
-              vars: {
-                election: { $arrayElemAt: ['$ssgElection', 0] }
-              },
-              in: {
-                _id: '$$election._id',
-                title: '$$election.title',
-                electionYear: '$$election.electionYear',
-                status: '$$election.status'
-              }
-            }
-          }
-        }
-      },
-      {
-        $project: {
-          candidates: 0,
-          ssgElection: 0
-        }
-      },
-      {
-        $sort: { positionOrder: 1 }
-      }
-    ])
+      })
+    )
+
+    // Calculate summary statistics
+    const totalActiveCandidatesInSelectedElection = positionsWithCandidateCounts
+      .reduce((sum, position) => sum + position.activeCandidateCount, 0)
+
+    const positionsFromSelectedElection = positionsWithCandidateCounts
+      .filter(position => position.isFromSelectedElection).length
 
     await AuditLog.logUserAction(
       "SYSTEM_ACCESS",
       req.user,
-      `Retrieved positions for SSG election: ${ssgElection.title}`,
+      `Retrieved all SSG positions with candidate counts for election: ${ssgElection.title}`,
       req
     )
 
     res.status(200).json({
       success: true,
-      message: "SSG election positions retrieved successfully",
-      data: positions
+      message: "All SSG positions retrieved successfully with candidate counts for selected election",
+      data: {
+        selectedElection: {
+          _id: ssgElection._id,
+          title: ssgElection.title,
+          electionYear: ssgElection.electionYear,
+          status: ssgElection.status
+        },
+        positions: positionsWithCandidateCounts,
+        summary: {
+          totalPositions: positionsWithCandidateCounts.length,
+          positionsFromSelectedElection: positionsFromSelectedElection,
+          totalActiveCandidatesInSelectedElection: totalActiveCandidatesInSelectedElection
+        }
+      }
     })
   } catch (error) {
     console.error("Error getting SSG election positions:", error)
