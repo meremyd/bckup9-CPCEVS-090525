@@ -300,245 +300,275 @@ class PartylistController {
     }
   }
 
-  // Create new partylist
+  // FIXED: Create new partylist with correct validation logic
+  static async createPartylist(req, res, next) {
+    try {
+      const { partylistId, ssgElectionId, partylistName, description, logo } = req.body
 
-static async createPartylist(req, res, next) {
-  try {
-    const { partylistId, ssgElectionId, partylistName, description, logo } = req.body
-
-    // Validation
-    if (!partylistId || !ssgElectionId || !partylistName) {
-      const error = new Error("Partylist ID, SSG election ID, and partylist name are required")
-      error.statusCode = 400
-      return next(error)
-    }
-
-    // Validate SSG election exists and is not completed or cancelled
-    const ssgElection = await SSGElection.findById(ssgElectionId)
-    if (!ssgElection) {
-      const error = new Error("SSG Election not found")
-      error.statusCode = 404
-      return next(error)
-    }
-
-    if (ssgElection.status === "completed" || ssgElection.status === "cancelled") {
-      const error = new Error("Cannot add partylists to completed or cancelled SSG elections")
-      error.statusCode = 400
-      return next(error)
-    }
-
-    // Check if partylist ID already exists globally (across all elections)
-    const existingPartylistId = await Partylist.findOne({ 
-      partylistId: partylistId.trim().toUpperCase() 
-    })
-    if (existingPartylistId) {
-      const error = new Error("Partylist ID already exists globally. Please choose a different ID.")
-      error.statusCode = 400
-      return next(error)
-    }
-
-    // Check if partylist name exists ONLY in this specific SSG election
-    const existingPartylistName = await Partylist.findOne({ 
-      ssgElectionId: ssgElectionId,
-      partylistName: { $regex: new RegExp(`^${partylistName.trim()}$`, 'i') }
-    })
-    if (existingPartylistName) {
-      const error = new Error(`Partylist name "${partylistName.trim()}" already exists in this SSG election`)
-      error.statusCode = 400
-      return next(error)
-    }
-
-    // Process logo if provided
-    let logoBuffer = null
-    if (logo) {
-      if (typeof logo === 'string' && logo.startsWith('data:image/')) {
-        const base64Data = logo.replace(/^data:image\/\w+;base64,/, '')
-        logoBuffer = Buffer.from(base64Data, 'base64')
-        
-        // Validate file size (max 2MB)
-        if (logoBuffer.length > 2 * 1024 * 1024) {
-          const error = new Error("Logo file size must be less than 2MB")
-          error.statusCode = 400
-          return next(error)
-        }
-      } else {
-        const error = new Error("Invalid logo format. Must be base64 encoded image.")
-        error.statusCode = 400
-        return next(error)
-      }
-    }
-
-    const partylist = new Partylist({
-      partylistId: partylistId.trim().toUpperCase(),
-      ssgElectionId,
-      partylistName: partylistName.trim(),
-      description: description?.trim() || null,
-      logo: logoBuffer,
-      isActive: true
-    })
-
-    await partylist.save()
-    await partylist.populate("ssgElectionId", "title ssgElectionId electionYear")
-
-    // Log the creation
-    await AuditLog.logUserAction(
-      "CREATE_PARTYLIST",
-      req.user,
-      `Partylist created - ${partylist.partylistName} (${partylist.partylistId}) for SSG election ${ssgElection.title}`,
-      req
-    )
-
-    res.status(201).json(partylist)
-  } catch (error) {
-    // Handle duplicate key errors with improved error messages
-    if (error.code === 11000) {
-      const keyPattern = error.keyPattern || {}
-      const keyValue = error.keyValue || {}
-      
-      // Check different possible index names and field combinations
-      if (keyPattern.partylistId || keyValue.partylistId) {
-        error.message = "Partylist ID already exists globally"
-        error.statusCode = 400
-      } else if (keyPattern.partylistName || keyValue.partylistName || 
-                 keyPattern['electionId'] || keyPattern['ssgElectionId']) {
-        error.message = "Partylist name already exists in this SSG election"
-        error.statusCode = 400
-      } else {
-        error.message = "Duplicate entry detected. Please check your input values."
-        error.statusCode = 400
-      }
-    }
-    next(error)
-  }
-}
-
-  // Update partylist
-  // Replace the updatePartylist method in your PartylistController
-
-static async updatePartylist(req, res, next) {
-  try {
-    const { id } = req.params
-    const { partylistName, description, logo, isActive } = req.body
-
-    const partylist = await Partylist.findById(id)
-      .populate("ssgElectionId", "title status")
-
-    if (!partylist) {
-      const error = new Error("Partylist not found")
-      error.statusCode = 404
-      return next(error)
-    }
-
-    // Check if SSG election allows modifications
-    if (partylist.ssgElectionId.status === "completed") {
-      const error = new Error("Cannot modify partylists in completed SSG elections")
-      error.statusCode = 400
-      return next(error)
-    }
-
-    // Check for candidates if trying to change critical info during active election
-    const candidateCount = await Candidate.countDocuments({ 
-      partylistId: id,
-      isActive: true
-    })
-    
-    if (partylist.ssgElectionId.status === "active" && candidateCount > 0 && partylistName) {
-      const error = new Error("Cannot change partylist name during active SSG election with existing candidates")
-      error.statusCode = 400
-      return next(error)
-    }
-
-    const updateData = {}
-
-    // Validate and update partylist name
-    if (partylistName !== undefined) {
-      const trimmedName = partylistName.trim()
-      if (!trimmedName) {
-        const error = new Error("Partylist name cannot be empty")
+      // Validation
+      if (!partylistId || !ssgElectionId || !partylistName) {
+        const error = new Error("Partylist ID, SSG election ID, and partylist name are required")
         error.statusCode = 400
         return next(error)
       }
 
-      // Check for duplicate name ONLY in same SSG election (excluding current partylist)
-      const existingName = await Partylist.findOne({
-        ssgElectionId: partylist.ssgElectionId._id,
-        partylistName: { $regex: new RegExp(`^${trimmedName}$`, 'i') },
-        _id: { $ne: id }
+      // Convert ssgElectionId to ObjectId if it's a string
+      let electionObjectId
+      try {
+        electionObjectId = new mongoose.Types.ObjectId(ssgElectionId)
+      } catch (err) {
+        const error = new Error("Invalid SSG Election ID format")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Validate SSG election exists and is not completed or cancelled
+      const ssgElection = await SSGElection.findById(electionObjectId)
+      if (!ssgElection) {
+        const error = new Error("SSG Election not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      if (ssgElection.status === "completed" || ssgElection.status === "cancelled") {
+        const error = new Error("Cannot add partylists to completed or cancelled SSG elections")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // FIXED: Check partylist ID globally (across all elections)
+      const existingPartylistId = await Partylist.findOne({ 
+        partylistId: partylistId.trim().toUpperCase() 
+      })
+      if (existingPartylistId) {
+        const error = new Error(`Partylist ID "${partylistId.trim().toUpperCase()}" already exists. Partylist IDs must be unique globally.`)
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // FIXED: Check partylist name only within the specific SSG election
+      const existingPartylistName = await Partylist.findOne({
+        ssgElectionId: electionObjectId,
+        partylistName: { $regex: new RegExp(`^${partylistName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
       })
       
-      if (existingName) {
-        const error = new Error(`Partylist name "${trimmedName}" already exists in this SSG election`)
+      if (existingPartylistName) {
+        const error = new Error(`Partylist name "${partylistName.trim()}" already exists in this SSG election`)
         error.statusCode = 400
         return next(error)
       }
 
-      updateData.partylistName = trimmedName
-    }
-
-    // Update description
-    if (description !== undefined) {
-      updateData.description = description?.trim() || null
-    }
-
-    // Update active status
-    if (isActive !== undefined) {
-      updateData.isActive = Boolean(isActive)
-    }
-
-    // Process logo update
-    if (logo !== undefined) {
-      if (logo === null) {
-        updateData.logo = null
-      } else if (typeof logo === 'string' && logo.startsWith('data:image/')) {
-        const base64Data = logo.replace(/^data:image\/\w+;base64,/, '')
-        const logoBuffer = Buffer.from(base64Data, 'base64')
-        
-        if (logoBuffer.length > 2 * 1024 * 1024) {
-          const error = new Error("Logo file size must be less than 2MB")
+      // Process logo if provided
+      let logoBuffer = null
+      if (logo) {
+        if (typeof logo === 'string' && logo.startsWith('data:image/')) {
+          const base64Data = logo.replace(/^data:image\/\w+;base64,/, '')
+          logoBuffer = Buffer.from(base64Data, 'base64')
+          
+          // Validate file size (max 2MB)
+          if (logoBuffer.length > 2 * 1024 * 1024) {
+            const error = new Error("Logo file size must be less than 2MB")
+            error.statusCode = 400
+            return next(error)
+          }
+        } else {
+          const error = new Error("Invalid logo format. Must be base64 encoded image.")
           error.statusCode = 400
           return next(error)
         }
+      }
+
+      console.log('Creating partylist document...')
+      const partylist = new Partylist({
+        partylistId: partylistId.trim().toUpperCase(),
+        ssgElectionId: electionObjectId,
+        partylistName: partylistName.trim(),
+        description: description?.trim() || null,
+        logo: logoBuffer,
+        isActive: true
+      })
+
+      console.log('Partylist document to save:', {
+        partylistId: partylist.partylistId,
+        ssgElectionId: partylist.ssgElectionId,
+        partylistName: partylist.partylistName
+      })
+
+      await partylist.save()
+      await partylist.populate("ssgElectionId", "title ssgElectionId electionYear")
+
+      console.log('Partylist created successfully!')
+      console.log('=== END DEBUG ===')
+
+      // Log the creation
+      await AuditLog.logUserAction(
+        "CREATE_PARTYLIST",
+        req.user,
+        `Partylist created - ${partylist.partylistName} (${partylist.partylistId}) for SSG election ${ssgElection.title}`,
+        req
+      )
+
+      res.status(201).json(partylist)
+    } catch (error) {
+      console.log('Error caught in createPartylist:', error.message)
+      console.log('Error code:', error.code)
+      console.log('Error keyPattern:', error.keyPattern)
+      console.log('Error keyValue:', error.keyValue)
+      console.log('=== END DEBUG ===')
+      
+      // Handle duplicate key errors with improved error messages
+      if (error.code === 11000) {
+        const keyPattern = error.keyPattern || {}
+        const keyValue = error.keyValue || {}
         
-        updateData.logo = logoBuffer
-      } else {
-        const error = new Error("Invalid logo format. Must be base64 encoded image or null.")
+        console.log('MongoDB duplicate key error details:', { keyPattern, keyValue })
+        
+        // Check the specific index that was violated
+        if (keyPattern.partylistId === 1) {
+          error.message = `Partylist ID "${keyValue.partylistId}" already exists globally`
+          error.statusCode = 400
+        } else if (keyPattern.ssgElectionId === 1 && keyPattern.partylistName === 1) {
+          error.message = `Partylist name "${keyValue.partylistName}" already exists in this SSG election`
+          error.statusCode = 400
+        } else if (keyValue.partylistId) {
+          error.message = `Partylist ID "${keyValue.partylistId}" already exists globally`
+          error.statusCode = 400
+        } else if (keyValue.partylistName) {
+          error.message = `Partylist name "${keyValue.partylistName}" already exists in this SSG election`
+          error.statusCode = 400
+        } else {
+          error.message = "Duplicate entry detected. Please check your input values."
+          error.statusCode = 400
+        }
+      }
+      next(error)
+    }
+  }
+
+  // FIXED: Update partylist with correct validation logic
+  static async updatePartylist(req, res, next) {
+    try {
+      const { id } = req.params
+      const { partylistName, description, logo, isActive } = req.body
+
+      const partylist = await Partylist.findById(id)
+        .populate("ssgElectionId", "title status")
+
+      if (!partylist) {
+        const error = new Error("Partylist not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      // Check if SSG election allows modifications
+      if (partylist.ssgElectionId.status === "completed") {
+        const error = new Error("Cannot modify partylists in completed SSG elections")
         error.statusCode = 400
         return next(error)
       }
-    }
 
-    const updatedPartylist = await Partylist.findByIdAndUpdate(id, updateData, {
-      new: true,
-      runValidators: true
-    }).populate("ssgElectionId", "title ssgElectionId electionYear status")
-
-    // Log the update
-    await AuditLog.logUserAction(
-      "UPDATE_PARTYLIST",
-      req.user,
-      `Partylist updated - ${updatedPartylist.partylistName} (${updatedPartylist.partylistId})${candidateCount > 0 ? ` - ${candidateCount} candidates affected` : ""}`,
-      req
-    )
-
-    res.json(updatedPartylist)
-  } catch (error) {
-    // Handle duplicate key errors
-    if (error.code === 11000) {
-      const keyPattern = error.keyPattern || {}
-      const keyValue = error.keyValue || {}
+      // Check for candidates if trying to change critical info during active election
+      const candidateCount = await Candidate.countDocuments({ 
+        partylistId: id,
+        isActive: true
+      })
       
-      if (keyPattern.partylistName || keyValue.partylistName || 
-          keyPattern['electionId'] || keyPattern['ssgElectionId']) {
-        error.message = "Partylist name already exists in this SSG election"
+      if (partylist.ssgElectionId.status === "active" && candidateCount > 0 && partylistName) {
+        const error = new Error("Cannot change partylist name during active SSG election with existing candidates")
         error.statusCode = 400
-      } else {
-        error.message = "Duplicate entry detected during update"
-        error.statusCode = 400
+        return next(error)
       }
+
+      const updateData = {}
+
+      // Validate and update partylist name
+      if (partylistName !== undefined) {
+        const trimmedName = partylistName.trim()
+        if (!trimmedName) {
+          const error = new Error("Partylist name cannot be empty")
+          error.statusCode = 400
+          return next(error)
+        }
+
+        // FIXED: Check for duplicate name ONLY in same SSG election (excluding current partylist)
+        const existingName = await Partylist.findOne({
+          ssgElectionId: partylist.ssgElectionId._id,
+          partylistName: { $regex: new RegExp(`^${trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+          _id: { $ne: id }
+        })
+        
+        if (existingName) {
+          const error = new Error(`Partylist name "${trimmedName}" already exists in this SSG election`)
+          error.statusCode = 400
+          return next(error)
+        }
+
+        updateData.partylistName = trimmedName
+      }
+
+      // Update description
+      if (description !== undefined) {
+        updateData.description = description?.trim() || null
+      }
+
+      // Update active status
+      if (isActive !== undefined) {
+        updateData.isActive = Boolean(isActive)
+      }
+
+      // Process logo update
+      if (logo !== undefined) {
+        if (logo === null) {
+          updateData.logo = null
+        } else if (typeof logo === 'string' && logo.startsWith('data:image/')) {
+          const base64Data = logo.replace(/^data:image\/\w+;base64,/, '')
+          const logoBuffer = Buffer.from(base64Data, 'base64')
+          
+          if (logoBuffer.length > 2 * 1024 * 1024) {
+            const error = new Error("Logo file size must be less than 2MB")
+            error.statusCode = 400
+            return next(error)
+          }
+          
+          updateData.logo = logoBuffer
+        } else {
+          const error = new Error("Invalid logo format. Must be base64 encoded image or null.")
+          error.statusCode = 400
+          return next(error)
+        }
+      }
+
+      const updatedPartylist = await Partylist.findByIdAndUpdate(id, updateData, {
+        new: true,
+        runValidators: true
+      }).populate("ssgElectionId", "title ssgElectionId electionYear status")
+
+      // Log the update
+      await AuditLog.logUserAction(
+        "UPDATE_PARTYLIST",
+        req.user,
+        `Partylist updated - ${updatedPartylist.partylistName} (${updatedPartylist.partylistId})${candidateCount > 0 ? ` - ${candidateCount} candidates affected` : ""}`,
+        req
+      )
+
+      res.json(updatedPartylist)
+    } catch (error) {
+      // Handle duplicate key errors
+      if (error.code === 11000) {
+        const keyPattern = error.keyPattern || {}
+        const keyValue = error.keyValue || {}
+        
+        if ((keyPattern.ssgElectionId && keyPattern.partylistName) || keyValue.partylistName) {
+          error.message = `Partylist name "${keyValue.partylistName || 'unknown'}" already exists in this SSG election`
+          error.statusCode = 400
+        } else {
+          error.message = "Duplicate entry detected during update"
+          error.statusCode = 400
+        }
+      }
+      next(error)
     }
-    next(error)
   }
-}
 
   // Delete partylist
   static async deletePartylist(req, res, next) {

@@ -17,6 +17,10 @@ router.put("/ssg/elections/:ssgElectionId/reorder", authorizeRoles("election_com
 router.get("/ssg/:positionId/stats", authorizeStaffAndVoters("election_committee", "sao", "voter"), PositionController.getSSGPositionStats)
 router.get("/ssg/:positionId/can-delete", authorizeRoles("election_committee"), PositionController.canDeleteSSGPosition)
 
+// NEW ROUTES - Add these missing ones
+router.get("/ssg/elections/:ssgElectionId/candidate-limits", authorizeStaffAndVoters("election_committee", "sao", "voter"), PositionController.getSSGPositionCandidateLimits)
+router.get("/ssg/:positionId/validate-deletion", authorizeRoles("election_committee"), PositionController.validateSSGPositionDeletion)
+
 // Departmental Position Routes
 router.get("/departmental", authorizeRoles("election_committee", "sao", "voter"), PositionController.getAllDepartmentalPositions)
 router.get("/departmental/:id", authorizeRoles("election_committee", "sao", "voter"), PositionController.getDepartmentalPositionById)

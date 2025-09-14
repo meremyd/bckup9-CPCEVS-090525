@@ -85,30 +85,138 @@ class PositionController {
   }
 
   static async createSSGPosition(req, res) {
-    try {
-      const { ssgElectionId, positionName, positionOrder, maxVotes, maxCandidates, description } = req.body
+  try {
+    const { 
+      ssgElectionId, 
+      positionName, 
+      positionOrder, 
+      maxVotes, 
+      maxCandidates, 
+      maxCandidatesPerPartylist,  // NEW FIELD
+      description 
+    } = req.body
 
-      // Validation
-      if (!ssgElectionId || !positionName) {
-        return res.status(400).json({
-          success: false,
-          message: "SSG Election ID and position name are required"
-        })
-      }
+    // Validation
+    if (!ssgElectionId || !positionName) {
+      return res.status(400).json({
+        success: false,
+        message: "SSG Election ID and position name are required"
+      })
+    }
 
-      // Check if SSG election exists
-      const ssgElection = await SSGElection.findById(ssgElectionId)
-      if (!ssgElection) {
-        return res.status(404).json({
-          success: false,
-          message: "SSG election not found"
-        })
-      }
+    // Validate maxCandidatesPerPartylist
+    if (maxCandidatesPerPartylist !== undefined && 
+        (!Number.isInteger(maxCandidatesPerPartylist) || maxCandidatesPerPartylist < 1)) {
+      return res.status(400).json({
+        success: false,
+        message: "Maximum candidates per partylist must be a positive integer"
+      })
+    }
 
-      // Check for duplicate position name in the same election
+    // Check if SSG election exists
+    const ssgElection = await SSGElection.findById(ssgElectionId)
+    if (!ssgElection) {
+      return res.status(404).json({
+        success: false,
+        message: "SSG election not found"
+      })
+    }
+
+    // Check for duplicate position name in the same election
+    const existingPosition = await Position.findOne({
+      ssgElectionId,
+      positionName: { $regex: new RegExp(`^${positionName}$`, 'i') }
+    })
+
+    if (existingPosition) {
+      return res.status(400).json({
+        success: false,
+        message: "Position name already exists in this SSG election"
+      })
+    }
+
+    // Get next position order if not provided
+    let finalPositionOrder = positionOrder
+    if (!finalPositionOrder) {
+      const lastPosition = await Position.findOne({ ssgElectionId })
+        .sort({ positionOrder: -1 })
+      finalPositionOrder = lastPosition ? lastPosition.positionOrder + 1 : 1
+    }
+
+    const newPosition = new Position({
+      ssgElectionId,
+      positionName: positionName.trim(),
+      positionOrder: finalPositionOrder,
+      maxVotes: maxVotes || 1,
+      maxCandidates: maxCandidates || 10,
+      maxCandidatesPerPartylist: maxCandidatesPerPartylist || 1,  // NEW FIELD
+      description: description?.trim() || null
+    })
+
+    await newPosition.save()
+    await newPosition.populate('ssgElectionId', 'title electionYear status')
+
+    await AuditLog.logUserAction(
+      "CREATE_POSITION",
+      req.user,
+      `Created SSG position: ${newPosition.positionName} (max ${newPosition.maxCandidatesPerPartylist} per partylist) for election ${ssgElection.title}`,
+      req
+    )
+
+    res.status(201).json({
+      success: true,
+      message: "SSG position created successfully",
+      data: newPosition
+    })
+  } catch (error) {
+    console.error("Error creating SSG position:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to create SSG position",
+      error: error.message
+    })
+  }
+}
+
+  static async updateSSGPosition(req, res) {
+  try {
+    const { id } = req.params
+    const { 
+      positionName, 
+      positionOrder, 
+      maxVotes, 
+      maxCandidates, 
+      maxCandidatesPerPartylist,  // NEW FIELD
+      description, 
+      isActive 
+    } = req.body
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid position ID format"
+      })
+    }
+
+    const position = await Position.findOne({
+      _id: id,
+      ssgElectionId: { $ne: null },
+      deptElectionId: null
+    })
+
+    if (!position) {
+      return res.status(404).json({
+        success: false,
+        message: "SSG position not found"
+      })
+    }
+
+    // Check for duplicate position name if name is being changed
+    if (positionName && positionName !== position.positionName) {
       const existingPosition = await Position.findOne({
-        ssgElectionId,
-        positionName: { $regex: new RegExp(`^${positionName}$`, 'i') }
+        ssgElectionId: position.ssgElectionId,
+        positionName: { $regex: new RegExp(`^${positionName}$`, 'i') },
+        _id: { $ne: id }
       })
 
       if (existingPosition) {
@@ -117,122 +225,300 @@ class PositionController {
           message: "Position name already exists in this SSG election"
         })
       }
-
-      // Get next position order if not provided
-      let finalPositionOrder = positionOrder
-      if (!finalPositionOrder) {
-        const lastPosition = await Position.findOne({ ssgElectionId })
-          .sort({ positionOrder: -1 })
-        finalPositionOrder = lastPosition ? lastPosition.positionOrder + 1 : 1
-      }
-
-      const newPosition = new Position({
-        ssgElectionId,
-        positionName: positionName.trim(),
-        positionOrder: finalPositionOrder,
-        maxVotes: maxVotes || 1,
-        maxCandidates: maxCandidates || 10,
-        description: description?.trim() || null
-      })
-
-      await newPosition.save()
-      await newPosition.populate('ssgElectionId', 'title electionYear status')
-
-      await AuditLog.logUserAction(
-        "CREATE_POSITION",
-        req.user,
-        `Created SSG position: ${newPosition.positionName} for election ${ssgElection.title}`,
-        req
-      )
-
-      res.status(201).json({
-        success: true,
-        message: "SSG position created successfully",
-        data: newPosition
-      })
-    } catch (error) {
-      console.error("Error creating SSG position:", error)
-      res.status(500).json({
-        success: false,
-        message: "Failed to create SSG position",
-        error: error.message
-      })
     }
-  }
 
-  static async updateSSGPosition(req, res) {
-    try {
-      const { id } = req.params
-      const { positionName, positionOrder, maxVotes, maxCandidates, description, isActive } = req.body
-
-      if (!mongoose.Types.ObjectId.isValid(id)) {
+    // Validate maxCandidatesPerPartylist if being updated
+    if (maxCandidatesPerPartylist !== undefined) {
+      if (!Number.isInteger(maxCandidatesPerPartylist) || maxCandidatesPerPartylist < 1) {
         return res.status(400).json({
           success: false,
-          message: "Invalid position ID format"
+          message: "Maximum candidates per partylist must be a positive integer"
         })
       }
 
-      const position = await Position.findOne({
-        _id: id,
-        ssgElectionId: { $ne: null },
-        deptElectionId: null
-      })
-
-      if (!position) {
-        return res.status(404).json({
-          success: false,
-          message: "SSG position not found"
-        })
-      }
-
-      // Check for duplicate position name if name is being changed
-      if (positionName && positionName !== position.positionName) {
-        const existingPosition = await Position.findOne({
-          ssgElectionId: position.ssgElectionId,
-          positionName: { $regex: new RegExp(`^${positionName}$`, 'i') },
-          _id: { $ne: id }
-        })
-
-        if (existingPosition) {
-          return res.status(400).json({
-            success: false,
-            message: "Position name already exists in this SSG election"
-          })
+      // Check if reducing the limit would affect existing candidates
+      const Candidate = require("../models/Candidate")
+      const maxCurrentCandidatesInAnyPartylist = await Candidate.aggregate([
+        { 
+          $match: { 
+            positionId: position._id,
+            partylistId: { $ne: null },
+            isActive: true
+          }
+        },
+        { 
+          $group: { 
+            _id: "$partylistId", 
+            count: { $sum: 1 } 
+          } 
+        },
+        { 
+          $group: { 
+            _id: null, 
+            maxCount: { $max: "$count" } 
+          } 
         }
+      ])
+
+      const currentMax = maxCurrentCandidatesInAnyPartylist[0]?.maxCount || 0
+      
+      if (currentMax > maxCandidatesPerPartylist) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot reduce limit to ${maxCandidatesPerPartylist}. Some partylists currently have ${currentMax} candidates for this position.`
+        })
       }
+    }
 
-      // Update fields
-      if (positionName) position.positionName = positionName.trim()
-      if (positionOrder !== undefined) position.positionOrder = positionOrder
-      if (maxVotes !== undefined) position.maxVotes = maxVotes
-      if (maxCandidates !== undefined) position.maxCandidates = maxCandidates
-      if (description !== undefined) position.description = description?.trim() || null
-      if (isActive !== undefined) position.isActive = isActive
+    // Update fields
+    if (positionName) position.positionName = positionName.trim()
+    if (positionOrder !== undefined) position.positionOrder = positionOrder
+    if (maxVotes !== undefined) position.maxVotes = maxVotes
+    if (maxCandidates !== undefined) position.maxCandidates = maxCandidates
+    if (maxCandidatesPerPartylist !== undefined) position.maxCandidatesPerPartylist = maxCandidatesPerPartylist  // NEW
+    if (description !== undefined) position.description = description?.trim() || null
+    if (isActive !== undefined) position.isActive = isActive
 
-      await position.save()
-      await position.populate('ssgElectionId', 'title electionYear status')
+    await position.save()
+    await position.populate('ssgElectionId', 'title electionYear status')
 
-      await AuditLog.logUserAction(
-        "UPDATE_POSITION",
-        req.user,
-        `Updated SSG position: ${position.positionName}`,
-        req
-      )
+    await AuditLog.logUserAction(
+      "UPDATE_POSITION",
+      req.user,
+      `Updated SSG position: ${position.positionName} (max ${position.maxCandidatesPerPartylist} per partylist)`,
+      req
+    )
 
-      res.status(200).json({
-        success: true,
-        message: "SSG position updated successfully",
-        data: position
-      })
-    } catch (error) {
-      console.error("Error updating SSG position:", error)
-      res.status(500).json({
+    res.status(200).json({
+      success: true,
+      message: "SSG position updated successfully",
+      data: position
+    })
+  } catch (error) {
+    console.error("Error updating SSG position:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to update SSG position",
+      error: error.message
+    })
+  }
+}
+
+
+static async getSSGPositionCandidateLimits(req, res) {
+  try {
+    const { ssgElectionId } = req.params
+
+    if (!mongoose.Types.ObjectId.isValid(ssgElectionId)) {
+      return res.status(400).json({
         success: false,
-        message: "Failed to update SSG position",
-        error: error.message
+        message: "Invalid SSG election ID format"
       })
     }
+
+    // Check if SSG election exists
+    const ssgElection = await SSGElection.findById(ssgElectionId)
+    if (!ssgElection) {
+      return res.status(404).json({
+        success: false,
+        message: "SSG election not found"
+      })
+    }
+
+    // Get all positions for this SSG election
+    const positions = await Position.find({
+      ssgElectionId,
+      isActive: true
+    }).sort({ positionOrder: 1 })
+
+    // Get candidate statistics for each position
+    const Candidate = require("../models/Candidate")
+    const Partylist = require("../models/Partylist")
+    
+    const positionsWithStats = await Promise.all(positions.map(async (position) => {
+      // Get all partylists for this election
+      const partylists = await Partylist.find({
+        ssgElectionId,
+        isActive: true
+      }).select('_id partylistName')
+
+      // Get candidate count per partylist for this position
+      const partylistStats = await Promise.all(partylists.map(async (partylist) => {
+        const candidateCount = await Candidate.countDocuments({
+          positionId: position._id,
+          partylistId: partylist._id,
+          isActive: true
+        })
+
+        return {
+          partylistId: partylist._id,
+          partylistName: partylist.partylistName,
+          currentCandidates: candidateCount,
+          maxAllowed: position.maxCandidatesPerPartylist,
+          canAddMore: candidateCount < position.maxCandidatesPerPartylist,
+          remaining: Math.max(0, position.maxCandidatesPerPartylist - candidateCount),
+          percentageFilled: position.maxCandidatesPerPartylist > 0 ? 
+            Math.round((candidateCount / position.maxCandidatesPerPartylist) * 100) : 0
+        }
+      }))
+
+      // Get total candidates (including independent)
+      const totalCandidates = await Candidate.countDocuments({
+        positionId: position._id,
+        ssgElectionId,
+        isActive: true
+      })
+
+      const independentCandidates = await Candidate.countDocuments({
+        positionId: position._id,
+        ssgElectionId,
+        partylistId: null,
+        isActive: true
+      })
+
+      return {
+        positionId: position._id,
+        positionName: position.positionName,
+        positionOrder: position.positionOrder,
+        maxCandidatesPerPartylist: position.maxCandidatesPerPartylist,
+        totalCandidates,
+        independentCandidates,
+        partylistBreakdown: partylistStats,
+        summary: {
+          totalPartylists: partylists.length,
+          partylistsAtCapacity: partylistStats.filter(p => !p.canAddMore).length,
+          partylistsWithCandidates: partylistStats.filter(p => p.currentCandidates > 0).length
+        }
+      }
+    }))
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Retrieved position candidate limits for SSG election: ${ssgElection.title}`,
+      req
+    )
+
+    res.status(200).json({
+      success: true,
+      message: "Position candidate limits retrieved successfully",
+      data: {
+        ssgElection: {
+          _id: ssgElection._id,
+          title: ssgElection.title,
+          electionYear: ssgElection.electionYear,
+          status: ssgElection.status
+        },
+        positions: positionsWithStats
+      }
+    })
+  } catch (error) {
+    console.error("Error getting position candidate limits:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve position candidate limits",
+      error: error.message
+    })
   }
+}
+
+// NEW: Validate if position can be deleted based on candidate limits
+static async validateSSGPositionDeletion(req, res) {
+  try {
+    const { positionId } = req.params
+
+    if (!mongoose.Types.ObjectId.isValid(positionId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid position ID format"
+      })
+    }
+
+    const position = await Position.findOne({
+      _id: positionId,
+      ssgElectionId: { $ne: null },
+      deptElectionId: null
+    })
+
+    if (!position) {
+      return res.status(404).json({
+        success: false,
+        message: "SSG position not found"
+      })
+    }
+
+    const Candidate = require("../models/Candidate")
+    const candidateCount = await Candidate.countDocuments({ 
+      positionId,
+      isActive: true 
+    })
+
+    const canDelete = candidateCount === 0
+    
+    // Get partylist breakdown if there are candidates
+    let partylistBreakdown = []
+    if (candidateCount > 0) {
+      const breakdown = await Candidate.aggregate([
+        { 
+          $match: { 
+            positionId: new mongoose.Types.ObjectId(positionId),
+            isActive: true 
+          } 
+        },
+        {
+          $group: {
+            _id: "$partylistId",
+            count: { $sum: 1 }
+          }
+        },
+        {
+          $lookup: {
+            from: "partylists",
+            localField: "_id",
+            foreignField: "_id",
+            as: "partylist"
+          }
+        },
+        {
+          $project: {
+            partylistName: {
+              $cond: {
+                if: { $eq: ["$_id", null] },
+                then: "Independent",
+                else: { $arrayElemAt: ["$partylist.partylistName", 0] }
+              }
+            },
+            candidateCount: "$count"
+          }
+        }
+      ])
+      
+      partylistBreakdown = breakdown
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Position deletion validation completed",
+      data: {
+        positionName: position.positionName,
+        maxCandidatesPerPartylist: position.maxCandidatesPerPartylist,
+        canDelete,
+        candidateCount,
+        partylistBreakdown,
+        reason: canDelete ? 
+          "Position can be deleted safely" : 
+          `Position has ${candidateCount} active candidate(s) assigned`
+      }
+    })
+  } catch (error) {
+    console.error("Error validating position deletion:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to validate position deletion",
+      error: error.message
+    })
+  }
+}
 
   static async deleteSSGPosition(req, res) {
     try {

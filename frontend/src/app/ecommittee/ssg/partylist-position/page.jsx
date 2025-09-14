@@ -76,11 +76,26 @@ export default function SSGPositionsPartylistsPage() {
 
   const fetchPositions = async () => {
   try {
+    console.log('Fetching positions for SSG election:', ssgElectionId)
+    
     const response = await positionsAPI.ssg.getByElection(ssgElectionId)
-    // Fix: Correct the data path based on your API response structure
+    
+    console.log('Raw API response:', response)
+    console.log('Positions data:', response.data?.positions)
+    
+    // Log each position's maxCandidatesPerPartylist specifically
+    if (response.data?.positions) {
+      response.data.positions.forEach((pos, index) => {
+        console.log(`Position ${index + 1} (${pos.positionName}):`, {
+          maxCandidatesPerPartylist: pos.maxCandidatesPerPartylist,
+          maxCandidates: pos.maxCandidates,
+          maxVotes: pos.maxVotes
+        })
+      })
+    }
+    
     setPositions(response.data?.positions || [])
     
-    // Fix: Access selectedElection from the correct path
     if (response.data?.selectedElection) {
       setSSGElectionData(response.data.selectedElection)
     }
@@ -157,6 +172,18 @@ export default function SSGPositionsPartylistsPage() {
           </div>
           
           <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Max Candidates</label>
+            <input id="maxCandidates" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent" type="number" placeholder="10" min="1" value="10">
+            <div class="text-xs text-gray-500 mt-1">Maximum total candidates for this position</div>
+          </div>
+          
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Max Candidates Per Partylist</label>
+            <input id="maxCandidatesPerPartylist" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent" type="number" placeholder="1" min="1" value="1">
+            <div class="text-xs text-gray-500 mt-1">Maximum candidates per partylist for this position</div>
+          </div>
+          
+          <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
             <textarea id="description" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent resize-none" rows="3" placeholder="Position responsibilities and requirements..."></textarea>
           </div>
@@ -175,6 +202,8 @@ export default function SSGPositionsPartylistsPage() {
         const positionName = document.getElementById('positionName').value.trim()
         const positionOrder = document.getElementById('positionOrder').value
         const maxVotes = document.getElementById('maxVotes').value
+        const maxCandidates = document.getElementById('maxCandidates').value
+        const maxCandidatesPerPartylist = document.getElementById('maxCandidatesPerPartylist').value
         const description = document.getElementById('description').value.trim()
 
         if (!positionName) {
@@ -192,6 +221,8 @@ export default function SSGPositionsPartylistsPage() {
           positionName,
           positionOrder: parseInt(positionOrder),
           maxVotes: parseInt(maxVotes) || 1,
+          maxCandidates: parseInt(maxCandidates) || 10,
+          maxCandidatesPerPartylist: parseInt(maxCandidatesPerPartylist) || 1,
           description: description || undefined
         }
       }
@@ -270,7 +301,6 @@ export default function SSGPositionsPartylistsPage() {
         popup: 'rounded-xl'
       },
       didOpen: () => {
-        // Handle logo preview
         const logoInput = document.getElementById('logo')
         const logoPreview = document.getElementById('logoPreview')
         const previewImage = document.getElementById('previewImage')
@@ -319,7 +349,6 @@ export default function SSGPositionsPartylistsPage() {
           description: description || undefined
         }
 
-        // Convert logo to base64 if provided
         if (logoFile) {
           return new Promise((resolve) => {
             const reader = new FileReader()
@@ -360,95 +389,124 @@ export default function SSGPositionsPartylistsPage() {
   }
 
   const handleEditPosition = async (position) => {
-    const { value: formValues } = await Swal.fire({
-      title: 'Edit Position',
-      html: `
-        <div class="space-y-6 text-left max-w-md mx-auto">
-          <div class="bg-gray-50 p-4 rounded-lg border">
-            <label class="block text-sm font-medium text-gray-700 mb-2">SSG Election</label>
-            <div class="text-sm font-semibold text-[#001f65] bg-white p-2 rounded border">
-              ${ssgElectionData?.title || 'Loading...'}
-            </div>
-          </div>
-          
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Position Name <span class="text-red-500">*</span></label>
-            <input id="positionName" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent" value="${position.positionName}" required>
-          </div>
-          
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Position Order <span class="text-red-500">*</span></label>
-            <input id="positionOrder" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent" type="number" value="${position.positionOrder || ''}" min="1" required>
-          </div>
-          
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Max Votes</label>
-            <input id="maxVotes" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent" type="number" value="${position.maxVotes || 1}" min="1">
-          </div>
-          
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
-            <textarea id="description" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent resize-none" rows="3">${position.description || ''}</textarea>
+  const { value: formValues } = await Swal.fire({
+    title: 'Edit Position',
+    html: `
+      <div class="space-y-6 text-left max-w-md mx-auto">
+        <div class="bg-gray-50 p-4 rounded-lg border">
+          <label class="block text-sm font-medium text-gray-700 mb-2">SSG Election</label>
+          <div class="text-sm font-semibold text-[#001f65] bg-white p-2 rounded border">
+            ${ssgElectionData?.title || 'Loading...'}
           </div>
         </div>
-      `,
-      showCancelButton: true,
-      confirmButtonText: 'Update Position',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#001f65',
-      cancelButtonColor: '#6b7280',
-      width: '500px',
-      customClass: {
-        popup: 'rounded-xl'
-      },
-      preConfirm: () => {
-        const positionName = document.getElementById('positionName').value.trim()
-        const positionOrder = document.getElementById('positionOrder').value
-        const maxVotes = document.getElementById('maxVotes').value
-        const description = document.getElementById('description').value.trim()
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Position Name <span class="text-red-500">*</span></label>
+          <input id="positionName" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent" value="${position.positionName}" required>
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Position Order <span class="text-red-500">*</span></label>
+          <input id="positionOrder" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent" type="number" value="${position.positionOrder || ''}" min="1" required>
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Max Votes</label>
+          <input id="maxVotes" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent" type="number" value="${position.maxVotes ?? 1}" min="1">
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Max Candidates</label>
+          <input id="maxCandidates" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent" type="number" value="${position.maxCandidates ?? 10}" min="1">
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Max Candidates Per Partylist</label>
+          <input id="maxCandidatesPerPartylist" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent" type="number" value="${position.maxCandidatesPerPartylist ?? 1}" min="1">
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
+          <textarea id="description" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent resize-none" rows="3">${position.description || ''}</textarea>
+        </div>
+      </div>
+    `,
+    showCancelButton: true,
+    confirmButtonText: 'Update Position',
+    cancelButtonText: 'Cancel',
+    confirmButtonColor: '#001f65',
+    cancelButtonColor: '#6b7280',
+    width: '500px',
+    customClass: {
+      popup: 'rounded-xl'
+    },
+    preConfirm: () => {
+      const positionName = document.getElementById('positionName').value.trim()
+      const positionOrder = document.getElementById('positionOrder').value
+      const maxVotes = document.getElementById('maxVotes').value
+      const maxCandidates = document.getElementById('maxCandidates').value
+      const maxCandidatesPerPartylist = document.getElementById('maxCandidatesPerPartylist').value
+      const description = document.getElementById('description').value.trim()
 
-        if (!positionName) {
-          Swal.showValidationMessage('Position name is required')
-          return false
-        }
-
-        if (!positionOrder || positionOrder < 1) {
-          Swal.showValidationMessage('Position order is required and must be at least 1')
-          return false
-        }
-
-        return {
-          positionName,
-          positionOrder: parseInt(positionOrder),
-          maxVotes: parseInt(maxVotes) || 1,
-          description: description || undefined
-        }
+      if (!positionName) {
+        Swal.showValidationMessage('Position name is required')
+        return false
       }
-    })
 
-    if (formValues) {
-      try {
-        setLoading(true)
-        await positionsAPI.ssg.update(position._id, formValues)
-        
-        Swal.fire({
-          icon: 'success',
-          title: 'Success!',
-          text: 'Position updated successfully!',
-          timer: 2000,
-          showConfirmButton: false,
-          toast: true,
-          position: 'top-end'
-        })
-        
-        await fetchPositions()
-      } catch (error) {
-        handleAPIError(error, 'Failed to update position')
-      } finally {
-        setLoading(false)
+      if (!positionOrder || positionOrder < 1) {
+        Swal.showValidationMessage('Position order is required and must be at least 1')
+        return false
+      }
+
+      return {
+        positionName,
+        positionOrder: parseInt(positionOrder),
+        maxVotes: parseInt(maxVotes) || 1,
+        maxCandidates: parseInt(maxCandidates) || 10,
+        maxCandidatesPerPartylist: parseInt(maxCandidatesPerPartylist) || 1,
+        description: description || undefined
       }
     }
+  })
+
+  if (formValues) {
+    try {
+      setLoading(true)
+      
+      // Debug: Log what we're sending
+      console.log('Updating position with data:', formValues)
+      console.log('Position ID:', position._id)
+      
+      const response = await positionsAPI.ssg.update(position._id, formValues)
+      
+      // Debug: Log the response
+      console.log('API response:', response)
+      
+      Swal.fire({
+        icon: 'success',
+        title: 'Success!',
+        text: 'Position updated successfully!',
+        timer: 2000,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end'
+      })
+      
+      // Force a fresh fetch instead of relying on cache
+      console.log('Fetching fresh position data...')
+      await fetchPositions()
+      
+      // Debug: Log the positions after fetch
+      console.log('Positions after update:', positions)
+      
+    } catch (error) {
+      console.error('Error updating position:', error)
+      handleAPIError(error, 'Failed to update position')
+    } finally {
+      setLoading(false)
+    }
   }
+}
 
   const handleEditPartylist = async (partylist) => {
     const currentLogoUrl = partylist.logo ? `data:image/jpeg;base64,${partylist.logo.toString('base64')}` : null
@@ -509,7 +567,6 @@ export default function SSGPositionsPartylistsPage() {
         popup: 'rounded-xl'
       },
       didOpen: () => {
-        // Handle logo preview and removal
         const logoInput = document.getElementById('logo')
         const logoPreview = document.getElementById('logoPreview')
         const previewImage = document.getElementById('previewImage')
@@ -517,7 +574,6 @@ export default function SSGPositionsPartylistsPage() {
         
         if (removeButton) {
           removeButton.addEventListener('click', () => {
-            // This will be handled in preConfirm
             removeButton.textContent = 'Logo will be removed'
             removeButton.classList.add('font-bold')
           })
@@ -561,7 +617,6 @@ export default function SSGPositionsPartylistsPage() {
           description: description || undefined
         }
 
-        // Handle logo changes
         if (shouldRemoveLogo) {
           result.logo = null
         }
@@ -815,86 +870,98 @@ export default function SSGPositionsPartylistsPage() {
           )}
 
           {/* Positions Table */}
-          {activeTab === 'positions' && !loading && (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Position
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Order
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Max Votes
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Description
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Candidates
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredPositions.map((position) => (
-                    <tr key={position._id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{position.positionName}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {position.positionOrder}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-900">{position.maxVotes || 1}</span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-gray-500 max-w-xs truncate">
-                          {position.description || 'No description'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-900">
-                          {position.activeCandidateCount || 0} active
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end space-x-2">
-                          <button
-                            onClick={() => handleEditPosition(position)}
-                            className="text-indigo-600 hover:text-indigo-900 p-1"
-                            title="Edit Position"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeletePosition(position)}
-                            className="text-red-600 hover:text-red-900 p-1"
-                            title="Delete Position"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {filteredPositions.length === 0 && (
-                    <tr>
-                      <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
-                        {searchTerm ? 'No positions match your search.' : 'No positions found. Create your first position!'}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
+{activeTab === 'positions' && !loading && (
+  <div className="overflow-x-auto">
+    <table className="min-w-full divide-y divide-gray-200">
+      <thead className="bg-gray-50">
+        <tr>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            Position
+          </th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            Order
+          </th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            Max Votes
+          </th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            Max Candidates
+          </th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            Max Per Partylist
+          </th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            Description
+          </th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            Candidates
+          </th>
+          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+            Actions
+          </th>
+        </tr>
+      </thead>
+      <tbody className="bg-white divide-y divide-gray-200">
+        {filteredPositions.map((position) => (
+          <tr key={position._id} className="hover:bg-gray-50">
+            <td className="px-6 py-4 whitespace-nowrap">
+              <div className="text-sm font-medium text-gray-900">{position.positionName}</div>
+            </td>
+            <td className="px-6 py-4 whitespace-nowrap">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                {position.positionOrder || 0}
+              </span>
+            </td>
+            <td className="px-6 py-4 whitespace-nowrap">
+              <span className="text-sm text-gray-900">{position.maxVotes ?? 1}</span>
+            </td>
+            <td className="px-6 py-4 whitespace-nowrap">
+              <span className="text-sm text-gray-900">{position.maxCandidates ?? 10}</span>
+            </td>
+            <td className="px-6 py-4 whitespace-nowrap">
+              <span className="text-sm text-gray-900">{position.maxCandidatesPerPartylist ?? 1}</span>
+            </td>
+            <td className="px-6 py-4">
+              <div className="text-sm text-gray-500 max-w-xs truncate">
+                {position.description || 'No description'}
+              </div>
+            </td>
+            <td className="px-6 py-4 whitespace-nowrap">
+              <span className="text-sm text-gray-900">
+                {position.activeCandidateCount || 0} active
+              </span>
+            </td>
+            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+              <div className="flex items-center justify-end space-x-2">
+                <button
+                  onClick={() => handleEditPosition(position)}
+                  className="text-indigo-600 hover:text-indigo-900 p-1"
+                  title="Edit Position"
+                >
+                  <Edit className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handleDeletePosition(position)}
+                  className="text-red-600 hover:text-red-900 p-1"
+                  title="Delete Position"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </td>
+          </tr>
+        ))}
+        {filteredPositions.length === 0 && (
+          <tr>
+            <td colSpan="8" className="px-6 py-8 text-center text-gray-500">
+              {searchTerm ? 'No positions match your search.' : 'No positions found. Create your first position!'}
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  </div>
+)}
 
           {/* Partylists Table */}
           {activeTab === 'partylists' && !loading && (

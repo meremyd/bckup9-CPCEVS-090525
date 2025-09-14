@@ -30,7 +30,7 @@ export default function SSGCandidatesPage() {
   const [ssgCandidates, setSsgCandidates] = useState([])
   const [ssgPositions, setSsgPositions] = useState([])
   const [ssgPartylists, setSsgPartylists] = useState([])
-  const [allVoters, setAllVoters] = useState([]) // Changed from registeredVoters to allVoters
+  const [allVoters, setAllVoters] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingCandidate, setEditingCandidate] = useState(null)
@@ -110,14 +110,36 @@ export default function SSGCandidatesPage() {
     })
   }
 
-  // Calculate candidate statistics
-  const calculateCandidateStats = (candidates) => {
+  // Calculate candidate statistics with proper counting
+  const calculateCandidateStats = (candidates, positions, partylists) => {
     const stats = {
       total: candidates.length,
       active: 0,
       inactive: 0,
       byPosition: {},
       byPartylist: {}
+    }
+
+    // Initialize position counts
+    positions.forEach(position => {
+      stats.byPosition[position._id] = {
+        name: position.positionName,
+        count: 0
+      }
+    })
+
+    // Initialize partylist counts
+    partylists.forEach(partylist => {
+      stats.byPartylist[partylist._id] = {
+        name: partylist.partylistName,
+        count: 0
+      }
+    })
+
+    // Initialize independent count
+    stats.byPartylist['independent'] = {
+      name: 'Independent',
+      count: 0
     }
 
     candidates.forEach(candidate => {
@@ -128,13 +150,20 @@ export default function SSGCandidatesPage() {
         stats.inactive++
       }
 
-      // Count by position
-      const positionName = candidate.positionId?.positionName || 'Unknown Position'
-      stats.byPosition[positionName] = (stats.byPosition[positionName] || 0) + 1
+      // Count by position - use proper ID extraction
+      const positionId = candidate.positionId?._id || candidate.positionId
+      if (positionId && stats.byPosition[positionId]) {
+        stats.byPosition[positionId].count++
+      }
 
-      // Count by partylist
-      const partylistName = candidate.partylistId?.partylistName || 'Independent'
-      stats.byPartylist[partylistName] = (stats.byPartylist[partylistName] || 0) + 1
+      // Count by partylist - handle independents
+      const partylistId = candidate.partylistId?._id || candidate.partylistId
+      if (partylistId && stats.byPartylist[partylistId]) {
+        stats.byPartylist[partylistId].count++
+      } else {
+        // Independent candidate
+        stats.byPartylist['independent'].count++
+      }
     })
 
     return stats
@@ -151,139 +180,177 @@ export default function SSGCandidatesPage() {
   const fetchData = async () => {
     try {
       setLoading(true)
-
       console.log('Fetching data for SSG election:', ssgElectionId)
 
+      // Use the correct API endpoints based on your controller
       const [candidatesResponse, positionsResponse, partylistsResponse, votersResponse] = await Promise.all([
         candidatesAPI.ssg.getByElection(ssgElectionId, {}),
         positionsAPI.ssg.getByElection(ssgElectionId),
         partylistsAPI.getBySSGElection(ssgElectionId),
-        votersAPI.getAll({ limit: 1000 }) // Changed from getRegistered to getAll
+        votersAPI.getAll({ limit: 1000 }) // Get ALL registered voters
       ])
 
-      console.log('Raw API Responses:')
-      console.log('Candidates Response:', candidatesResponse)
-      console.log('Positions Response:', positionsResponse)
-      console.log('Partylists Response:', partylistsResponse)
-
-      // Extract data based on actual controller response structures
-      const candidatesData = candidatesResponse?.data?.candidates || []
-      
-      // Positions Controller returns: { success: true, data: positions }
-      const positionsData = positionsResponse?.data?.data || positionsResponse?.data || []
-      
-      // Partylists Controller returns: { ssgElection: {...}, partylists: [...] }
-      const partylistsData = partylistsResponse?.partylists || []
-      
-      const votersData = votersResponse?.data?.voters || votersResponse?.data?.data || votersResponse?.data || []
-
-      console.log('Extracted Data Counts:')
-      console.log('Candidates:', candidatesData.length)
-      console.log('Positions:', positionsData.length)
-      console.log('Partylists:', partylistsData.length)
-      console.log('All Voters:', votersData.length)
-
-      // Process candidates
-      const processedCandidates = candidatesData.map((candidate, index) => {
-        const processed = {
-          ...candidate,
-          _id: candidate._id || candidate.id || `candidate-${ssgElectionId}-${index}`,
-          
-          fullName: candidate.fullName || 
-                   candidate.displayName || 
-                   candidate.name || 
-                   (candidate.voterId ? `${candidate.voterId.firstName || ''} ${candidate.voterId.middleName || ''} ${candidate.voterId.lastName || ''}`.replace(/\s+/g, ' ').trim() : '') ||
-                   'Unknown',
-                   
-          position: candidate.position || 
-                   candidate.positionId?.positionName || 
-                   'Unknown Position',
-                   
-          positionOrder: candidate.positionOrder || 
-                        candidate.positionId?.positionOrder || 
-                        999,
-                        
-          partylist: candidate.partylist || 
-                    candidate.partylistId?.partylistName || 
-                    'Independent',
-                    
-          department: candidate.department || 
-                     candidate.voterId?.departmentId?.departmentCode || 
-                     'Unknown',
-                     
-          schoolId: candidate.schoolId || 
-                   candidate.voterId?.schoolId || 
-                   'N/A',
-                   
-          yearLevel: candidate.yearLevel || 
-                    candidate.voterId?.yearLevel || 
-                    'N/A',
-          
-          electionType: 'ssg',
-          isActive: candidate.isActive !== false,
-          candidateNumber: candidate.candidateNumber || 'N/A',
-          platform: candidate.platform || 'No platform provided',
-          hasCampaignPicture: !!candidate.campaignPicture
-        }
-        
-        return processed
+      console.log('API Responses received:', {
+        candidates: !!candidatesResponse,
+        positions: !!positionsResponse,
+        partylists: !!partylistsResponse,
+        voters: !!votersResponse
       })
 
-      // Process positions WITH candidate counts
+      // Process API responses based on the controller structure
+      let candidatesData = []
+      if (candidatesResponse?.data?.candidates) {
+        candidatesData = candidatesResponse.data.candidates
+      } else if (Array.isArray(candidatesResponse?.data)) {
+        candidatesData = candidatesResponse.data
+      }
+
+      let positionsData = []
+      if (positionsResponse?.data?.positions) {
+        positionsData = positionsResponse.data.positions
+      } else if (Array.isArray(positionsResponse?.data)) {
+        positionsData = positionsResponse.data
+      }
+
+      let partylistsData = []
+      if (partylistsResponse?.partylists) {
+        partylistsData = partylistsResponse.partylists
+      } else if (Array.isArray(partylistsResponse?.data)) {
+        partylistsData = partylistsResponse.data
+      }
+
+      let votersData = []
+      if (votersResponse?.data?.voters) {
+        votersData = votersResponse.data.voters
+      } else if (Array.isArray(votersResponse?.data)) {
+        votersData = votersResponse.data
+      }
+
+      console.log('Data counts:', {
+        candidates: candidatesData.length,
+        positions: positionsData.length,
+        partylists: partylistsData.length,
+        voters: votersData.length
+      })
+
+      // Process candidates data with enhanced normalization
+      const processedCandidates = candidatesData.map((candidate, index) => {
+        const processedCandidate = {
+          _id: candidate._id || `candidate-${index}`,
+          candidateNumber: candidate.candidateNumber || 'N/A',
+          platform: candidate.platform || 'No platform provided',
+          isActive: candidate.isActive !== false,
+          
+          // Voter information
+          voterId: candidate.voterId?._id || candidate.voterId,
+          voterInfo: candidate.voterId ? {
+            _id: candidate.voterId._id || candidate.voterId,
+            schoolId: candidate.voterId.schoolId || 'N/A',
+            firstName: candidate.voterId.firstName || '',
+            middleName: candidate.voterId.middleName || '',
+            lastName: candidate.voterId.lastName || '',
+            yearLevel: candidate.voterId.yearLevel || 'N/A',
+            departmentId: candidate.voterId.departmentId || null,
+            isRegistered: candidate.voterId.isRegistered || false
+          } : null,
+          
+          // Position information
+          positionId: candidate.positionId?._id || candidate.positionId,
+          positionInfo: candidate.positionId ? {
+            _id: candidate.positionId._id || candidate.positionId,
+            positionName: candidate.positionId.positionName || 'Unknown Position',
+            positionOrder: candidate.positionId.positionOrder || 999
+          } : null,
+          
+          // Partylist information (can be null for independents)
+          partylistId: candidate.partylistId?._id || candidate.partylistId || null,
+          partylistInfo: candidate.partylistId ? {
+            _id: candidate.partylistId._id || candidate.partylistId,
+            partylistName: candidate.partylistId.partylistName || 'Independent'
+          } : null,
+          
+          // Campaign picture
+          campaignPicture: candidate.campaignPicture || null,
+          hasCampaignPicture: !!candidate.campaignPicture
+        }
+
+        // Add computed fields
+        processedCandidate.fullName = processedCandidate.voterInfo ? 
+          `${processedCandidate.voterInfo.firstName} ${processedCandidate.voterInfo.middleName} ${processedCandidate.voterInfo.lastName}`.replace(/\s+/g, ' ').trim() :
+          'Unknown'
+        
+        processedCandidate.position = processedCandidate.positionInfo?.positionName || 'Unknown Position'
+        processedCandidate.positionOrder = processedCandidate.positionInfo?.positionOrder || 999
+        processedCandidate.partylist = processedCandidate.partylistInfo?.partylistName || 'Independent'
+        processedCandidate.schoolId = processedCandidate.voterInfo?.schoolId || 'N/A'
+        processedCandidate.yearLevel = processedCandidate.voterInfo?.yearLevel || 'N/A'
+        processedCandidate.department = processedCandidate.voterInfo?.departmentId?.departmentCode || 'Unknown'
+        processedCandidate.isRegistered = processedCandidate.voterInfo?.isRegistered || false
+
+        return processedCandidate
+      })
+
+      // Process positions with candidate counts
       const processedPositions = positionsData.map((position, index) => ({
         ...position,
-        _id: position._id || position.id || `position-${ssgElectionId}-${index}`,
-        // Include candidate counts from aggregation
-        candidateCount: position.candidateCount || 0,
-        activeCandidateCount: position.activeCandidateCount || 0
+        _id: position._id || `position-${index}`,
+        positionName: position.positionName || 'Unknown Position',
+        positionOrder: position.positionOrder || 999,
+        maxCandidates: position.maxCandidates || 10,
+        candidateCount: processedCandidates.filter(c => 
+          (c.positionId === position._id || c.positionId?._id === position._id)
+        ).length
       }))
 
-      // Process SSG-specific partylists
+      // Process partylists with candidate counts
       const processedPartylists = partylistsData.map((partylist, index) => ({
         ...partylist,
-        _id: partylist._id || partylist.id || `partylist-${ssgElectionId}-${index}`,
-        // Include candidate counts if they exist
-        candidateCount: partylist.candidateCount || 0,
-        totalVotes: partylist.totalVotes || 0
+        _id: partylist._id || `partylist-${index}`,
+        partylistName: partylist.partylistName || 'Unknown Partylist',
+        description: partylist.description || '',
+        candidateCount: processedCandidates.filter(c => 
+          (c.partylistId === partylist._id || c.partylistId?._id === partylist._id)
+        ).length
       }))
 
-      const processedVoters = votersData.map((voter, index) => ({
-        ...voter,
-        _id: voter._id || voter.id || `voter-${index}`,
-        fullName: voter.fullName || `${voter.firstName || ''} ${voter.middleName || ''} ${voter.lastName || ''}`.replace(/\s+/g, ' ').trim() || 'Unknown'
-      }))
+      // Process voters - filter for registered voters
+      const processedVoters = votersData
+        .map((voter, index) => ({
+          ...voter,
+          _id: voter._id || `voter-${index}`,
+          fullName: voter.fullName || 
+                   `${voter.firstName || ''} ${voter.middleName || ''} ${voter.lastName || ''}`.replace(/\s+/g, ' ').trim(),
+          schoolId: voter.schoolId || 'N/A',
+          departmentId: voter.departmentId || null,
+          yearLevel: voter.yearLevel || 'N/A',
+          isRegistered: voter.isRegistered || false
+        }))
 
-      console.log('Final Processed Data:')
-      console.log('Candidates:', processedCandidates.length, 'items')
-      console.log('SSG Positions with counts:', processedPositions.map(p => ({
-        name: p.positionName,
-        candidateCount: p.candidateCount,
-        activeCandidateCount: p.activeCandidateCount
-      })))
-      console.log('SSG Partylists:', processedPartylists.map(p => ({
-        name: p.partylistName,
-        candidateCount: p.candidateCount
-      })))
+      console.log('Processed data:', {
+        candidates: processedCandidates.length,
+        positions: processedPositions.length,
+        partylists: processedPartylists.length,
+        voters: processedVoters.length
+      })
 
       // Update state
       setSsgCandidates(processedCandidates)
       setSsgPositions(processedPositions)
       setSsgPartylists(processedPartylists)
-      setAllVoters(processedVoters) // Changed from setRegisteredVoters to setAllVoters
-      setCandidateStats(calculateCandidateStats(processedCandidates))
+      setAllVoters(processedVoters)
       
-      console.log('State updated successfully')
-      
+      // Calculate stats with processed data
+      setCandidateStats(calculateCandidateStats(processedCandidates, processedPositions, processedPartylists))
+
     } catch (error) {
-      console.error("Detailed error in fetchData:", error)
-      console.error("Error response:", error.response?.data)
-      console.error("Error status:", error.response?.status)
+      console.error("Error in fetchData:", error)
       showErrorAlert(error)
       
+      // Reset to empty states on error
       setSsgCandidates([])
       setSsgPositions([])
       setSsgPartylists([])
-      setAllVoters([]) // Changed from setRegisteredVoters
+      setAllVoters([])
       setCandidateStats({
         total: 0,
         active: 0,
@@ -296,7 +363,7 @@ export default function SSGCandidatesPage() {
     }
   }
 
-  // Search voters by school ID or name with debouncing
+  // Enhanced voter search with eligibility checking
   const searchVoters = async (searchValue) => {
     if (!searchValue.trim()) {
       setVoterSearchResults([])
@@ -307,12 +374,32 @@ export default function SSGCandidatesPage() {
     setVoterSearchLoading(true)
     
     try {
-      const filteredVoters = allVoters.filter(voter => 
-        voter.schoolId?.toString().includes(searchValue.toLowerCase()) ||
-        voter.fullName?.toLowerCase().includes(searchValue.toLowerCase())
+      const searchTerm = searchValue.toLowerCase()
+      
+      // Filter registered voters by school ID or name
+      const filteredVoters = allVoters.filter(voter => {
+        // Only show registered voters
+        if (!voter.isRegistered) return false
+        
+        const matchesSchoolId = voter.schoolId?.toString().toLowerCase().includes(searchTerm)
+        const matchesName = voter.fullName?.toLowerCase().includes(searchTerm) ||
+                           voter.firstName?.toLowerCase().includes(searchTerm) ||
+                           voter.lastName?.toLowerCase().includes(searchTerm)
+        
+        return matchesSchoolId || matchesName
+      }).filter(voter => {
+        // Exclude voters who are already candidates in this SSG election
+        return !ssgCandidates.some(candidate => 
+          candidate.voterId === voter._id || candidate.voterId?._id === voter._id
+        )
+      })
+      
+      // Sort by name
+      const sortedVoters = filteredVoters.sort((a, b) => 
+        a.fullName.localeCompare(b.fullName)
       )
       
-      setVoterSearchResults(filteredVoters.slice(0, 10)) // Limit to 10 results
+      setVoterSearchResults(sortedVoters.slice(0, 15)) // Show top 15 results
       setShowVoterDropdown(true)
     } catch (error) {
       console.error('Error searching voters:', error)
@@ -322,8 +409,23 @@ export default function SSGCandidatesPage() {
     }
   }
 
-  // Handle voter selection
+  // Handle voter selection with eligibility validation
   const selectVoter = (voter) => {
+    // Check if voter is already a candidate in this SSG election
+    const existingCandidate = ssgCandidates.find(candidate => 
+      candidate.voterId === voter._id || candidate.voterId?._id === voter._id
+    )
+    
+    if (existingCandidate) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Voter Already a Candidate',
+        text: `${voter.fullName} is already a candidate for ${existingCandidate.position} in this SSG election.`,
+        confirmButtonColor: '#001f65'
+      })
+      return
+    }
+
     setSelectedVoter(voter)
     setVoterSearchId(voter.fullName)
     setFormData(prev => ({ ...prev, voterId: voter._id }))
@@ -331,63 +433,84 @@ export default function SSGCandidatesPage() {
     setVoterSearchResults([])
   }
 
-  // Updated Position Filter Dropdown - only shows positions for the selected SSG election
-  const PositionFilterDropdown = () => (
-    <select
-      value={filterPosition}
-      onChange={(e) => setFilterPosition(e.target.value)}
-      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
-    >
-      <option value="">All Positions ({ssgPositions.length})</option>
-      {Array.isArray(ssgPositions) && ssgPositions.map(position => {
-        // Get the count of candidates for this position in the current election
-        const count = ssgCandidates.filter(candidate => 
-          candidate.positionId?._id === position._id || candidate.positionId === position._id
-        ).length
-        return (
-          <option key={position._id} value={position._id}>
-            {position.positionName} ({count})
-          </option>
-        )
-      })}
-    </select>
-  )
+  // Enhanced Position Filter Dropdown with candidate counts
+  const PositionFilterDropdown = () => {
+    return (
+      <select
+        value={filterPosition}
+        onChange={(e) => setFilterPosition(e.target.value)}
+        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+      >
+        <option value="">All Positions ({candidateStats.total})</option>
+        {ssgPositions.map(position => {
+          const candidateCount = candidateStats.byPosition[position._id]?.count || 0
+          
+          return (
+            <option key={position._id} value={position._id}>
+              {position.positionName} ({candidateCount})
+            </option>
+          )
+        })}
+      </select>
+    )
+  }
 
-  // Handle image upload
+  // Handle image upload with proper validation
   const handleImageUpload = (e) => {
     const file = e.target.files[0]
-    if (file) {
-      // Check file size (max 2MB)
-      if (file.size > 2 * 1024 * 1024) {
-        Swal.fire({
-          icon: 'error',
-          title: 'File Too Large',
-          text: 'Please select an image smaller than 2MB.',
-          confirmButtonColor: '#001f65'
-        })
-        return
-      }
+    if (!file) return
 
-      // Check file type
-      if (!file.type.startsWith('image/')) {
-        Swal.fire({
-          icon: 'error',
-          title: 'Invalid File Type',
-          text: 'Please select a valid image file.',
-          confirmButtonColor: '#001f65'
-        })
-        return
-      }
-
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setFormData(prev => ({ 
-          ...prev, 
-          campaignPicture: reader.result.split(',')[1] // Remove data:image/jpeg;base64, prefix
-        }))
-      }
-      reader.readAsDataURL(file)
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      Swal.fire({
+        icon: 'error',
+        title: 'File Too Large',
+        text: 'Please select an image smaller than 2MB.',
+        confirmButtonColor: '#001f65'
+      })
+      return
     }
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Invalid File Type',
+        text: 'Please select a valid image file (JPEG, PNG, GIF).',
+        confirmButtonColor: '#001f65'
+      })
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      try {
+        // Extract base64 data (remove data:image/jpeg;base64, prefix)
+        const base64Data = reader.result.split(',')[1]
+        if (base64Data) {
+          setFormData(prev => ({ ...prev, campaignPicture: base64Data }))
+        } else {
+          throw new Error('Invalid image data')
+        }
+      } catch (error) {
+        console.error('Error processing image:', error)
+        Swal.fire({
+          icon: 'error',
+          title: 'Image Processing Error',
+          text: 'Failed to process the selected image. Please try another image.',
+          confirmButtonColor: '#001f65'
+        })
+      }
+    }
+    reader.onerror = () => {
+      Swal.fire({
+        icon: 'error',
+        title: 'File Read Error',
+        text: 'Failed to read the selected file. Please try again.',
+        confirmButtonColor: '#001f65'
+      })
+    }
+    reader.readAsDataURL(file)
   }
 
   const handleAddCandidate = () => {
@@ -411,23 +534,28 @@ export default function SSGCandidatesPage() {
   const handleEditCandidate = (candidate) => {
     setEditingCandidate(candidate)
     setShowAddForm(true)
+    
     setFormData({
-      voterId: candidate.voterId?._id || '',
-      positionId: candidate.positionId?._id || '',
-      partylistId: candidate.partylistId?._id || '',
+      voterId: candidate.voterId?._id || candidate.voterId || '',
+      positionId: candidate.positionId?._id || candidate.positionId || '',
+      partylistId: candidate.partylistId?._id || candidate.partylistId || '',
       candidateNumber: candidate.candidateNumber || '',
       platform: candidate.platform || '',
       campaignPicture: candidate.campaignPicture || '',
       isActive: candidate.isActive !== false
     })
     
-    // Set voter search data for editing
-    if (candidate.voterId) {
-      setVoterSearchId(candidate.voterId.fullName || '')
-      setSelectedVoter(candidate.voterId)
-    } else {
-      setVoterSearchId('')
-      setSelectedVoter(null)
+    // Set voter data for editing
+    if (candidate.voterInfo) {
+      setVoterSearchId(candidate.fullName || '')
+      setSelectedVoter({
+        _id: candidate.voterInfo._id || candidate.voterId,
+        fullName: candidate.fullName || '',
+        schoolId: candidate.voterInfo.schoolId || '',
+        departmentId: candidate.voterInfo.departmentId || null,
+        yearLevel: candidate.voterInfo.yearLevel || '',
+        isRegistered: candidate.voterInfo.isRegistered || false
+      })
     }
     setVoterSearchResults([])
     setShowVoterDropdown(false)
@@ -448,7 +576,7 @@ export default function SSGCandidatesPage() {
     if (result.isConfirmed) {
       try {
         await candidatesAPI.ssg.delete(candidateId)
-        await fetchData()
+        await fetchData() // Refresh data
         showSuccessAlert('Candidate deleted successfully!')
       } catch (error) {
         console.error('Error deleting candidate:', error)
@@ -457,15 +585,73 @@ export default function SSGCandidatesPage() {
     }
   }
 
+  // Enhanced form validation
+  const validateForm = () => {
+    const errors = []
+    
+    if (!selectedVoter) {
+      errors.push('Please select a voter.')
+    } else {
+      // Check if voter is already a candidate (except when editing)
+      const existingCandidate = ssgCandidates.find(candidate => 
+        (candidate.voterId === selectedVoter._id || candidate.voterId?._id === selectedVoter._id) &&
+        (!editingCandidate || candidate._id !== editingCandidate._id)
+      )
+      
+      if (existingCandidate) {
+        errors.push(`${selectedVoter.fullName} is already a candidate for ${existingCandidate.position} in this SSG election.`)
+      }
+
+      // Check if voter is registered
+      // if (!selectedVoter.isRegistered) {
+      //   errors.push('Only registered voters can be SSG candidates.')
+      // }
+    }
+
+    if (!formData.positionId) {
+      errors.push('Please select a position.')
+    }
+
+    // Validate partylist membership (if changing partylist)
+    if (formData.partylistId && selectedVoter) {
+      const existingPartylistCandidate = ssgCandidates.find(candidate => 
+        (candidate.voterId === selectedVoter._id || candidate.voterId?._id === selectedVoter._id) &&
+        candidate.partylistId && 
+        candidate.partylistId !== formData.partylistId &&
+        candidate.partylistId?._id !== formData.partylistId &&
+        (!editingCandidate || candidate._id !== editingCandidate._id)
+      )
+      
+      if (existingPartylistCandidate) {
+        const partylistName = ssgPartylists.find(p => p._id === existingPartylistCandidate.partylistId || p._id === existingPartylistCandidate.partylistId?._id)?.partylistName || 'another partylist'
+        errors.push(`${selectedVoter.fullName} is already a member of ${partylistName} in this SSG election.`)
+      }
+    }
+
+    return errors
+  }
+
   const handleFormSubmit = async (e) => {
     e.preventDefault()
+    
+    // Enhanced validation
+    const validationErrors = validateForm()
+    if (validationErrors.length > 0) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Error',
+        text: validationErrors[0], // Show first error
+        confirmButtonColor: '#001f65'
+      })
+      return
+    }
+
     setFormLoading(true)
 
     try {
       const submitData = {
         ...formData,
-        ssgElectionId: ssgElectionId,
-        electionType: 'ssg'
+        ssgElectionId: ssgElectionId
       }
 
       // Remove empty partylistId to make candidate independent
@@ -481,7 +667,7 @@ export default function SSGCandidatesPage() {
         showSuccessAlert('Candidate added successfully!')
       }
 
-      await fetchData()
+      await fetchData() // Refresh data
       setShowAddForm(false)
     } catch (error) {
       console.error('Error saving candidate:', error)
@@ -491,24 +677,29 @@ export default function SSGCandidatesPage() {
     }
   }
 
-  // Filter candidates based on search, position, and partylist - only for current election
-  const filteredCandidates = Array.isArray(ssgCandidates) ? ssgCandidates.filter(candidate => {
+  // Enhanced filtering with proper ID matching
+  const filteredCandidates = ssgCandidates.filter(candidate => {
+    // Search filter
     const matchesSearch = searchTerm === '' || 
       candidate.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      candidate.voterId?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      candidate.voterId?.schoolId?.toString().includes(searchTerm.toLowerCase()) ||
-      candidate.platform?.toLowerCase().includes(searchTerm.toLowerCase())
+      candidate.schoolId?.toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
+      candidate.platform?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      candidate.position?.toLowerCase().includes(searchTerm.toLowerCase())
 
+    // Position filter
     const matchesPosition = filterPosition === '' || 
-      candidate.positionId?._id === filterPosition || candidate.positionId === filterPosition
+      candidate.positionId === filterPosition ||
+      candidate.positionId?._id === filterPosition
 
+    // Partylist filter
     const matchesPartylist = selectedPartylist === '' || 
       (selectedPartylist === 'independent' ? 
-        !candidate.partylistId : 
-        (candidate.partylistId?._id === selectedPartylist || candidate.partylistId === selectedPartylist))
+        (!candidate.partylistId) : 
+        (candidate.partylistId === selectedPartylist || 
+         candidate.partylistId?._id === selectedPartylist))
 
     return matchesSearch && matchesPosition && matchesPartylist
-  }) : []
+  })
 
   if (loading) {
     return (
@@ -555,7 +746,7 @@ export default function SSGCandidatesPage() {
 
               <form onSubmit={handleFormSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Voter Search with Dropdown */}
+                  {/* Enhanced Voter Search with Registration Status */}
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Search and Select Voter *
@@ -572,7 +763,7 @@ export default function SSGCandidatesPage() {
                             searchVoters(e.target.value)
                           }, 300)
                         }}
-                        placeholder="Type student name or school ID..."
+                        placeholder="Type student name or school ID (all voters only)..."
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-10"
                         onFocus={() => {
                           if (voterSearchResults.length > 0) {
@@ -586,36 +777,78 @@ export default function SSGCandidatesPage() {
                         </div>
                       )}
                       
-                      {/* Dropdown with search results */}
+                      {/* Enhanced Dropdown with eligibility indicators */}
                       {showVoterDropdown && voterSearchResults.length > 0 && (
                         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                          {voterSearchResults.map((voter) => (
-                            <button
-                              key={voter._id}
-                              type="button"
-                              onClick={() => selectVoter(voter)}
-                              className="w-full px-3 py-2 text-left hover:bg-blue-50 focus:bg-blue-50 border-b border-gray-100 last:border-b-0"
-                            >
-                              <div className="font-medium text-gray-900">{voter.fullName}</div>
-                              <div className="text-sm text-gray-500">
-                                ID: {voter.schoolId} • {voter.departmentId?.departmentCode || 'N/A'}
-                              </div>
-                            </button>
-                          ))}
+                          {voterSearchResults.map((voter) => {
+                            // Check if voter is already a candidate
+                            const isAlreadyCandidate = ssgCandidates.some(candidate => 
+                              (candidate.voterId === voter._id || candidate.voterId?._id === voter._id) &&
+                              (!editingCandidate || candidate._id !== editingCandidate._id)
+                            )
+                            
+                            return (
+                              <button
+                                key={voter._id}
+                                type="button"
+                                onClick={() => selectVoter(voter)}
+                                disabled={isAlreadyCandidate}
+                                className={`w-full px-3 py-2 text-left border-b border-gray-100 last:border-b-0 ${
+                                  isAlreadyCandidate 
+                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                                    : 'hover:bg-blue-50 focus:bg-blue-50'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <div className="font-medium text-gray-900">{voter.fullName}</div>
+                                    <div className="text-sm text-gray-500">
+                                      ID: {voter.schoolId} • {voter.departmentId?.departmentCode || 'N/A'}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center space-x-1">
+                                    {voter.isRegistered && (
+                                      <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full">
+                                        Registered
+                                      </span>
+                                    )}
+                                    {isAlreadyCandidate && (
+                                      <span className="text-xs px-2 py-1 bg-red-100 text-red-800 rounded-full">
+                                        Already Candidate
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            )
+                          })}
                         </div>
                       )}
                     </div>
                     
-                    {/* Selected voter display */}
+                    {/* Selected voter display with validation status */}
                     {selectedVoter && (
-                      <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <div className={`mt-2 p-3 border rounded-lg ${
+                        selectedVoter.isRegistered ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'
+                      }`}>
                         <div className="flex items-center">
-                          <UserCheck className="w-4 h-4 text-green-600 mr-2" />
+                          <UserCheck className={`w-4 h-4 mr-2 ${
+                            selectedVoter.isRegistered ? 'text-green-600' : 'text-yellow-600'
+                          }`} />
                           <div className="text-sm">
-                            <p className="font-medium text-green-800">{selectedVoter.fullName}</p>
-                            <p className="text-green-600">
+                            <p className={`font-medium ${
+                              selectedVoter.isRegistered ? 'text-green-800' : 'text-yellow-800'
+                            }`}>
+                              {selectedVoter.fullName}
+                            </p>
+                            <p className={selectedVoter.isRegistered ? 'text-green-600' : 'text-yellow-600'}>
                               ID: {selectedVoter.schoolId} • {selectedVoter.departmentId?.departmentCode || 'N/A'} - Year {selectedVoter.yearLevel}
                             </p>
+                            {!selectedVoter.isRegistered && (
+                              <p className="text-yellow-700 text-xs mt-1">
+                                ⚠️ Warning: This voter is not registered
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -633,11 +866,16 @@ export default function SSGCandidatesPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option value="">Select a position</option>
-                      {Array.isArray(ssgPositions) && ssgPositions.map(position => (
-                        <option key={position._id} value={position._id}>
-                          {position.positionName}
-                        </option>
-                      ))}
+                      {ssgPositions.map(position => {
+                        const candidateCount = candidateStats.byPosition[position._id]?.count || 0
+                        const maxCandidates = position.maxCandidates || 10
+                        
+                        return (
+                          <option key={position._id} value={position._id}>
+                            {position.positionName} ({candidateCount}/{maxCandidates})
+                          </option>
+                        )
+                      })}
                     </select>
                   </div>
 
@@ -651,11 +889,15 @@ export default function SSGCandidatesPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option value="">Independent</option>
-                      {Array.isArray(ssgPartylists) && ssgPartylists.map(partylist => (
-                        <option key={partylist._id} value={partylist._id}>
-                          {partylist.partylistName}
-                        </option>
-                      ))}
+                      {ssgPartylists.map(partylist => {
+                        const candidateCount = candidateStats.byPartylist[partylist._id]?.count || 0
+                        
+                        return (
+                          <option key={partylist._id} value={partylist._id}>
+                            {partylist.partylistName} ({candidateCount} members)
+                          </option>
+                        )
+                      })}
                     </select>
                   </div>
 
@@ -761,7 +1003,7 @@ export default function SSGCandidatesPage() {
         </div>
       )}
 
-      {/* Partylist Filter Cards - Only for current SSG election */}
+      {/* Enhanced Partylist Filter Cards with accurate candidate counts */}
       {ssgPartylists.length > 0 && (
         <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 mb-6">
           <h3 className="text-lg font-semibold text-[#001f65] mb-4">Filter by Partylist</h3>
@@ -809,16 +1051,14 @@ export default function SSGCandidatesPage() {
                   </p>
                 </div>
                 <div className={`text-2xl font-bold ${selectedPartylist === 'independent' ? 'text-white' : 'text-gray-600'}`}>
-                  {candidateStats.byPartylist['Independent'] || 0}
+                  {candidateStats.byPartylist['independent']?.count || 0}
                 </div>
               </div>
             </div>
 
-            {/* Partylist Cards - Only for current election */}
+            {/* Partylist Cards with accurate candidate counts */}
             {ssgPartylists.map(partylist => {
-              const candidateCount = ssgCandidates.filter(candidate => 
-                candidate.partylistId?._id === partylist._id || candidate.partylistId === partylist._id
-              ).length
+              const candidateCount = candidateStats.byPartylist[partylist._id]?.count || 0
               
               return (
                 <div 
@@ -836,7 +1076,7 @@ export default function SSGCandidatesPage() {
                         {partylist.partylistName}
                       </h4>
                       <p className={`text-sm ${selectedPartylist === partylist._id ? 'text-blue-100' : 'text-gray-600'}`}>
-                        {partylist.partylistDescription || 'Political partylist'}
+                        {partylist.description || 'Political partylist'}
                       </p>
                     </div>
                     <div className={`text-2xl font-bold ${selectedPartylist === partylist._id ? 'text-white' : 'text-blue-500'}`}>
@@ -850,7 +1090,7 @@ export default function SSGCandidatesPage() {
         </div>
       )}
 
-      {/* Candidates Table */}
+      {/* Enhanced Candidates Table */}
       <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 overflow-hidden">
         {/* Table Header */}
         <div className="p-6 border-b border-gray-200">
@@ -972,11 +1212,7 @@ export default function SSGCandidatesPage() {
                 </tr>
               ) : (
                 filteredCandidates.map((candidate, index) => {
-                  // Generate a reliable key - use multiple fallbacks
-                  const candidateKey = candidate._id || 
-                                      candidate.id || 
-                                      `${candidate.voterId?._id || candidate.voterId}-${candidate.positionId?._id || candidate.positionId}-${index}` ||
-                                      `candidate-${index}`
+                  const candidateKey = candidate._id || `candidate-${index}`
                   
                   return (
                     <tr key={candidateKey} className="hover:bg-gray-50">
@@ -987,7 +1223,7 @@ export default function SSGCandidatesPage() {
                             <img
                               className="h-12 w-12 rounded-full object-cover border-2 border-gray-200"
                               src={`data:image/jpeg;base64,${candidate.campaignPicture}`}
-                              alt={candidate.fullName || candidate.voterId?.fullName || 'Candidate'}
+                              alt={candidate.fullName}
                             />
                           ) : (
                             <div className="h-12 w-12 rounded-full bg-[#b0c8fe]/30 flex items-center justify-center border-2 border-gray-200">
@@ -1001,14 +1237,15 @@ export default function SSGCandidatesPage() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
                           <div className="text-sm font-medium text-gray-900">
-                            {candidate.fullName || 
-                             candidate.displayName || 
-                             candidate.voterId?.fullName || 
-                             (candidate.voterId ? `${candidate.voterId.firstName || ''} ${candidate.voterId.lastName || ''}`.trim() : '') ||
-                             'Unknown Name'}
+                            {candidate.fullName}
                           </div>
-                          <div className="text-sm text-gray-500">
-                            ID: {candidate.voterId?.schoolId || candidate.schoolId || 'N/A'}
+                          <div className="text-sm text-gray-500 flex items-center">
+                            ID: {candidate.schoolId}
+                            {candidate.isRegistered && (
+                              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                Registered
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -1016,48 +1253,44 @@ export default function SSGCandidatesPage() {
                       {/* Position Column */}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">
-                          {candidate.positionId?.positionName || candidate.position || 'Unknown Position'}
+                          {candidate.position}
                         </div>
                       </td>
 
                       {/* Department Column */}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">
-                          {candidate.voterId?.departmentId?.departmentCode || 
-                           candidate.department || 
-                           'N/A'}
+                          {candidate.department}
                         </div>
                         <div className="text-sm text-gray-500">
-                          Year {candidate.voterId?.yearLevel || candidate.yearLevel || 'N/A'}
+                          Year {candidate.yearLevel}
                         </div>
                       </td>
 
                       {/* Partylist Column */}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          candidate.partylistId || candidate.partylist 
+                          candidate.partylist && candidate.partylist !== 'Independent'
                             ? 'bg-blue-100 text-blue-800' 
                             : 'bg-gray-100 text-gray-800'
                         }`}>
-                          {candidate.partylistId?.partylistName || 
-                           candidate.partylist || 
-                           'Independent'}
+                          {candidate.partylist}
                         </span>
                       </td>
 
                       {/* Number Column */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {candidate.candidateNumber || 'N/A'}
+                        {candidate.candidateNumber}
                       </td>
 
                       {/* Status Column */}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          candidate.isActive !== false
+                          candidate.isActive
                             ? 'bg-green-100 text-green-800'
                             : 'bg-red-100 text-red-800'
                         }`}>
-                          {candidate.isActive !== false ? 'Active' : 'Inactive'}
+                          {candidate.isActive ? 'Active' : 'Inactive'}
                         </span>
                       </td>
 
@@ -1073,8 +1306,8 @@ export default function SSGCandidatesPage() {
                           </button>
                           <button
                             onClick={() => handleDeleteCandidate(
-                              candidate._id || candidate.id,
-                              candidate.fullName || candidate.displayName || candidate.voterId?.fullName || 'this candidate'
+                              candidate._id,
+                              candidate.fullName
                             )}
                             className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
                             title="Delete candidate"

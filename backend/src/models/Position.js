@@ -36,6 +36,17 @@ const positionSchema = new mongoose.Schema(
       default: null,
       trim: true,
     },
+    maxCandidatesPerPartylist: {
+      type: Number,
+      default: 1,  // Most positions allow 1 candidate per partylist
+      min: 1,
+      validate: {
+        validator: function(value) {
+          return Number.isInteger(value) && value > 0
+        },
+        message: 'Maximum candidates per partylist must be a positive integer'
+      }
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -60,5 +71,24 @@ positionSchema.virtual('electionType').get(function() {
 // Ensure virtual fields are serialized
 positionSchema.set('toJSON', { virtuals: true })
 positionSchema.set('toObject', { virtuals: true })
+
+// ADDED: Validation method to check if partylist can add more candidates
+positionSchema.methods.validateCandidateLimit = async function(partylistId) {
+  const Candidate = require('./Candidate')
+  
+  const currentCount = await Candidate.countDocuments({
+    positionId: this._id,
+    partylistId: partylistId,
+    ssgElectionId: this.ssgElectionId,
+    isActive: true
+  })
+  
+  return {
+    canAdd: currentCount < this.maxCandidatesPerPartylist,
+    currentCount,
+    maxAllowed: this.maxCandidatesPerPartylist,
+    remaining: Math.max(0, this.maxCandidatesPerPartylist - currentCount)
+  }
+}
 
 module.exports = mongoose.model("Position", positionSchema)

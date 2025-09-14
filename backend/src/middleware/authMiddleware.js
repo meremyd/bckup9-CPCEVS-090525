@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken")
+const Voter = require("../models/Voter") 
 
 const authMiddleware = (req, res, next) => {
   // Get token from header

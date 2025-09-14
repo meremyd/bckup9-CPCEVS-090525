@@ -25,7 +25,7 @@ export const positionsAPI = {
       }
     },
     
-    // Create new SSG position
+    // Create new SSG position (includes maxCandidatesPerPartylist)
     create: async (positionData) => {
       try {
         const response = await api.post('/positions/ssg', positionData)
@@ -36,7 +36,7 @@ export const positionsAPI = {
       }
     },
     
-    // Update SSG position
+    // Update SSG position (includes maxCandidatesPerPartylist)
     update: async (id, positionData) => {
       try {
         const response = await api.put(`/positions/ssg/${id}`, positionData)
@@ -98,6 +98,28 @@ export const positionsAPI = {
         return response.data
       } catch (error) {
         console.error(`Error checking if SSG position ${positionId} can be deleted:`, error)
+        throw error
+      }
+    },
+
+    // NEW: Get candidate limits for positions in SSG election
+    getCandidateLimits: async (ssgElectionId) => {
+      try {
+        const response = await api.get(`/positions/ssg/elections/${ssgElectionId}/candidate-limits`)
+        return response.data
+      } catch (error) {
+        console.error(`Error fetching candidate limits for SSG election ${ssgElectionId}:`, error)
+        throw error
+      }
+    },
+
+    // NEW: Validate if SSG position can be deleted with detailed breakdown
+    validateDeletion: async (positionId) => {
+      try {
+        const response = await api.get(`/positions/ssg/${positionId}/validate-deletion`)
+        return response.data
+      } catch (error) {
+        console.error(`Error validating deletion for SSG position ${positionId}:`, error)
         throw error
       }
     }

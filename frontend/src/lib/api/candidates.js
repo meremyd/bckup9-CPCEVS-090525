@@ -69,26 +69,26 @@ export const candidatesAPI = {
     }
   },
 
-  // Get candidates by election (generic)
+  // Get candidates by election (generic) - UPDATED to match route structure
   getByElection: async (electionId, type, params = {}) => {
-    try {
-      const { positionId, partylistId, status } = params
-      const queryParams = new URLSearchParams({
-        type,
-        ...(positionId && { positionId }),
-        ...(partylistId && { partylistId }),
-        ...(status !== undefined && { status })
-      })
-      
-      const response = await api.get(`/candidates/election/${electionId}?${queryParams}`)
-      return response.data
-    } catch (error) {
-      console.error(`Error fetching candidates for election ${electionId}:`, error)
-      throw error
-    }
-  },
+  try {
+    const { positionId, partylistId, status } = params
+    const queryParams = new URLSearchParams({
+      type, // This is required now
+      ...(positionId && { positionId }),
+      ...(partylistId && { partylistId }),
+      ...(status !== undefined && { status })
+    })
+    
+    const response = await api.get(`/candidates/election/${electionId}?${queryParams}`)
+    return response.data
+  } catch (error) {
+    console.error(`Error fetching candidates for election ${electionId}:`, error)
+    throw error
+  }
+},
 
-  // Voter - Get candidates for voting (generic route)
+  // Voter - Get candidates for voting (generic route) - UPDATED to match route structure
   getForVoter: async (electionId, type) => {
     try {
       const response = await api.get(`/candidates/voter/election/${electionId}?type=${type}`)
@@ -190,25 +190,79 @@ export const candidatesAPI = {
 
     // Create SSG candidate
     create: async (candidateData) => {
-      try {
-        const response = await api.post('/candidates/ssg', candidateData)
-        return response.data
-      } catch (error) {
-        console.error('Error creating SSG candidate:', error)
-        throw error
+    try {
+      // Ensure SSG-specific data structure
+      const ssgCandidateData = {
+        ...candidateData,
+        ssgElectionId: candidateData.ssgElectionId || candidateData.electionId,
+        deptElectionId: null,
+        // Ensure partylistId is included (can be null for independents)
+        partylistId: candidateData.partylistId || null,
+        // Include credentials if provided
+        credentials: candidateData.credentials || null
       }
-    },
+
+      console.log('Creating SSG candidate with data:', {
+        ...ssgCandidateData,
+        credentials: ssgCandidateData.credentials ? '[CREDENTIALS_DATA]' : null
+      })
+      
+      const response = await api.post('/candidates/ssg', ssgCandidateData)
+      
+      console.log('SSG candidate created successfully:', response.data)
+      return response.data
+    } catch (error) {
+      console.error('Error creating SSG candidate:', error)
+      
+      // Enhanced error handling for validation messages
+      if (error.response?.data?.message) {
+        const errorMessage = error.response.data.message
+        
+        // Check for specific validation errors
+        if (errorMessage.includes('registered voter')) {
+          throw new Error('Only registered voters can be SSG candidates')
+        } else if (errorMessage.includes('already a candidate')) {
+          throw new Error('This voter is already a candidate in this SSG election')
+        } else if (errorMessage.includes('already a member')) {
+          throw new Error('This voter is already a member of another partylist in this election')
+        }
+      }
+      
+      throw error
+    }
+  },
 
     // Update SSG candidate
     update: async (id, candidateData) => {
-      try {
-        const response = await api.put(`/candidates/ssg/${id}`, candidateData)
-        return response.data
-      } catch (error) {
-        console.error(`Error updating SSG candidate ${id}:`, error)
-        throw error
+    try {
+      console.log(`Updating SSG candidate ${id} with data:`, {
+        ...candidateData,
+        credentials: candidateData.credentials ? '[CREDENTIALS_DATA]' : candidateData.credentials
+      })
+      
+      const response = await api.put(`/candidates/ssg/${id}`, candidateData)
+      
+      console.log('SSG candidate updated successfully:', response.data)
+      return response.data
+    } catch (error) {
+      console.error(`Error updating SSG candidate ${id}:`, error)
+      
+      // Enhanced error handling for validation messages
+      if (error.response?.data?.message) {
+        const errorMessage = error.response.data.message
+        
+        if (errorMessage.includes('registered voter')) {
+          throw new Error('Only registered voters can be SSG candidates')
+        } else if (errorMessage.includes('already a candidate')) {
+          throw new Error('This voter is already a candidate in this SSG election')
+        } else if (errorMessage.includes('already a member')) {
+          throw new Error('This voter is already a member of another partylist in this election')
+        }
       }
-    },
+      
+      throw error
+    }
+  },
 
     // Delete SSG candidate
     delete: async (id) => {
@@ -221,57 +275,314 @@ export const candidatesAPI = {
       }
     },
 
-    // Get SSG candidates by election
+    // Get SSG candidates by election - UPDATED to match actual route
     getByElection: async (electionId, params = {}) => {
-  try {
-    const { positionId, partylistId, status } = params
-    const queryParams = new URLSearchParams()
-    
-    // Add parameters if they exist
-    if (positionId) queryParams.append('positionId', positionId)
-    if (partylistId) queryParams.append('partylistId', partylistId) 
-    if (status !== undefined) queryParams.append('status', status)
+      try {
+        const { positionId, partylistId, status } = params
+        const queryParams = new URLSearchParams()
+        
+        // Add parameters if they exist
+        if (positionId) queryParams.append('positionId', positionId)
+        if (partylistId) queryParams.append('partylistId', partylistId) 
+        if (status !== undefined) queryParams.append('status', status)
 
-    // Build URL with query parameters
-    const queryString = queryParams.toString()
-    const url = queryString 
-      ? `/candidates/ssg/election/${electionId}?${queryString}`
-      : `/candidates/ssg/election/${electionId}`
-    
-    console.log('Making API call to SSG candidates endpoint:', url)
-    
-    const response = await api.get(url)
-    
-    console.log('SSG Candidates API Response Status:', response.status)
-    console.log('SSG Candidates API Response Data:', response.data)
-    console.log('Candidates in response:', response.data?.data?.candidates?.length || 0)
-    
-    // Check if we have candidates with proper structure
-    if (response.data?.data?.candidates?.length > 0) {
-      console.log('First candidate structure:', response.data.data.candidates[0])
-      console.log('Position data available:', !!response.data.data.candidates[0]?.positionId)
-      console.log('Partylist data available:', !!response.data.data.candidates[0]?.partylistId)
-    }
-    
-    return response.data
-  } catch (error) {
-    console.error(`Error fetching SSG candidates for election ${electionId}:`, error)
-    console.error('Error response status:', error.response?.status)
-    console.error('Error response data:', error.response?.data)
-    throw error
-  }
-},
+        // Build URL with query parameters
+        const queryString = queryParams.toString()
+        const url = queryString 
+          ? `/candidates/ssg/election/${electionId}?${queryString}`
+          : `/candidates/ssg/election/${electionId}`
+        
+        console.log('Making API call to SSG candidates endpoint:', url)
+        
+        const response = await api.get(url)
+        
+        console.log('SSG Candidates API Response Status:', response.status)
+        console.log('SSG Candidates API Response Data:', response.data)
+        console.log('Candidates in response:', response.data?.data?.candidates?.length || 0)
+        console.log('Positions in response:', response.data?.data?.positions?.length || 0)
+        console.log('Partylists in response:', response.data?.data?.partylists?.length || 0)
+        
+        // Validate response structure
+        if (!response.data?.data) {
+          console.error('Invalid response structure - missing data object')
+          throw new Error('Invalid response format from server')
+        }
 
-    // Get SSG candidates for voter (uses generic voter route)
+        const { data } = response.data
+        
+        // Ensure we have all required data
+        if (!Array.isArray(data.candidates)) {
+          console.error('Invalid candidates data:', data.candidates)
+          data.candidates = []
+        }
+        
+        if (!Array.isArray(data.positions)) {
+          console.error('Invalid positions data:', data.positions)
+          data.positions = []
+        }
+        
+        if (!Array.isArray(data.partylists)) {
+          console.error('Invalid partylists data:', data.partylists)
+          data.partylists = []
+        }
+        
+        // Check if we have candidates with proper structure
+        if (data.candidates.length > 0) {
+          console.log('Sample candidate structure:', {
+            id: data.candidates[0]._id,
+            hasVoter: !!data.candidates[0].voterId,
+            hasPosition: !!data.candidates[0].positionId,
+            hasPartylist: !!data.candidates[0].partylistId,
+            positionName: data.candidates[0].position,
+            partylistName: data.candidates[0].partylist
+          })
+        }
+        
+        return response.data
+      } catch (error) {
+        console.error(`Error fetching SSG candidates for election ${electionId}:`, error)
+        console.error('Error response status:', error.response?.status)
+        console.error('Error response data:', error.response?.data)
+        throw error
+      }
+    },
+
+    // Get SSG candidates for voter - UPDATED to use specific SSG voter route
     getForVoter: async (electionId) => {
       try {
-        return await candidatesAPI.getForVoter(electionId, 'ssg')
+        const response = await api.get(`/candidates/ssg/voter/election/${electionId}`)
+        return response.data
       } catch (error) {
         console.error(`Error fetching SSG candidates for voter - election ${electionId}:`, error)
         throw error
       }
+    },
+
+    // NEW: Check candidate eligibility (matches new routes)
+    checkEligibility: async (ssgElectionId, positionId, partylistId = null, voterId = null) => {
+      try {
+        let url = `/candidates/ssg/eligibility/${ssgElectionId}/${positionId}`
+        if (partylistId) {
+          url = `/candidates/ssg/eligibility/${ssgElectionId}/${positionId}/${partylistId}`
+        }
+        
+        const params = new URLSearchParams()
+        if (voterId) params.append('voterId', voterId)
+        
+        const queryString = params.toString()
+        if (queryString) url += `?${queryString}`
+        
+        const response = await api.get(url)
+        return response.data
+      } catch (error) {
+        console.error('Error checking SSG candidate eligibility:', error)
+        throw error
+      }
+    },
+
+    // NEW: Get partylist candidate slots
+    getPartylistSlots: async (ssgElectionId, partylistId = null) => {
+      try {
+        const url = partylistId
+          ? `/candidates/ssg/partylist-slots/${ssgElectionId}/${partylistId}`
+          : `/candidates/ssg/partylist-slots/${ssgElectionId}`
+        
+        const response = await api.get(url)
+        return response.data
+      } catch (error) {
+        console.error('Error fetching partylist candidate slots:', error)
+        throw error
+      }
     }
   },
+
+  validateSSGCandidateForm: (formData) => {
+  const errors = {}
+  
+  // Required fields validation
+  if (!formData.voterId) {
+    errors.voterId = 'Voter selection is required'
+  }
+  
+  if (!formData.positionId) {
+    errors.positionId = 'Position selection is required'
+  }
+  
+  if (!formData.ssgElectionId && !formData.electionId) {
+    errors.election = 'SSG Election selection is required'
+  }
+  
+  // Candidate number validation
+  if (formData.candidateNumber) {
+    const num = parseInt(formData.candidateNumber)
+    if (isNaN(num) || num < 1) {
+      errors.candidateNumber = 'Candidate number must be a positive number'
+    }
+  }
+  
+  // Credentials validation (optional for SSG candidates)
+  if (formData.credentials && typeof formData.credentials === 'string') {
+    if (formData.credentials.length > 5 * 1024 * 1024) { // 5MB limit for base64
+      errors.credentials = 'Credentials file is too large (max 5MB)'
+    }
+  }
+  
+  return {
+    isValid: Object.keys(errors).length === 0,
+    errors
+  }
+},
+
+  // Enhanced processing for SSG candidates with position and partylist data
+  processSSGCandidatesResponse: (response) => {
+    if (!response?.data) {
+      console.error('Invalid response structure:', response)
+      return {
+        election: null,
+        candidates: [],
+        positions: [],
+        partylists: [],
+        candidatesByPosition: [],
+        statistics: {
+          total: 0,
+          active: 0,
+          inactive: 0,
+          totalPositions: 0,
+          totalPartylists: 0,
+          byPosition: {},
+          byPartylist: {}
+        }
+      }
+    }
+
+    const { data } = response
+    
+    return {
+      election: data.election || null,
+      candidates: Array.isArray(data.candidates) ? data.candidates : [],
+      positions: Array.isArray(data.positions) ? data.positions : [],
+      partylists: Array.isArray(data.partylists) ? data.partylists : [],
+      candidatesByPosition: Array.isArray(data.candidatesByPosition) ? data.candidatesByPosition : [],
+      statistics: data.statistics || {
+        total: 0,
+        active: 0,
+        inactive: 0,
+        totalPositions: 0,
+        totalPartylists: 0,
+        byPosition: {},
+        byPartylist: {}
+      }
+    }
+  },
+
+  // Filter candidates by partylist (enhanced for SSG)
+  filterByPartylist: (candidates, partylistId) => {
+    if (!partylistId) return candidates
+    
+    if (partylistId === 'independent') {
+      // Filter for independent candidates (no partylist)
+      return candidates.filter(candidate => 
+        !candidate.partylistId && !candidate.partylist
+      )
+    }
+    
+    return candidates.filter(candidate => {
+      const candidatePartylistId = candidate.partylistId?._id || candidate.partylistId
+      return candidatePartylistId && candidatePartylistId.toString() === partylistId
+    })
+  },
+
+  // Filter candidates by position (enhanced)
+  filterByPosition: (candidates, positionId) => {
+    if (!positionId) return candidates
+    
+    return candidates.filter(candidate => {
+      const candidatePositionId = candidate.positionId?._id || candidate.positionId
+      return candidatePositionId && candidatePositionId.toString() === positionId
+    })
+  },
+
+  // Get available positions for SSG election
+  getAvailablePositions: (positions, candidates) => {
+    return positions.map(position => ({
+      ...position,
+      candidateCount: candidates.filter(c => 
+        (c.positionId?._id || c.positionId)?.toString() === position._id.toString()
+      ).length,
+      hasSpace: candidates.filter(c => 
+        (c.positionId?._id || c.positionId)?.toString() === position._id.toString()
+      ).length < (position.maxCandidates || 10)
+    }))
+  },
+
+  // Get available partylists for SSG election
+  getAvailablePartylists: (partylists, candidates) => {
+    return [
+      // Add independent option
+      {
+        _id: 'independent',
+        partylistName: 'Independent',
+        description: 'No partylist affiliation',
+        candidateCount: candidates.filter(c => !c.partylistId && !c.partylist).length
+      },
+      // Add actual partylists
+      ...partylists.map(partylist => ({
+        ...partylist,
+        candidateCount: candidates.filter(c => 
+          (c.partylistId?._id || c.partylistId)?.toString() === partylist._id.toString()
+        ).length
+      }))
+    ]
+  },
+
+  // Enhanced error handling for SSG operations
+  handleSSGError: (error) => {
+    if (error.response?.data?.message) {
+      const message = error.response.data.message
+      
+      if (message.includes('registered voter')) {
+        return 'Only registered voters can be SSG candidates'
+      } else if (message.includes('already a candidate')) {
+        return 'This voter is already a candidate in this SSG election'
+      } else if (message.includes('already a member')) {
+        return 'This voter is already a member of another partylist in this election'
+      } else if (message.includes('Candidate number already exists')) {
+        return 'This candidate number is already taken for this position'
+      }
+    }
+    
+    return error.message || 'An error occurred while processing the SSG candidate'
+  },
+
+  uploadCredentials: async (id, credentialsData) => {
+  try {
+    const response = await api.put(`/candidates/${id}/credentials`, { 
+      credentials: credentialsData 
+    })
+    return response.data
+  } catch (error) {
+    console.error(`Error uploading credentials for candidate ${id}:`, error)
+    throw error
+  }
+},
+
+// Get credentials for SSG candidate
+getCredentials: async (id) => {
+  try {
+    const response = await api.get(`/candidates/${id}/credentials`, {
+      responseType: 'blob'
+    })
+    return response.data
+  } catch (error) {
+    console.error(`Error fetching credentials for candidate ${id}:`, error)
+    throw error
+  }
+},
+
+// Get credentials URL for SSG candidate
+getCredentialsUrl: (candidateId) => {
+  return `/api/candidates/${candidateId}/credentials`
+},
 
   // ===== DEPARTMENTAL SPECIFIC METHODS (Aligned with /candidates/departmental routes) =====
   
@@ -367,10 +678,11 @@ export const candidatesAPI = {
       }
     },
 
-    // Get Departmental candidates for voter (uses generic voter route)
+    // Get Departmental candidates for voter - UPDATED to use specific departmental voter route
     getForVoter: async (electionId) => {
       try {
-        return await candidatesAPI.getForVoter(electionId, 'departmental')
+        const response = await api.get(`/candidates/departmental/voter/election/${electionId}`)
+        return response.data
       } catch (error) {
         console.error(`Error fetching departmental candidates for voter - election ${electionId}:`, error)
         throw error
@@ -382,44 +694,43 @@ export const candidatesAPI = {
 
   // Process candidates for table display
   processForTable: (candidates) => {
-    return candidates.map(candidate => ({
-      id: candidate._id || candidate.id,
-      candidateNumber: candidate.candidateNumber,
-      name: candidate.name || candidate.fullName || 'Unknown',
-      schoolId: candidate.schoolId || 'N/A',
-      position: candidate.position || 'Unknown Position',
-      positionOrder: candidate.positionOrder || 0,
-      department: candidate.department || 'Unknown',
-      yearLevel: candidate.yearLevel || 'N/A',
-      partylist: candidate.partylist || 'Independent',
-      electionType: candidate.electionType?.toUpperCase() || 'N/A',
-      isActive: candidate.isActive ?? true,
-      platform: candidate.platform || 'No platform provided',
-      hasCampaignPicture: candidate.hasCampaignPicture || false
-    }))
-  },
+  return candidates.map(candidate => ({
+    id: candidate._id || candidate.id,
+    candidateNumber: candidate.candidateNumber,
+    name: candidate.name || candidate.fullName || 'Unknown',
+    schoolId: candidate.schoolId || 'N/A',
+    position: candidate.position || 'Unknown Position',
+    positionOrder: candidate.positionOrder || 0,
+    department: candidate.department || 'Unknown',
+    yearLevel: candidate.yearLevel || 'N/A',
+    partylist: candidate.partylist || 'Independent',
+    electionType: candidate.electionType?.toUpperCase() || 'N/A',
+    isActive: candidate.isActive ?? true,
+    hasCredentials: candidate.hasCredentials || false, // Changed from platform
+    hasCampaignPicture: candidate.hasCampaignPicture || false
+  }))
+},
 
   // Search candidates
   searchCandidates: (candidates, searchTerm) => {
-    if (!searchTerm || !searchTerm.trim()) return candidates
+  if (!searchTerm || !searchTerm.trim()) return candidates
+  
+  const term = searchTerm.toLowerCase().trim()
+  return candidates.filter(candidate => {
+    const searchFields = [
+      candidate.name,
+      candidate.fullName,
+      candidate.schoolId?.toString(),
+      candidate.position,
+      candidate.department,
+      candidate.partylist
+    ]
     
-    const term = searchTerm.toLowerCase().trim()
-    return candidates.filter(candidate => {
-      const searchFields = [
-        candidate.name,
-        candidate.fullName,
-        candidate.schoolId?.toString(),
-        candidate.position,
-        candidate.platform,
-        candidate.department,
-        candidate.partylist
-      ]
-      
-      return searchFields.some(field => 
-        field && field.toString().toLowerCase().includes(term)
-      )
-    })
-  },
+    return searchFields.some(field => 
+      field && field.toString().toLowerCase().includes(term)
+    )
+  })
+},
 
   // Filter candidates
   filterCandidates: (candidates, filters = {}) => {
@@ -525,129 +836,140 @@ export const candidatesAPI = {
 
   // Validate candidate form data
   validateCandidateForm: (formData) => {
-    const errors = {}
-    
-    // Required fields validation
-    if (!formData.voterId) {
-      errors.voterId = 'Voter selection is required'
+  const errors = {}
+  
+  // Required fields validation
+  if (!formData.voterId) {
+    errors.voterId = 'Voter selection is required'
+  }
+  
+  if (!formData.positionId) {
+    errors.positionId = 'Position selection is required'
+  }
+  
+  // Election validation
+  if (!formData.ssgElectionId && !formData.deptElectionId) {
+    errors.election = 'Election selection is required'
+  }
+  
+  if (formData.ssgElectionId && formData.deptElectionId) {
+    errors.election = 'Cannot select both SSG and Departmental elections'
+  }
+  
+  // Candidate number validation
+  if (formData.candidateNumber) {
+    const num = parseInt(formData.candidateNumber)
+    if (isNaN(num) || num < 1) {
+      errors.candidateNumber = 'Candidate number must be a positive number'
     }
-    
-    if (!formData.positionId) {
-      errors.positionId = 'Position selection is required'
+  }
+  
+  // Partylist validation
+  if (formData.partylistId && formData.deptElectionId) {
+    errors.partylist = 'Partylists are only available for SSG elections'
+  }
+  
+  // Credentials validation (only for SSG candidates)
+  if (formData.credentials) {
+    if (formData.deptElectionId) {
+      errors.credentials = 'Credentials are only available for SSG candidates'
+    } else if (typeof formData.credentials === 'string' && formData.credentials.length > 5 * 1024 * 1024) {
+      errors.credentials = 'Credentials file is too large (max 5MB)'
     }
-    
-    // Election validation
-    if (!formData.ssgElectionId && !formData.deptElectionId) {
-      errors.election = 'Election selection is required'
-    }
-    
-    if (formData.ssgElectionId && formData.deptElectionId) {
-      errors.election = 'Cannot select both SSG and Departmental elections'
-    }
-    
-    // Candidate number validation
-    if (formData.candidateNumber) {
-      const num = parseInt(formData.candidateNumber)
-      if (isNaN(num) || num < 1) {
-        errors.candidateNumber = 'Candidate number must be a positive number'
-      }
-    }
-    
-    // Partylist validation
-    if (formData.partylistId && formData.deptElectionId) {
-      errors.partylist = 'Partylists are only available for SSG elections'
-    }
-    
-    // Platform validation
-    if (formData.platform && formData.platform.length > 1000) {
-      errors.platform = 'Platform must be 1000 characters or less'
-    }
-    
-    return {
-      isValid: Object.keys(errors).length === 0,
-      errors
-    }
-  },
+  }
+  
+  return {
+    isValid: Object.keys(errors).length === 0,
+    errors
+  }
+},
 
   // Generate candidate statistics
   getStatistics: (candidates) => {
-    const stats = {
-      total: candidates.length,
-      active: 0,
-      inactive: 0,
-      ssg: 0,
-      departmental: 0,
-      withCampaignPicture: 0,
-      byPosition: {},
-      byPartylist: {},
-      byDepartment: {},
-      byYearLevel: {}
+  const stats = {
+    total: candidates.length,
+    active: 0,
+    inactive: 0,
+    ssg: 0,
+    departmental: 0,
+    withCredentials: 0, // Changed from withCampaignPicture
+    withCampaignPicture: 0,
+    byPosition: {},
+    byPartylist: {},
+    byDepartment: {},
+    byYearLevel: {}
+  }
+
+  candidates.forEach(candidate => {
+    // Status count
+    if (candidate.isActive) {
+      stats.active++
+    } else {
+      stats.inactive++
     }
 
-    candidates.forEach(candidate => {
-      // Status count
-      if (candidate.isActive) {
-        stats.active++
-      } else {
-        stats.inactive++
-      }
+    // Election type count
+    if (candidate.electionType === 'ssg') {
+      stats.ssg++
+    } else if (candidate.electionType === 'departmental') {
+      stats.departmental++
+    }
 
-      // Election type count
-      if (candidate.electionType === 'ssg') {
-        stats.ssg++
-      } else if (candidate.electionType === 'departmental') {
-        stats.departmental++
-      }
+    // Campaign picture count
+    if (candidate.hasCampaignPicture) {
+      stats.withCampaignPicture++
+    }
 
-      // Campaign picture count
-      if (candidate.hasCampaignPicture) {
-        stats.withCampaignPicture++
-      }
+    // Credentials count (new)
+    if (candidate.hasCredentials) {
+      stats.withCredentials++
+    }
 
-      // By position
-      const position = candidate.position || 'Unknown'
-      stats.byPosition[position] = (stats.byPosition[position] || 0) + 1
+    // By position
+    const position = candidate.position || 'Unknown'
+    stats.byPosition[position] = (stats.byPosition[position] || 0) + 1
 
-      // By partylist
-      const partylist = candidate.partylist || 'Independent'
-      stats.byPartylist[partylist] = (stats.byPartylist[partylist] || 0) + 1
+    // By partylist
+    const partylist = candidate.partylist || 'Independent'
+    stats.byPartylist[partylist] = (stats.byPartylist[partylist] || 0) + 1
 
-      // By department
-      const department = candidate.department || 'Unknown'
-      stats.byDepartment[department] = (stats.byDepartment[department] || 0) + 1
+    // By department
+    const department = candidate.department || 'Unknown'
+    stats.byDepartment[department] = (stats.byDepartment[department] || 0) + 1
 
-      // By year level
-      if (candidate.yearLevel) {
-        const yearLevel = `${candidate.yearLevel}${
-          candidate.yearLevel === 1 ? 'st' : 
-          candidate.yearLevel === 2 ? 'nd' : 
-          candidate.yearLevel === 3 ? 'rd' : 'th'
-        } Year`
-        stats.byYearLevel[yearLevel] = (stats.byYearLevel[yearLevel] || 0) + 1
-      }
-    })
+    // By year level
+    if (candidate.yearLevel) {
+      const yearLevel = `${candidate.yearLevel}${
+        candidate.yearLevel === 1 ? 'st' : 
+        candidate.yearLevel === 2 ? 'nd' : 
+        candidate.yearLevel === 3 ? 'rd' : 'th'
+      } Year`
+      stats.byYearLevel[yearLevel] = (stats.byYearLevel[yearLevel] || 0) + 1
+    }
+  })
 
-    return stats
-  },
+  return stats
+},
 
   // Format candidate data for display
   formatCandidateForDisplay: (candidate) => {
-    return {
-      ...candidate,
-      displayName: candidate.name || candidate.fullName || 'Unknown Candidate',
-      displayPosition: candidate.position || 'Unknown Position',
-      displayDepartment: candidate.department || 'Unknown Department',
-      displayPartylist: candidate.partylist || 'Independent',
-      displayYearLevel: candidate.yearLevel ? 
-        `${candidate.yearLevel}${
-          candidate.yearLevel === 1 ? 'st' : 
-          candidate.yearLevel === 2 ? 'nd' : 
-          candidate.yearLevel === 3 ? 'rd' : 'th'
-        } Year` : 'N/A',
-      displayStatus: candidate.isActive ? 'Active' : 'Inactive',
-      displayElectionType: candidate.electionType?.toUpperCase() || 'N/A'
-    }
-  },
+  return {
+    ...candidate,
+    displayName: candidate.name || candidate.fullName || 'Unknown Candidate',
+    displayPosition: candidate.position || 'Unknown Position',
+    displayDepartment: candidate.department || 'Unknown Department',
+    displayPartylist: candidate.partylist || 'Independent',
+    displayYearLevel: candidate.yearLevel ? 
+      `${candidate.yearLevel}${
+        candidate.yearLevel === 1 ? 'st' : 
+        candidate.yearLevel === 2 ? 'nd' : 
+        candidate.yearLevel === 3 ? 'rd' : 'th'
+      } Year` : 'N/A',
+    displayStatus: candidate.isActive ? 'Active' : 'Inactive',
+    displayElectionType: candidate.electionType?.toUpperCase() || 'N/A',
+    hasCredentials: candidate.hasCredentials || false
+  }
+},
 
   // Batch operations
   batchUpdate: async (candidateIds, updateData) => {

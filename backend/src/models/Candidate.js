@@ -35,8 +35,8 @@ const candidateSchema = new mongoose.Schema(
       type: Buffer,
       default: null,
     },
-    platform: {
-      type: String,
+    credentials: {
+      type: Buffer,
       default: null,
     },
     isActive: {
@@ -108,6 +108,11 @@ candidateSchema.methods.hasCampaignPicture = function() {
   return this.campaignPicture && this.campaignPicture.length > 0
 }
 
+// NEW: Check if candidate has credentials
+candidateSchema.methods.hasCredentials = function() {
+  return this.credentials && this.credentials.length > 0
+}
+
 // Get candidate display name
 candidateSchema.methods.getDisplayName = function() {
   if (this.populated('voterId') && this.voterId) {
@@ -118,7 +123,7 @@ candidateSchema.methods.getDisplayName = function() {
   return null
 }
 
-// Get candidate full info for display
+// UPDATED: Get candidate full info for display (removed platform, added credentials status)
 candidateSchema.methods.getDisplayInfo = function() {
   if (!this.populated('voterId') || !this.voterId) {
     return null
@@ -136,13 +141,13 @@ candidateSchema.methods.getDisplayInfo = function() {
     candidateNumber: this.candidateNumber,
     position: this.populated('positionId') ? this.positionId.positionName : 'Unknown Position',
     partylist: this.populated('partylistId') && this.partylistId ? this.partylistId.partylistName : 'Independent',
-    platform: this.platform,
+    hasCredentials: this.hasCredentials(), // NEW: Instead of platform text
     isActive: this.isActive,
     electionType: this.electionType
   }
 }
 
-// Format candidate for display (simplified)
+// UPDATED: Format candidate for display (removed platform, added hasCredentials)
 candidateSchema.methods.formatForDisplay = function() {
   return {
     id: this._id,
@@ -152,7 +157,7 @@ candidateSchema.methods.formatForDisplay = function() {
     position: this.populated('positionId') ? this.positionId.positionName : null,
     positionOrder: this.populated('positionId') ? this.positionId.positionOrder : null,
     partylist: this.populated('partylistId') && this.partylistId ? this.partylistId.partylistName : null,
-    platform: this.platform,
+    hasCredentials: this.hasCredentials(), // NEW: Instead of platform
     department: this.populated('voterId') && this.voterId.departmentId ? this.voterId.departmentId.departmentCode : null,
     yearLevel: this.populated('voterId') ? this.voterId.yearLevel : null,
     electionType: this.electionType,
@@ -163,7 +168,7 @@ candidateSchema.methods.formatForDisplay = function() {
 
 // STATIC METHODS
 
-// Validate candidate data
+// UPDATED: Validate candidate data (removed platform validation)
 candidateSchema.statics.validateCandidateData = function(candidateData) {
   const errors = []
 
@@ -197,6 +202,108 @@ candidateSchema.statics.validateCandidateData = function(candidateData) {
     errors
   }
 }
+
+// UPDATED: Enhanced validation for SSG candidates (removed platform validation)
+candidateSchema.statics.validateSSGCandidateData = function(candidateData) {
+  const errors = []
+
+  if (!candidateData.voterId) {
+    errors.push('Voter ID is required')
+  }
+
+  if (!candidateData.positionId) {
+    errors.push('Position ID is required')
+  }
+
+  if (!candidateData.ssgElectionId) {
+    errors.push('SSG Election ID is required')
+  }
+
+  if (candidateData.deptElectionId) {
+    errors.push('Cannot specify Departmental Election ID for SSG candidate')
+  }
+
+  if (candidateData.candidateNumber && candidateData.candidateNumber < 1) {
+    errors.push('Candidate number must be positive')
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  }
+}
+
+// Rest of the static methods remain the same...
+// [Including all the existing static methods without changes]
+
+// UPDATED: Check if voter can be SSG candidate (registered voters only)
+candidateSchema.statics.checkSSGEligibility = async function(voterId, ssgElectionId, excludeCandidateId = null) {
+  const Voter = require('./Voter')
+  
+  // Check if voter exists and is registered
+  const voter = await Voter.findById(voterId)
+  if (!voter) {
+    return { eligible: false, reason: 'Voter not found' }
+  }
+  
+  if (!voter.isRegistered || !voter.isPasswordActive) {
+    return { eligible: false, reason: 'Only registered voters can be SSG candidates' }
+  }
+
+  // Check if voter is already a candidate in this SSG election
+  const existingCandidateQuery = {
+    voterId,
+    ssgElectionId,
+    deptElectionId: null
+  }
+  
+  if (excludeCandidateId) {
+    existingCandidateQuery._id = { $ne: excludeCandidateId }
+  }
+  
+  const existingCandidate = await this.findOne(existingCandidateQuery)
+    .populate('positionId', 'positionName')
+  
+  if (existingCandidate) {
+    return { 
+      eligible: false, 
+      reason: `Voter is already a candidate for ${existingCandidate.positionId.positionName} in this SSG election` 
+    }
+  }
+
+  return { eligible: true, voter }
+}
+
+// NEW: Check if voter can be added to specific partylist
+candidateSchema.statics.checkPartylistEligibility = async function(voterId, ssgElectionId, partylistId, excludeCandidateId = null) {
+  if (!partylistId) return { eligible: true } // Independent candidates are always eligible
+
+  // Check if voter is already in another partylist for this election
+  const partylistCandidateQuery = {
+    voterId,
+    ssgElectionId,
+    partylistId: { $ne: partylistId },
+    deptElectionId: null
+  }
+  
+  if (excludeCandidateId) {
+    partylistCandidateQuery._id = { $ne: excludeCandidateId }
+  }
+  
+  const existingPartylistCandidate = await this.findOne(partylistCandidateQuery)
+    .populate('partylistId', 'partylistName')
+  
+  if (existingPartylistCandidate) {
+    return { 
+      eligible: false, 
+      reason: `Voter is already a member of ${existingPartylistCandidate.partylistId.partylistName} in this SSG election` 
+    }
+  }
+
+  return { eligible: true }
+}
+
+// [All other static methods remain unchanged - groupByPosition, filterByPartylist, getStatistics, etc.]
 
 // Group candidates by position
 candidateSchema.statics.groupByPosition = function(candidates) {
@@ -232,7 +339,7 @@ candidateSchema.statics.filterByType = function(candidates, type) {
   return candidates
 }
 
-// Get candidates statistics
+// UPDATED: Get candidates statistics (updated to handle credentials instead of platform)
 candidateSchema.statics.getStatistics = function(candidates) {
   const stats = {
     total: candidates.length,
@@ -240,6 +347,8 @@ candidateSchema.statics.getStatistics = function(candidates) {
     inactive: 0,
     ssg: 0,
     departmental: 0,
+    withCredentials: 0, // NEW: Track candidates with credentials
+    withoutCredentials: 0, // NEW: Track candidates without credentials
     byPosition: {},
     byPartylist: {},
     byDepartment: {},
@@ -259,6 +368,13 @@ candidateSchema.statics.getStatistics = function(candidates) {
       stats.ssg++
     } else if (candidate.deptElectionId) {
       stats.departmental++
+    }
+
+    // NEW: Credentials count
+    if (candidate.hasCredentials && candidate.hasCredentials()) {
+      stats.withCredentials++
+    } else {
+      stats.withoutCredentials++
     }
 
     // By position (handle both populated and unpopulated)
@@ -284,6 +400,8 @@ candidateSchema.statics.getStatistics = function(candidates) {
 
   return stats
 }
+
+// [All remaining static methods stay the same - sortCandidates, checkVotingEligibility, etc.]
 
 // Sort candidates by position order and candidate number
 candidateSchema.statics.sortCandidates = function(candidates) {
@@ -390,6 +508,171 @@ candidateSchema.statics.getByElectionWithDetails = async function(electionId, el
     .populate('positionId', 'positionName positionOrder maxVotes')
     .populate('partylistId', 'partylistName description')
     .sort({ 'positionId.positionOrder': 1, candidateNumber: 1 })
+}
+
+candidateSchema.statics.validateSSGCandidateWithPositionLimits = async function(candidateData, excludeCandidateId = null) {
+  const { voterId, ssgElectionId, positionId, partylistId } = candidateData
+  const errors = []
+
+  // Run basic SSG validation first
+  const basicValidation = await this.validateSSGCandidate(candidateData, excludeCandidateId)
+  if (!basicValidation.isValid) {
+    return basicValidation
+  }
+
+  // Get position details
+  const Position = require('./Position')
+  const position = await Position.findById(positionId)
+  if (!position) {
+    errors.push('Position not found')
+    return { isValid: false, errors }
+  }
+
+  // If candidate has a partylist, check position-specific limits
+  if (partylistId) {
+    const validationResult = await position.validateCandidateLimit(partylistId)
+    
+    // Count existing candidates excluding the one being updated
+    let existingCount = validationResult.currentCount
+    if (excludeCandidateId) {
+      const existingCandidate = await this.findById(excludeCandidateId)
+      if (existingCandidate && 
+          existingCandidate.positionId.toString() === positionId && 
+          existingCandidate.partylistId && 
+          existingCandidate.partylistId.toString() === partylistId) {
+        existingCount -= 1
+      }
+    }
+    
+    if (existingCount >= position.maxCandidatesPerPartylist) {
+      errors.push(`This partylist already has the maximum number of candidates (${position.maxCandidatesPerPartylist}) for ${position.positionName}`)
+      return { isValid: false, errors }
+    }
+  }
+
+  return { 
+    isValid: true, 
+    errors: [],
+    voter: basicValidation.voter,
+    position 
+  }
+}
+
+// Check partylist candidate limits for specific position
+candidateSchema.statics.checkPartylistPositionLimits = async function(ssgElectionId, positionId, partylistId, excludeCandidateId = null) {
+  if (!partylistId) return { withinLimits: true, message: 'Independent candidates are not limited by partylist quotas' }
+
+  const Position = require('./Position')
+  const position = await Position.findById(positionId)
+  if (!position) {
+    return { withinLimits: false, message: 'Position not found' }
+  }
+
+  const query = {
+    ssgElectionId,
+    positionId,
+    partylistId,
+    isActive: true
+  }
+  
+  if (excludeCandidateId) {
+    query._id = { $ne: excludeCandidateId }
+  }
+  
+  const currentCount = await this.countDocuments(query)
+  const maxAllowed = position.maxCandidatesPerPartylist
+  
+  if (currentCount >= maxAllowed) {
+    return {
+      withinLimits: false,
+      message: `This partylist already has the maximum number of candidates (${maxAllowed}) for position "${position.positionName}"`,
+      currentCount,
+      maxAllowed,
+      remaining: 0,
+      positionName: position.positionName
+    }
+  }
+  
+  return {
+    withinLimits: true,
+    message: `Can add ${maxAllowed - currentCount} more candidate${maxAllowed - currentCount !== 1 ? 's' : ''} for position "${position.positionName}"`,
+    currentCount,
+    maxAllowed,
+    remaining: maxAllowed - currentCount,
+    positionName: position.positionName
+  }
+}
+
+// Get comprehensive partylist statistics per election
+candidateSchema.statics.getPartylistPositionStats = async function(ssgElectionId, partylistId) {
+  const Position = require('./Position')
+  
+  // Get all positions for this SSG election
+  const positions = await Position.find({
+    ssgElectionId,
+    isActive: true
+  }).sort({ positionOrder: 1 })
+
+  const stats = await Promise.all(positions.map(async (position) => {
+    const candidateCount = await this.countDocuments({
+      ssgElectionId,
+      positionId: position._id,
+      partylistId,
+      isActive: true
+    })
+    
+    return {
+      positionId: position._id,
+      positionName: position.positionName,
+      positionOrder: position.positionOrder,
+      currentCandidates: candidateCount,
+      maxCandidatesPerPartylist: position.maxCandidatesPerPartylist,
+      canAddMore: candidateCount < position.maxCandidatesPerPartylist,
+      remaining: Math.max(0, position.maxCandidatesPerPartylist - candidateCount),
+      percentageFilled: position.maxCandidatesPerPartylist > 0 ? 
+        Math.round((candidateCount / position.maxCandidatesPerPartylist) * 100) : 0
+    }
+  }))
+
+  const totalCandidates = stats.reduce((sum, stat) => sum + stat.currentCandidates, 0)
+  const totalPossible = stats.reduce((sum, stat) => sum + stat.maxCandidatesPerPartylist, 0)
+  
+  return {
+    positions: stats,
+    summary: {
+      totalCandidates,
+      totalPossibleSlots: totalPossible,
+      totalRemainingSlots: totalPossible - totalCandidates,
+      completedPositions: stats.filter(s => s.currentCandidates === s.maxCandidatesPerPartylist).length,
+      availablePositions: stats.filter(s => s.canAddMore).length,
+      totalPositions: stats.length,
+      overallPercentageFilled: totalPossible > 0 ? Math.round((totalCandidates / totalPossible) * 100) : 0
+    }
+  }
+}
+
+// Validate if moving candidate between positions/partylists is allowed
+candidateSchema.statics.validateCandidateMove = async function(candidateId, newPositionId, newPartylistId = null) {
+  const candidate = await this.findById(candidateId)
+  if (!candidate) {
+    return { isValid: false, message: 'Candidate not found' }
+  }
+
+  // If changing partylist, check new partylist limits
+  if (newPartylistId && newPartylistId !== candidate.partylistId?.toString()) {
+    const limitsCheck = await this.checkPartylistPositionLimits(
+      candidate.ssgElectionId, 
+      newPositionId, 
+      newPartylistId,
+      candidateId // exclude current candidate from count
+    )
+    
+    if (!limitsCheck.withinLimits) {
+      return { isValid: false, message: limitsCheck.message }
+    }
+  }
+
+  return { isValid: true, message: 'Candidate can be moved' }
 }
 
 module.exports = mongoose.model("Candidate", candidateSchema)
