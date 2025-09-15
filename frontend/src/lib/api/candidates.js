@@ -359,26 +359,26 @@ export const candidatesAPI = {
     },
 
     // NEW: Check candidate eligibility (matches new routes)
-    checkEligibility: async (ssgElectionId, positionId, partylistId = null, voterId = null) => {
-      try {
-        let url = `/candidates/ssg/eligibility/${ssgElectionId}/${positionId}`
-        if (partylistId) {
-          url = `/candidates/ssg/eligibility/${ssgElectionId}/${positionId}/${partylistId}`
-        }
+    // checkEligibility: async (ssgElectionId, positionId, partylistId = null, voterId = null) => {
+    //   try {
+    //     let url = `/candidates/ssg/eligibility/${ssgElectionId}/${positionId}`
+    //     if (partylistId) {
+    //       url = `/candidates/ssg/eligibility/${ssgElectionId}/${positionId}/${partylistId}`
+    //     }
         
-        const params = new URLSearchParams()
-        if (voterId) params.append('voterId', voterId)
+    //     const params = new URLSearchParams()
+    //     if (voterId) params.append('voterId', voterId)
         
-        const queryString = params.toString()
-        if (queryString) url += `?${queryString}`
+    //     const queryString = params.toString()
+    //     if (queryString) url += `?${queryString}`
         
-        const response = await api.get(url)
-        return response.data
-      } catch (error) {
-        console.error('Error checking SSG candidate eligibility:', error)
-        throw error
-      }
-    },
+    //     const response = await api.get(url)
+    //     return response.data
+    //   } catch (error) {
+    //     console.error('Error checking SSG candidate eligibility:', error)
+    //     throw error
+    //   }
+    // },
 
     // NEW: Get partylist candidate slots
     getPartylistSlots: async (ssgElectionId, partylistId = null) => {

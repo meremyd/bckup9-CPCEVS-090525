@@ -25,7 +25,7 @@ export const positionsAPI = {
       }
     },
     
-    // Create new SSG position (includes maxCandidatesPerPartylist)
+    // Create new SSG position 
     create: async (positionData) => {
       try {
         const response = await api.post('/positions/ssg', positionData)
@@ -36,16 +36,16 @@ export const positionsAPI = {
       }
     },
     
-    // Update SSG position (includes maxCandidatesPerPartylist)
+    // Update SSG position 
     update: async (id, positionData) => {
-      try {
-        const response = await api.put(`/positions/ssg/${id}`, positionData)
-        return response.data
-      } catch (error) {
-        console.error(`Error updating SSG position ${id}:`, error)
-        throw error
-      }
-    },
+  try {
+    const response = await api.put(`/positions/ssg/${id}`, positionData)
+    return response.data
+  } catch (error) {
+    console.error(`Error updating SSG position ${id}:`, error)
+    throw error
+  }
+},
     
     // Delete SSG position
     delete: async (id) => {

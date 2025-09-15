@@ -78,18 +78,20 @@ export default function SSGPositionsPartylistsPage() {
   try {
     console.log('Fetching positions for SSG election:', ssgElectionId)
     
-    const response = await positionsAPI.ssg.getByElection(ssgElectionId)
+    // Add cache busting parameter
+    const timestamp = new Date().getTime()
+    const response = await positionsAPI.ssg.getByElection(ssgElectionId, { 
+      _t: timestamp 
+    })
     
-    console.log('Raw API response:', response)
-    console.log('Positions data:', response.data?.positions)
+    console.log('Fresh API response:', response)
     
-    // Log each position's maxCandidatesPerPartylist specifically
     if (response.data?.positions) {
       response.data.positions.forEach((pos, index) => {
         console.log(`Position ${index + 1} (${pos.positionName}):`, {
+          id: pos._id,
           maxCandidatesPerPartylist: pos.maxCandidatesPerPartylist,
-          maxCandidates: pos.maxCandidates,
-          maxVotes: pos.maxVotes
+          updatedAt: pos.updatedAt
         })
       })
     }
@@ -389,6 +391,9 @@ export default function SSGPositionsPartylistsPage() {
   }
 
   const handleEditPosition = async (position) => {
+  console.log('Editing position:', position)
+  console.log('Current maxCandidatesPerPartylist:', position.maxCandidatesPerPartylist)
+  
   const { value: formValues } = await Swal.fire({
     title: 'Edit Position',
     html: `
@@ -473,14 +478,20 @@ export default function SSGPositionsPartylistsPage() {
     try {
       setLoading(true)
       
-      // Debug: Log what we're sending
-      console.log('Updating position with data:', formValues)
-      console.log('Position ID:', position._id)
+      console.log('=== UPDATE PROCESS START ===')
+      console.log('Original position:', position)
+      console.log('Update data:', formValues)
       
+      // Make the API call
       const response = await positionsAPI.ssg.update(position._id, formValues)
+      console.log('Update response:', response)
       
-      // Debug: Log the response
-      console.log('API response:', response)
+      // Wait a moment for DB to settle
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      // Force a complete refresh
+      console.log('=== FETCHING FRESH DATA ===')
+      await fetchPositions()
       
       Swal.fire({
         icon: 'success',
@@ -491,13 +502,6 @@ export default function SSGPositionsPartylistsPage() {
         toast: true,
         position: 'top-end'
       })
-      
-      // Force a fresh fetch instead of relying on cache
-      console.log('Fetching fresh position data...')
-      await fetchPositions()
-      
-      // Debug: Log the positions after fetch
-      console.log('Positions after update:', positions)
       
     } catch (error) {
       console.error('Error updating position:', error)

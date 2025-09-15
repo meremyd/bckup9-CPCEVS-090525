@@ -150,20 +150,20 @@ class CandidateController {
   const { voterId, ssgElectionId, positionId, partylistId } = candidateData
   const errors = []
 
-  // Verify voter exists and is registered
+  // Verify voter exists (REMOVED registration requirement)
   const voter = await Voter.findById(voterId).populate('departmentId')
   if (!voter) {
     errors.push('Voter not found')
     return { isValid: false, errors }
   }
 
-  // REQUIREMENT: Must be registered voter (not just any voter)
-  if (!voter.isRegistered || !voter.isPasswordActive) {
-    errors.push('Only registered voters can be SSG candidates')
-    return { isValid: false, errors }
-  }
+  // REMOVED: Registration requirement check
+  // if (!voter.isRegistered || !voter.isPasswordActive) {
+  //   errors.push('Only registered voters can be SSG candidates')
+  //   return { isValid: false, errors }
+  // }
 
-  // REQUIREMENT: Check if voter is already a candidate in this SSG election (any position)
+  // Check if voter is already a candidate in this SSG election (any position)
   const existingCandidateQuery = {
     voterId,
     ssgElectionId,
@@ -182,7 +182,7 @@ class CandidateController {
     return { isValid: false, errors }
   }
 
-  // REQUIREMENT: If partylist is specified, check if voter is already in another partylist for this election
+  // If partylist is specified, check if voter is already in another partylist for this election
   if (partylistId) {
     const partylistCandidateQuery = {
       voterId,
@@ -203,7 +203,7 @@ class CandidateController {
       return { isValid: false, errors }
     }
 
-    // NEW: Check position-specific candidate limits per partylist
+    // Check position-specific candidate limits per partylist
     const positionLimits = await Candidate.checkPartylistPositionLimits(
       ssgElectionId, 
       positionId, 
@@ -536,14 +536,14 @@ static async getPartylistCandidateSlots(req, res, next) {
     }
 
     // Optional: Log when adding unregistered voters as candidates
-    if (!voter.isRegistered) {
-      await CandidateController.logAuditAction(
-        "CREATE_CANDIDATE",
-        req.user,
-        `Adding unregistered voter as candidate: ${voter.schoolId} - ${voter.firstName} ${voter.lastName}`,
-        req
-      )
-    }
+    // if (!voter.isRegistered) {
+    //   await CandidateController.logAuditAction(
+    //     "CREATE_CANDIDATE",
+    //     req.user,
+    //     `Adding unregistered voter as candidate: ${voter.schoolId} - ${voter.firstName} ${voter.lastName}`,
+    //     req
+    //   )
+    // }
 
 
       // if (!voter.isRegistered || !voter.isPasswordActive) {
@@ -742,7 +742,7 @@ static async getPartylistCandidateSlots(req, res, next) {
     }
 
     // Enhanced SSG validation with position limits
-    const validation = await Candidate.validateSSGCandidateWithPositionLimits(candidateData)
+    const validation = await CandidateController.validateSSGCandidate(candidateData)
     if (!validation.isValid) {
       await CandidateController.logAuditAction(
         'UNAUTHORIZED_ACCESS_ATTEMPT',
@@ -1030,7 +1030,7 @@ static async checkCandidateEligibility(req, res, next) {
       return next(error)
     }
 
-    // If updating critical fields, validate
+    // For critical field updates, do basic validation
     if (updateData.voterId || updateData.positionId || updateData.partylistId !== undefined) {
       const candidateData = {
         voterId: updateData.voterId || candidate.voterId,
@@ -1039,7 +1039,8 @@ static async checkCandidateEligibility(req, res, next) {
         partylistId: updateData.partylistId !== undefined ? updateData.partylistId : candidate.partylistId
       }
 
-      const validation = await Candidate.validateSSGCandidateWithPositionLimits(candidateData, id)
+      // Simple validation without complex position limits for updates
+      const validation = await CandidateController.validateSSGCandidate(candidateData, id, true)
       if (!validation.isValid) {
         const error = new Error(validation.errors.join(', '))
         error.statusCode = 400
@@ -1051,8 +1052,8 @@ static async checkCandidateEligibility(req, res, next) {
     await CandidateController.updateCandidate(req, res, next)
   } catch (error) {
     console.error("Error updating SSG candidate:", error)
-    const err = new Error("Failed to update SSG candidate")
-    err.statusCode = 500
+    const err = new Error(error.message || "Failed to update SSG candidate")
+    err.statusCode = error.statusCode || 500
     next(err)
   }
 }

@@ -92,7 +92,7 @@ class PositionController {
       positionOrder, 
       maxVotes, 
       maxCandidates, 
-      maxCandidatesPerPartylist,  // NEW FIELD
+      maxCandidatesPerPartylist,  
       description 
     } = req.body
 
@@ -122,10 +122,11 @@ class PositionController {
       })
     }
 
-    // Check for duplicate position name in the same election
+    // Check for duplicate position name ONLY in the same SSG election
     const existingPosition = await Position.findOne({
       ssgElectionId,
-      positionName: { $regex: new RegExp(`^${positionName}$`, 'i') }
+      deptElectionId: null,
+      positionName: { $regex: new RegExp(`^${positionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
     })
 
     if (existingPosition) {
@@ -138,13 +139,17 @@ class PositionController {
     // Get next position order if not provided
     let finalPositionOrder = positionOrder
     if (!finalPositionOrder) {
-      const lastPosition = await Position.findOne({ ssgElectionId })
+      const lastPosition = await Position.findOne({ 
+        ssgElectionId,
+        deptElectionId: null
+      })
         .sort({ positionOrder: -1 })
       finalPositionOrder = lastPosition ? lastPosition.positionOrder + 1 : 1
     }
 
     const newPosition = new Position({
       ssgElectionId,
+      deptElectionId: null,
       positionName: positionName.trim(),
       positionOrder: finalPositionOrder,
       maxVotes: maxVotes || 1,
@@ -191,6 +196,7 @@ class PositionController {
       isActive 
     } = req.body
 
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -211,10 +217,11 @@ class PositionController {
       })
     }
 
-    // Check for duplicate position name if name is being changed
+    // Check for duplicate position name ONLY within the same SSG election if name is being changed
     if (positionName && positionName !== position.positionName) {
       const existingPosition = await Position.findOne({
         ssgElectionId: position.ssgElectionId,
+        deptElectionId: null,
         positionName: { $regex: new RegExp(`^${positionName}$`, 'i') },
         _id: { $ne: id }
       })
@@ -275,7 +282,8 @@ class PositionController {
     if (positionOrder !== undefined) position.positionOrder = positionOrder
     if (maxVotes !== undefined) position.maxVotes = maxVotes
     if (maxCandidates !== undefined) position.maxCandidates = maxCandidates
-    if (maxCandidatesPerPartylist !== undefined) position.maxCandidatesPerPartylist = maxCandidatesPerPartylist  // NEW
+    if (maxCandidatesPerPartylist !== undefined) console.log('Setting maxCandidatesPerPartylist to:', maxCandidatesPerPartylist), position.maxCandidatesPerPartylist = maxCandidatesPerPartylist  // NEW
+    if (maxCandidatesPerPartylist !== undefined) position.maxCandidatesPerPartylist = maxCandidatesPerPartylist
     if (description !== undefined) position.description = description?.trim() || null
     if (isActive !== undefined) position.isActive = isActive
 
@@ -597,27 +605,21 @@ static async validateSSGPositionDeletion(req, res) {
       })
     }
 
-    // Get all SSG positions (not filtered by specific election)
-    const allSSGPositions = await Position.find({ 
-      ssgElectionId: { $ne: null },
+    // Get positions ONLY for the specific SSG election
+    const ssgPositions = await Position.find({ 
+      ssgElectionId: ssgElectionId,
       deptElectionId: null 
     })
     .populate('ssgElectionId', 'title electionYear status')
     .sort({ positionOrder: 1 })
 
-    // For each position, count candidates in the selected election
+    // For each position, count candidates
     const positionsWithCandidateCounts = await Promise.all(
-      allSSGPositions.map(async (position) => {
-        // Count total candidates for this position in the selected election
+      ssgPositions.map(async (position) => {
+        // Count total candidates for this position
         const totalCandidates = await Candidate.countDocuments({ 
           positionId: position._id,
-          ssgElectionId: new mongoose.Types.ObjectId(ssgElectionId)
-        })
-
-        // Count active candidates for this position in the selected election
-        const activeCandidates = await Candidate.countDocuments({ 
-          positionId: position._id,
-          ssgElectionId: new mongoose.Types.ObjectId(ssgElectionId),
+          ssgElectionId: position.ssgElectionId._id,
           isActive: true
         })
 
@@ -628,47 +630,31 @@ static async validateSSGPositionDeletion(req, res) {
           positionOrder: position.positionOrder,
           maxVotes: position.maxVotes,
           maxCandidates: position.maxCandidates,
+          maxCandidatesPerPartylist: position.maxCandidatesPerPartylist,
           ssgElectionId: position.ssgElectionId,
-          originalElection: {
-            _id: position.ssgElectionId._id,
-            title: position.ssgElectionId.title,
-            electionYear: position.ssgElectionId.electionYear,
-            status: position.ssgElectionId.status
-          },
-          selectedElection: {
-            _id: ssgElection._id,
-            title: ssgElection.title,
-            electionYear: ssgElection.electionYear,
-            status: ssgElection.status
-          },
           candidateCount: totalCandidates,
-          activeCandidateCount: activeCandidates,
-          isFromSelectedElection: position.ssgElectionId._id.toString() === ssgElectionId,
+          isActive: position.isActive,
           createdAt: position.createdAt,
           updatedAt: position.updatedAt
         }
       })
     )
-
     // Calculate summary statistics
-    const totalActiveCandidatesInSelectedElection = positionsWithCandidateCounts
-      .reduce((sum, position) => sum + position.activeCandidateCount, 0)
-
-    const positionsFromSelectedElection = positionsWithCandidateCounts
-      .filter(position => position.isFromSelectedElection).length
+    const totalCandidates = positionsWithCandidateCounts
+      .reduce((sum, position) => sum + position.candidateCount, 0)
 
     await AuditLog.logUserAction(
       "SYSTEM_ACCESS",
       req.user,
-      `Retrieved all SSG positions with candidate counts for election: ${ssgElection.title}`,
+      `Retrieved SSG positions for election: ${ssgElection.title}`,
       req
     )
 
     res.status(200).json({
       success: true,
-      message: "All SSG positions retrieved successfully with candidate counts for selected election",
+      message: "SSG positions retrieved successfully for selected election",
       data: {
-        selectedElection: {
+        ssgElection: {
           _id: ssgElection._id,
           title: ssgElection.title,
           electionYear: ssgElection.electionYear,
@@ -677,8 +663,7 @@ static async validateSSGPositionDeletion(req, res) {
         positions: positionsWithCandidateCounts,
         summary: {
           totalPositions: positionsWithCandidateCounts.length,
-          positionsFromSelectedElection: positionsFromSelectedElection,
-          totalActiveCandidatesInSelectedElection: totalActiveCandidatesInSelectedElection
+          totalCandidates: totalCandidates
         }
       }
     })
@@ -920,10 +905,11 @@ static async validateSSGPositionDeletion(req, res) {
         })
       }
 
-      // Check for duplicate position name in the same election
+      // Check for duplicate position name ONLY in the same departmental election
       const existingPosition = await Position.findOne({
         deptElectionId,
-        positionName: { $regex: new RegExp(`^${positionName}$`, 'i') }
+        ssgElectionId: null,
+        positionName: { $regex: new RegExp(`^${positionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
       })
 
       if (existingPosition) {
@@ -936,13 +922,17 @@ static async validateSSGPositionDeletion(req, res) {
       // Get next position order if not provided
       let finalPositionOrder = positionOrder
       if (!finalPositionOrder) {
-        const lastPosition = await Position.findOne({ deptElectionId })
+        const lastPosition = await Position.findOne({ 
+          deptElectionId,
+          ssgElectionId: null
+        })
           .sort({ positionOrder: -1 })
         finalPositionOrder = lastPosition ? lastPosition.positionOrder + 1 : 1
       }
 
       const newPosition = new Position({
         deptElectionId,
+        ssgElectionId: null,
         positionName: positionName.trim(),
         positionOrder: finalPositionOrder,
         maxVotes: maxVotes || 1,
@@ -1007,11 +997,12 @@ static async validateSSGPositionDeletion(req, res) {
         })
       }
 
-      // Check for duplicate position name if name is being changed
+      // Check for duplicate position name ONLY within the same departmental election if name is being changed
       if (positionName && positionName !== position.positionName) {
         const existingPosition = await Position.findOne({
           deptElectionId: position.deptElectionId,
-          positionName: { $regex: new RegExp(`^${positionName}$`, 'i') },
+          ssgElectionId: null,
+          positionName: { $regex: new RegExp(`^${positionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
           _id: { $ne: id }
         })
 
@@ -1140,7 +1131,8 @@ static async validateSSGPositionDeletion(req, res) {
         })
       }
 
-      const positions = await Position.find({ 
+      // Get positions ONLY for the specific departmental election
+      const deptPositions = await Position.find({ 
         deptElectionId,
         ssgElectionId: null 
       })
@@ -1154,6 +1146,35 @@ static async validateSSGPositionDeletion(req, res) {
       })
       .sort({ positionOrder: 1 })
 
+      // For each position, count candidates
+      const positionsWithCandidateCounts = await Promise.all(
+        deptPositions.map(async (position) => {
+          // Count total candidates for this position
+          const totalCandidates = await Candidate.countDocuments({ 
+            positionId: position._id,
+            deptElectionId: position.deptElectionId._id,
+            isActive: true
+          })
+
+          return {
+            _id: position._id,
+            positionName: position.positionName,
+            description: position.description,
+            positionOrder: position.positionOrder,
+            maxVotes: position.maxVotes,
+            maxCandidates: position.maxCandidates,
+            deptElectionId: position.deptElectionId,
+            candidateCount: totalCandidates,
+            isActive: position.isActive,
+            createdAt: position.createdAt,
+            updatedAt: position.updatedAt
+          }
+        })
+      )
+
+      // Calculate summary statistics
+      const totalCandidates = positionsWithCandidateCounts
+        .reduce((sum, position) => sum + position.candidateCount, 0)
       await AuditLog.logUserAction(
         "SYSTEM_ACCESS",
         req.user,
@@ -1164,7 +1185,20 @@ static async validateSSGPositionDeletion(req, res) {
       res.status(200).json({
         success: true,
         message: "Departmental election positions retrieved successfully",
-        data: positions
+        data: {
+          deptElection: {
+            _id: deptElection._id,
+            title: deptElection.title,
+            electionYear: deptElection.electionYear,
+            status: deptElection.status,
+            departmentId: deptElection.departmentId
+          },
+          positions: positionsWithCandidateCounts,
+          summary: {
+            totalPositions: positionsWithCandidateCounts.length,
+            totalCandidates: totalCandidates
+          }
+        }
       })
     } catch (error) {
       console.error("Error getting departmental election positions:", error)

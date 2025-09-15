@@ -63,7 +63,7 @@ positionSchema.index({ ssgElectionId: 1, positionName: 1 }, { unique: true, spar
 positionSchema.index({ deptElectionId: 1, positionOrder: 1 })
 positionSchema.index({ ssgElectionId: 1, positionOrder: 1 })
 
-// Virtual to get election type
+
 positionSchema.virtual('electionType').get(function() {
   return this.ssgElectionId ? 'ssg' : 'departmental'
 })

@@ -204,39 +204,70 @@ candidateSchema.statics.validateCandidateData = function(candidateData) {
 }
 
 // UPDATED: Enhanced validation for SSG candidates (removed platform validation)
-candidateSchema.statics.validateSSGCandidateData = function(candidateData) {
+candidateSchema.statics.validateSSGCandidate = async function(candidateData, excludeCandidateId = null) {
+  const { voterId, ssgElectionId, positionId, partylistId } = candidateData
   const errors = []
 
-  if (!candidateData.voterId) {
-    errors.push('Voter ID is required')
+  // Verify voter exists (removed registration requirement)
+  const Voter = require('./Voter')
+  const voter = await Voter.findById(voterId).populate('departmentId')
+  if (!voter) {
+    errors.push('Voter not found')
+    return { isValid: false, errors }
   }
 
-  if (!candidateData.positionId) {
-    errors.push('Position ID is required')
+  // Check if voter is already a candidate in this SSG election (any position)
+  const existingCandidateQuery = {
+    voterId,
+    ssgElectionId,
+    deptElectionId: null
+  }
+  
+  if (excludeCandidateId) {
+    existingCandidateQuery._id = { $ne: excludeCandidateId }
+  }
+  
+  const existingCandidate = await this.findOne(existingCandidateQuery)
+    .populate('positionId', 'positionName')
+
+  if (existingCandidate) {
+    errors.push(`Voter is already a candidate for ${existingCandidate.positionId.positionName} in this SSG election`)
+    return { isValid: false, errors }
   }
 
-  if (!candidateData.ssgElectionId) {
-    errors.push('SSG Election ID is required')
+  // If partylist is specified, check if voter is already in another partylist for this election
+  if (partylistId) {
+    const partylistCandidateQuery = {
+      voterId,
+      ssgElectionId,
+      partylistId: { $ne: partylistId },
+      deptElectionId: null
+    }
+    
+    if (excludeCandidateId) {
+      partylistCandidateQuery._id = { $ne: excludeCandidateId }
+    }
+    
+    const existingPartylistCandidate = await this.findOne(partylistCandidateQuery)
+      .populate('partylistId', 'partylistName')
+    
+    if (existingPartylistCandidate) {
+      errors.push(`Voter is already a member of ${existingPartylistCandidate.partylistId.partylistName} in this SSG election`)
+      return { isValid: false, errors }
+    }
   }
 
-  if (candidateData.deptElectionId) {
-    errors.push('Cannot specify Departmental Election ID for SSG candidate')
-  }
-
-  if (candidateData.candidateNumber && candidateData.candidateNumber < 1) {
-    errors.push('Candidate number must be positive')
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors
+  return { 
+    isValid: true, 
+    errors: [],
+    voter 
   }
 }
 
 // Rest of the static methods remain the same...
 // [Including all the existing static methods without changes]
 
-// UPDATED: Check if voter can be SSG candidate (registered voters only)
+// UPDATED: Check if voter can be SSG candidate (any voter allowed)
 candidateSchema.statics.checkSSGEligibility = async function(voterId, ssgElectionId, excludeCandidateId = null) {
   const Voter = require('./Voter')
   
@@ -246,9 +277,9 @@ candidateSchema.statics.checkSSGEligibility = async function(voterId, ssgElectio
     return { eligible: false, reason: 'Voter not found' }
   }
   
-  if (!voter.isRegistered || !voter.isPasswordActive) {
-    return { eligible: false, reason: 'Only registered voters can be SSG candidates' }
-  }
+  // if (!voter.isRegistered || !voter.isPasswordActive) {
+  //   return { eligible: false, reason: 'Only registered voters can be SSG candidates' }
+  // }
 
   // Check if voter is already a candidate in this SSG election
   const existingCandidateQuery = {
@@ -514,8 +545,11 @@ candidateSchema.statics.validateSSGCandidateWithPositionLimits = async function(
   const { voterId, ssgElectionId, positionId, partylistId } = candidateData
   const errors = []
 
-  // Run basic SSG validation first
-  const basicValidation = await this.validateSSGCandidate(candidateData, excludeCandidateId)
+  // Run basic SSG validation first - FIXED: Use the correct method
+  const basicValidation = await this.validateSSGCandidate ? 
+    await this.validateSSGCandidate(candidateData, excludeCandidateId) : 
+    { isValid: true, errors: [], voter: null }
+
   if (!basicValidation.isValid) {
     return basicValidation
   }
@@ -530,10 +564,12 @@ candidateSchema.statics.validateSSGCandidateWithPositionLimits = async function(
 
   // If candidate has a partylist, check position-specific limits
   if (partylistId) {
-    const validationResult = await position.validateCandidateLimit(partylistId)
+    const validationResult = await position.validateCandidateLimit ? 
+      await position.validateCandidateLimit(partylistId) :
+      { currentCount: 0 }
     
     // Count existing candidates excluding the one being updated
-    let existingCount = validationResult.currentCount
+    let existingCount = validationResult.currentCount || 0
     if (excludeCandidateId) {
       const existingCandidate = await this.findById(excludeCandidateId)
       if (existingCandidate && 
@@ -544,8 +580,8 @@ candidateSchema.statics.validateSSGCandidateWithPositionLimits = async function(
       }
     }
     
-    if (existingCount >= position.maxCandidatesPerPartylist) {
-      errors.push(`This partylist already has the maximum number of candidates (${position.maxCandidatesPerPartylist}) for ${position.positionName}`)
+    if (existingCount >= (position.maxCandidatesPerPartylist || 1)) {
+      errors.push(`This partylist already has the maximum number of candidates (${position.maxCandidatesPerPartylist || 1}) for ${position.positionName}`)
       return { isValid: false, errors }
     }
   }
