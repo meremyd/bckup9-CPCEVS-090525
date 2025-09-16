@@ -23,6 +23,17 @@ export const departmentsAPI = {
     }
   },
   
+  // NEW: Get department by department code (public)
+  getByCode: async (code) => {
+    try {
+      const response = await api.get(`/departments/code/${code}`)
+      return response.data
+    } catch (error) {
+      console.error('Error fetching department by code:', error)
+      throw error
+    }
+  },
+  
   // Search departments (public)
   search: async (params = {}) => {
     try {

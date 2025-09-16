@@ -91,7 +91,7 @@ async function migrate() {
       console.log(`Created user: ${user.username} (${user.userType})`)
     }
 
-    // Migrate departments (keeping the same 5 departments)
+    // Migrate departments with updated data
     console.log("Migrating departments...")
     const departments = await Department.insertMany([
       {
@@ -100,12 +100,12 @@ async function migrate() {
         college: "College of Teacher Education",
       },
       {
-        departmentCode: "BSED-SCI",
+        departmentCode: "BSED",
         degreeProgram: "Bachelor of Secondary Education major in Science",
         college: "College of Teacher Education",
       },
       {
-        departmentCode: "BSED-ENG",
+        departmentCode: "BSED",
         degreeProgram: "Bachelor of Secondary Education major in English",
         college: "College of Teacher Education",
       },
@@ -289,7 +289,7 @@ async function migrate() {
       console.log(`Created registered voter: ${voter.schoolId} (${voter.fullName})`)
     }
 
-    // Create SSG Election (updated structure)
+    // Create SSG Election
     console.log("Creating SSG election...")
     const ssgElection = await SSGElection.create({
       ssgElectionId: "SSG2024001",
@@ -302,7 +302,7 @@ async function migrate() {
       voterTurnout: 0,
     })
 
-    // Create Departmental Elections (updated structure)
+    // Create Departmental Elections
     console.log("Creating departmental elections...")
     const departmentalElections = []
     
@@ -336,7 +336,7 @@ async function migrate() {
 
     console.log(`Created 1 SSG election and ${departmentalElections.length} departmental elections`)
 
-    // Create positions for SSG election
+    // Create positions for SSG election - Only President, Vice President, and Senator
     console.log("Creating SSG positions...")
     const ssgPositions = await Position.insertMany([
       {
@@ -346,6 +346,7 @@ async function migrate() {
         positionOrder: 1,
         maxVotes: 1,
         maxCandidates: 10,
+        maxCandidatesPerPartylist: 1,
         description: "Head of the Supreme Student Government",
         isActive: true,
       },
@@ -356,56 +357,18 @@ async function migrate() {
         positionOrder: 2,
         maxVotes: 1,
         maxCandidates: 10,
+        maxCandidatesPerPartylist: 1,
         description: "Deputy head of the Supreme Student Government", 
         isActive: true,
       },
       {
         ssgElectionId: ssgElection._id,
         deptElectionId: null,
-        positionName: "Secretary",
-        positionOrder: 3,
-        maxVotes: 1,
-        maxCandidates: 10,
-        description: "Responsible for documentation and correspondence",
-        isActive: true,
-      },
-      {
-        ssgElectionId: ssgElection._id,
-        deptElectionId: null,
-        positionName: "Treasurer",
-        positionOrder: 4,
-        maxVotes: 1,
-        maxCandidates: 10,
-        description: "Manages financial matters",
-        isActive: true,
-      },
-      {
-        ssgElectionId: ssgElection._id,
-        deptElectionId: null,
-        positionName: "Auditor",
-        positionOrder: 5,
-        maxVotes: 1,
-        maxCandidates: 10,
-        description: "Reviews financial records and transactions",
-        isActive: true,
-      },
-      {
-        ssgElectionId: ssgElection._id,
-        deptElectionId: null,
-        positionName: "Public Information Officer", 
-        positionOrder: 6,
-        maxVotes: 1,
-        maxCandidates: 10,
-        description: "Handles public relations and communications",
-        isActive: true,
-      },
-      {
-        ssgElectionId: ssgElection._id,
-        deptElectionId: null,
         positionName: "Senator",
-        positionOrder: 7,
+        positionOrder: 3,
         maxVotes: 12,
         maxCandidates: 20,
+        maxCandidatesPerPartylist: 6,
         description: "Legislative body members",
         isActive: true,
       },
@@ -425,6 +388,7 @@ async function migrate() {
         positionOrder: 1,
         maxVotes: 1,
         maxCandidates: 10,
+        maxCandidatesPerPartylist: null,
         description: "Head of the departmental student government",
         isActive: true,
       },
@@ -435,6 +399,7 @@ async function migrate() {
         positionOrder: 2,
         maxVotes: 1,
         maxCandidates: 10,
+        maxCandidatesPerPartylist: null,
         description: "Deputy head of the departmental student government",
         isActive: true,
       },
@@ -445,6 +410,7 @@ async function migrate() {
         positionOrder: 3,
         maxVotes: 1,
         maxCandidates: 10,
+        maxCandidatesPerPartylist: null,
         description: "Handles documentation for the department",
         isActive: true,
       },
@@ -455,6 +421,7 @@ async function migrate() {
         positionOrder: 4,
         maxVotes: 1,
         maxCandidates: 10,
+        maxCandidatesPerPartylist: null,
         description: "Manages departmental funds",
         isActive: true,
       },
@@ -465,6 +432,7 @@ async function migrate() {
         positionOrder: 5,
         maxVotes: 1,
         maxCandidates: 10,
+        maxCandidatesPerPartylist: null,
         description: "Represents first year students",
         isActive: true,
       },
@@ -475,6 +443,7 @@ async function migrate() {
         positionOrder: 6,
         maxVotes: 1,
         maxCandidates: 10,
+        maxCandidatesPerPartylist: null,
         description: "Represents second year students", 
         isActive: true,
       },
@@ -485,6 +454,7 @@ async function migrate() {
         positionOrder: 7,
         maxVotes: 1,
         maxCandidates: 10,
+        maxCandidatesPerPartylist: null,
         description: "Represents third year students",
         isActive: true,
       },
@@ -495,6 +465,7 @@ async function migrate() {
         positionOrder: 8,
         maxVotes: 1,
         maxCandidates: 10,
+        maxCandidatesPerPartylist: null,
         description: "Represents fourth year students",
         isActive: true,
       },
@@ -510,6 +481,7 @@ async function migrate() {
         positionOrder: 1,
         maxVotes: 1,
         maxCandidates: 10,
+        maxCandidatesPerPartylist: null,
         description: "Head of the departmental student government",
         isActive: true,
       },
@@ -520,6 +492,7 @@ async function migrate() {
         positionOrder: 2,
         maxVotes: 1,
         maxCandidates: 10,
+        maxCandidatesPerPartylist: null,
         description: "Deputy head of the departmental student government",
         isActive: true,
       },
@@ -530,6 +503,7 @@ async function migrate() {
         positionOrder: 3,
         maxVotes: 1,
         maxCandidates: 10,
+        maxCandidatesPerPartylist: null,
         description: "Handles documentation for the department",
         isActive: true,
       },
@@ -545,15 +519,15 @@ async function migrate() {
         partylistId: "PL2024001",
         ssgElectionId: ssgElection._id,
         partylistName: "Unity Party",
-        description: "For unity and progress",
+        platform: null,
         logo: null,
         isActive: true,
       },
       {
         partylistId: "PL2024002",
         ssgElectionId: ssgElection._id,
-        partylistName: "Progressive Alliance", 
-        description: "Progressive leadership for students",
+        partylistName: "Progressive Alliance",
+        platform: null,
         logo: null,
         isActive: true,
       },
@@ -570,11 +544,11 @@ async function migrate() {
         ssgElectionId: ssgElection._id,
         deptElectionId: null,
         voterId: voters[0]._id,
-        positionId: ssgPositions[0]._id, // President
+        positionId: ssgPositions[0]._id,
         partylistId: partylists[0]._id,
         candidateNumber: 1,
         campaignPicture: null,
-        platform: "Better student services and facilities",
+        credentials: null,
         isActive: true,
         voteCount: 0,
       },
@@ -582,23 +556,23 @@ async function migrate() {
         ssgElectionId: ssgElection._id,
         deptElectionId: null,
         voterId: voters[1]._id,
-        positionId: ssgPositions[1]._id, // Vice President
+        positionId: ssgPositions[1]._id, 
         partylistId: partylists[0]._id,
         candidateNumber: 1,
         campaignPicture: null,
-        platform: "Enhanced student welfare programs",
+        credentials: null,
         isActive: true,
         voteCount: 0,
       },
       {
         ssgElectionId: ssgElection._id,
         deptElectionId: null,
-        voterId: registeredVoterDocs[1]._id, // Class officer
-        positionId: ssgPositions[2]._id, // Secretary
+        voterId: registeredVoterDocs[1]._id, 
+        positionId: ssgPositions[2]._id, 
         partylistId: partylists[1]._id,
         candidateNumber: 1,
         campaignPicture: null,
-        platform: "Transparent governance and accountability",
+        credentials: null,
         isActive: true,
         voteCount: 0,
       },
@@ -610,12 +584,12 @@ async function migrate() {
       {
         deptElectionId: csElection._id,
         ssgElectionId: null,
-        voterId: registeredVoterDocs[0]._id, // BSIT registered voter
-        positionId: csPositions[0]._id, // Governor
+        voterId: registeredVoterDocs[0]._id, 
+        positionId: csPositions[0]._id, 
         partylistId: null,
         candidateNumber: 1,
         campaignPicture: null,
-        platform: "Innovation in computer studies education",
+        credentials: null,
         isActive: true,
         voteCount: 0,
       },
@@ -627,7 +601,7 @@ async function migrate() {
         partylistId: null,
         candidateNumber: 1,
         campaignPicture: null,
-        platform: "Quality education and teacher development",
+        credentials: null,
         isActive: true,
         voteCount: 0,
       },
@@ -675,7 +649,6 @@ async function migrate() {
     ])
     console.log(`Created ${sampleBallots.length} sample ballots`)
 
-    // Create sample chat support requests
     console.log("Creating sample chat support...")
     const chatRequests = await ChatSupport.insertMany([
       {
@@ -703,7 +676,6 @@ async function migrate() {
     ])
     console.log(`Created ${chatRequests.length} chat support requests`)
 
-    // Create sample election participation records
     console.log("Creating sample election participation records...")
     const participationRecords = await ElectionParticipation.insertMany([
       {

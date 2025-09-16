@@ -3,11 +3,15 @@ const PartylistController = require("../controllers/partylistController")
 const { authMiddleware, authorizeRoles } = require("../middleware/authMiddleware")
 const router = express.Router()
 
+// Apply authentication middleware to all routes
 router.use(authMiddleware)
 
+// GET routes - accessible by all authenticated users (election_committee, sao, voter)
 router.get("/", authorizeRoles("election_committee", "sao", "voter"), PartylistController.getAllPartylists)
 router.get("/ssg-election/:ssgElectionId", authorizeRoles("election_committee", "sao", "voter"), PartylistController.getPartylistsBySSGElection)
 router.get("/:id", authorizeRoles("election_committee", "sao", "voter"), PartylistController.getPartylist)
+router.get("/:id/logo", authorizeRoles("election_committee", "sao", "voter"), PartylistController.getPartylistLogo)
+router.get("/:id/platform", authorizeRoles("election_committee", "sao", "voter"), PartylistController.getPartylistPlatform)
 router.get("/:id/statistics", authorizeRoles("election_committee", "sao", "voter"), PartylistController.getPartylistStatistics)
 router.post("/", authorizeRoles("election_committee"), PartylistController.createPartylist)
 router.put("/:id", authorizeRoles("election_committee"), PartylistController.updatePartylist)

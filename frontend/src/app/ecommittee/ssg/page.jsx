@@ -3,35 +3,27 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { ssgElectionsAPI } from "@/lib/api/ssgElections"
-import { candidatesAPI } from "@/lib/api/candidates"
-import { partylistsAPI } from "@/lib/api/partylists"
-import { ballotAPI } from "@/lib/api/ballots"
-import { votersAPI } from "@/lib/api/voters"
 import SSGLayout from "@/components/SSGLayout"
 import BackgroundWrapper from '@/components/BackgroundWrapper'
 import Swal from 'sweetalert2'
 import { 
-  Home, 
-  CheckCircle, 
   Users, 
   Clipboard, 
   User, 
   TrendingUp, 
-  BarChart3,
-  Menu,
-  X,
-  LayoutDashboard,
-  LogOut,
-  Plus,
-  Edit,
-  Trash2,
-  Save,
-  AlertCircle,
   Vote,
   Building2,
   Loader2,
   ChevronRight,
-  Settings
+  Settings,
+  Plus,
+  X,
+  Save,
+  AlertCircle,
+  Trash2,
+  LayoutDashboard,
+  LogOut,
+  FileText
 } from "lucide-react"
 
 export default function SSGPage() {
@@ -44,11 +36,11 @@ export default function SSGPage() {
   const [countsLoading, setCountsLoading] = useState(false)
   const [cardCounts, setCardCounts] = useState({
     candidates: 0,
+    positions: 0,
     partylists: 0,
-    voters: 0,
+    participants: 0,
     turnout: 0,
-    ballots: 0,
-    statistics: 0
+    ballots: 0
   })
   const [formData, setFormData] = useState({
     ssgElectionId: '',
@@ -99,14 +91,14 @@ export default function SSGPage() {
     try {
       const response = await ssgElectionsAPI.getAll()
       console.log('Elections API response:', response)
-      setElections(response.elections || response.data || response)
+      setElections(response.data || response.elections || response || [])
     } catch (error) {
       console.error("Error fetching elections:", error)
       setElections([])
     }
   }
 
-  // Fixed fetchCardCounts function
+  // Enhanced fetchCardCounts function using proper SSG API endpoints
   const fetchCardCounts = async () => {
     if (!selectedElection) {
       console.log('No selected election, skipping count fetch')
@@ -123,126 +115,164 @@ export default function SSGPage() {
       
       let counts = {
         candidates: 0,
+        positions: 0,
         partylists: 0,
-        voters: 0,
+        participants: 0,
         turnout: 0,
-        ballots: 0,
-        statistics: 0
+        ballots: 0
       }
 
-      // Helper function to safely get count from response
-      const getCount = (response, countKeys = ['length', 'total', 'count']) => {
-        console.log('Getting count from response:', response)
+      // Helper function to safely extract count from response
+      const extractCount = (response, fallbackKeys = ['length', 'total', 'count']) => {
+        console.log('Extracting count from:', response)
         
+        // If response is an array, return its length
         if (Array.isArray(response)) {
-          console.log('Response is array, length:', response.length)
           return response.length
         }
         
-        for (const key of countKeys) {
-          if (response[key] !== undefined) {
-            const value = Array.isArray(response[key]) ? response[key].length : Number(response[key]) || 0
-            console.log(`Found count in ${key}:`, value)
-            return value
+        // If response has data property
+        if (response?.data) {
+          if (Array.isArray(response.data)) {
+            return response.data.length
+          }
+          
+          // Check for count in data object
+          for (const key of fallbackKeys) {
+            if (response.data[key] !== undefined) {
+              return Number(response.data[key]) || 0
+            }
           }
         }
         
-        // Check for data arrays
-        const dataKeys = ['data', 'candidates', 'partylists', 'voters', 'ballots']
-        for (const key of dataKeys) {
-          if (response[key] && Array.isArray(response[key])) {
-            console.log(`Found array in ${key}, length:`, response[key].length)
-            return response[key].length
+        // Check for count in summary
+        if (response?.summary) {
+          for (const key of fallbackKeys) {
+            if (response.summary[key] !== undefined) {
+              return Number(response.summary[key]) || 0
+            }
           }
         }
         
-        console.log('No count found, returning 0')
+        // Check for count in root response
+        for (const key of fallbackKeys) {
+          if (response?.[key] !== undefined) {
+            return Number(response[key]) || 0
+          }
+        }
+        
         return 0
       }
 
-      // Fetch candidates
-      console.log('Fetching candidates...')
-      try {
-        const candidatesResponse = await candidatesAPI.ssg.getByElection(ssgElectionId)
-        console.log('Candidates response:', candidatesResponse)
-        counts.candidates = getCount(candidatesResponse)
-        console.log('Candidates count:', counts.candidates)
-      } catch (candidatesError) {
-        console.error('Failed to fetch candidates:', candidatesError)
+      // Fetch all counts in parallel for better performance
+      const fetchPromises = [
+        // Fetch candidates
+        ssgElectionsAPI.getCandidates(ssgElectionId).catch(error => {
+          console.error('Failed to fetch candidates:', error)
+          return { data: [], summary: { totalCandidates: 0 } }
+        }),
         
-        // Try fallback method
-        try {
-          console.log('Trying fallback candidates method...')
-          const fallbackResponse = await candidatesAPI.getByElection(ssgElectionId, 'ssg')
-          console.log('Fallback candidates response:', fallbackResponse)
-          counts.candidates = getCount(fallbackResponse)
-        } catch (fallbackError) {
-          console.error('Fallback also failed:', fallbackError)
-          counts.candidates = 0
-        }
-      }
-
-      // Fetch partylists
-      console.log('Fetching partylists...')
-      try {
-        const partylistsResponse = await partylistsAPI.getBySSGElection(ssgElectionId)
-        console.log('Partylists response:', partylistsResponse)
-        counts.partylists = getCount(partylistsResponse)
-        console.log('Partylists count:', counts.partylists)
-      } catch (partylistsError) {
-        console.error('Failed to fetch partylists:', partylistsError)
-        counts.partylists = 0
-      }
-
-      // Fetch voters
-      console.log('Fetching voters...')
-      try {
-        const votersResponse = await votersAPI.getRegistered({ limit: 1 })
-        console.log('Voters response:', votersResponse)
-        counts.voters = getCount(votersResponse, ['total', 'count'])
-        console.log('Voters count:', counts.voters)
-      } catch (votersError) {
-        console.error('Failed to fetch voters:', votersError)
-        counts.voters = 0
-      }
-
-      // Fetch ballots
-      console.log('Fetching ballots...')
-      try {
-        const ballotsResponse = await ballotAPI.getAllSSGBallots({ 
-          electionId: ssgElectionId,
-          limit: 1 
+        // Fetch positions
+        ssgElectionsAPI.getPositions(ssgElectionId).catch(error => {
+          console.error('Failed to fetch positions:', error)
+          return { data: [], summary: { totalPositions: 0 } }
+        }),
+        
+        // Fetch partylists
+        ssgElectionsAPI.getPartylists(ssgElectionId).catch(error => {
+          console.error('Failed to fetch partylists:', error)
+          return { data: [], summary: { totalPartylists: 0 } }
+        }),
+        
+        // Fetch voter participants
+        ssgElectionsAPI.getVoterParticipants(ssgElectionId, { limit: 1 }).catch(error => {
+          console.error('Failed to fetch participants:', error)
+          return { data: [], summary: { totalRegisteredVoters: 0 } }
+        }),
+        
+        // Fetch voter turnout
+        ssgElectionsAPI.getVoterTurnout(ssgElectionId).catch(error => {
+          console.error('Failed to fetch turnout:', error)
+          return { data: { overall: { turnoutPercentage: 0 } } }
+        }),
+        
+        // Fetch ballots
+        ssgElectionsAPI.getBallots(ssgElectionId, { limit: 1 }).catch(error => {
+          console.error('Failed to fetch ballots:', error)
+          return { data: [], statistics: { totalBallots: 0 } }
         })
-        console.log('Ballots response:', ballotsResponse)
-        counts.ballots = getCount(ballotsResponse, ['total', 'count'])
-        console.log('Ballots count:', counts.ballots)
-      } catch (ballotsError) {
-        console.error('Failed to fetch ballots:', ballotsError)
-        counts.ballots = 0
+      ]
+
+      console.log('Fetching all data in parallel...')
+      const [
+        candidatesResponse,
+        positionsResponse,
+        partylistsResponse,
+        participantsResponse,
+        turnoutResponse,
+        ballotsResponse
+      ] = await Promise.all(fetchPromises)
+
+      console.log('API Responses:', {
+        candidates: candidatesResponse,
+        positions: positionsResponse,
+        partylists: partylistsResponse,
+        participants: participantsResponse,
+        turnout: turnoutResponse,
+        ballots: ballotsResponse
+      })
+
+      // Extract candidates count
+      counts.candidates = extractCount(candidatesResponse, ['totalCandidates', 'total', 'length', 'count'])
+      if (candidatesResponse?.data?.candidates) {
+        counts.candidates = candidatesResponse.data.candidates.length
       }
 
-      // Set statistics count (using candidates count)
-      counts.statistics = counts.candidates
+      // Extract positions count
+      counts.positions = extractCount(positionsResponse, ['totalPositions', 'total', 'length', 'count'])
+      if (positionsResponse?.data?.positions) {
+        counts.positions = positionsResponse.data.positions.length
+      }
 
-      // Calculate turnout percentage
-      if (counts.voters > 0) {
-        counts.turnout = Math.round((counts.ballots / counts.voters) * 100)
+      // Extract partylists count
+      counts.partylists = extractCount(partylistsResponse, ['totalPartylists', 'total', 'length', 'count'])
+      if (partylistsResponse?.data?.partylists) {
+        counts.partylists = partylistsResponse.data.partylists.length
+      }
+
+      // Extract participants count
+      counts.participants = extractCount(participantsResponse, ['totalRegisteredVoters', 'totalItems', 'total', 'count'])
+      if (participantsResponse?.data?.summary?.totalRegisteredVoters) {
+        counts.participants = participantsResponse.data.summary.totalRegisteredVoters
+      }
+
+      // Extract turnout percentage
+      if (turnoutResponse?.data?.overall?.turnoutPercentage) {
+        counts.turnout = Math.round(Number(turnoutResponse.data.overall.turnoutPercentage))
+      } else if (turnoutResponse?.data?.turnoutPercentage) {
+        counts.turnout = Math.round(Number(turnoutResponse.data.turnoutPercentage))
       } else {
         counts.turnout = 0
       }
 
-      console.log('Final counts:', counts)
+      // Extract ballots count
+      counts.ballots = extractCount(ballotsResponse, ['totalBallots', 'totalItems', 'total', 'count'])
+      if (ballotsResponse?.data?.statistics?.totalBallots) {
+        counts.ballots = ballotsResponse.data.statistics.totalBallots
+      }
+
+      console.log('Final calculated counts:', counts)
       setCardCounts(counts)
 
     } catch (error) {
       console.error("Critical error in fetchCardCounts:", error)
       setCardCounts({
         candidates: 0,
+        positions: 0,
         partylists: 0,
-        voters: 0,
+        participants: 0,
         turnout: 0,
-        ballots: 0,
-        statistics: 0
+        ballots: 0
       })
     } finally {
       setCountsLoading(false)
@@ -253,22 +283,19 @@ export default function SSGPage() {
   const handleElectionClick = (election) => {
     console.log('Election clicked:', election)
     setSelectedElection(election)
-    // Store selected election in localStorage for persistence
     localStorage.setItem('selectedSSGElection', JSON.stringify(election))
   }
 
   const handleBackToElections = () => {
     setSelectedElection(null)
-    // Clear selected election from localStorage
     localStorage.removeItem('selectedSSGElection')
-    // Reset counts when going back
     setCardCounts({
       candidates: 0,
+      positions: 0,
       partylists: 0,
-      voters: 0,
+      participants: 0,
       turnout: 0,
-      ballots: 0,
-      statistics: 0
+      ballots: 0
     })
   }
 
@@ -301,7 +328,6 @@ export default function SSGPage() {
         electionDate: ''
       })
 
-      // Show success alert
       Swal.fire({
         title: 'Success!',
         text: 'SSG Election created successfully',
@@ -312,7 +338,6 @@ export default function SSGPage() {
     } catch (error) {
       setError(error.message || 'Failed to create election')
       
-      // Show error alert
       Swal.fire({
         title: 'Error!',
         text: error.message || 'Failed to create election',
@@ -328,7 +353,6 @@ export default function SSGPage() {
   const handleDeleteElection = async (ssgElectionId, e) => {
     e.stopPropagation()
     
-    // Show confirmation alert using SweetAlert
     const result = await Swal.fire({
       title: 'Are you sure?',
       text: 'This will permanently delete the election and all associated data. This action cannot be undone!',
@@ -343,7 +367,6 @@ export default function SSGPage() {
 
     if (result.isConfirmed) {
       try {
-        // Show loading state
         Swal.fire({
           title: 'Deleting...',
           text: 'Please wait while we delete the election',
@@ -358,12 +381,10 @@ export default function SSGPage() {
         await ssgElectionsAPI.delete(ssgElectionId)
         await fetchElections()
         
-        // If deleted election was selected, clear selection
         if (selectedElection && (selectedElection._id === ssgElectionId || selectedElection.id === ssgElectionId)) {
           handleBackToElections()
         }
 
-        // Show success alert
         Swal.fire({
           title: 'Deleted!',
           text: 'The election has been successfully deleted.',
@@ -374,7 +395,6 @@ export default function SSGPage() {
       } catch (error) {
         console.error('Error deleting election:', error)
         
-        // Show error alert
         Swal.fire({
           title: 'Error!',
           text: error.message || 'Failed to delete election. Please try again.',
@@ -425,6 +445,7 @@ export default function SSGPage() {
     )
   }
 
+  // Updated election management cards with correct structure
   const electionManagementCards = [
     { 
       title: "Candidates",
@@ -439,6 +460,18 @@ export default function SSGPage() {
       path: `/ecommittee/ssg/candidates?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
+      title: "Positions",
+      icon: FileText,
+      color: "bg-[#b0c8fe]/35",
+      hoverColor: "hover:bg-[#b0c8fe]/25",
+      borderColor: "border-[#b0c8fe]/45",
+      shadowColor: "shadow-[#b0c8fe]/25",
+      textColor: "text-[#001f65]",
+      description: "Manage election positions",
+      count: cardCounts.positions,
+      path: `/ecommittee/ssg/positions?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
+    },
+    { 
       title: "Partylist",
       icon: Clipboard,
       color: "bg-[#b0c8fe]/40",
@@ -448,7 +481,7 @@ export default function SSGPage() {
       textColor: "text-[#001f65]",
       description: "Manage party lists",
       count: cardCounts.partylists,
-      path: `/ecommittee/ssg/partylist-position?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
+      path: `/ecommittee/ssg/partylist?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
       title: "Voter Participants",
@@ -459,7 +492,7 @@ export default function SSGPage() {
       shadowColor: "shadow-[#b0c8fe]/35",
       textColor: "text-[#001f65]",
       description: "View registered voters",
-      count: cardCounts.voters,
+      count: cardCounts.participants,
       path: `/ecommittee/ssg/participants?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
@@ -472,7 +505,7 @@ export default function SSGPage() {
       textColor: "text-[#001f65]",
       description: "Monitor voting activity",
       count: `${cardCounts.turnout}%`,
-      path: `/ecommittee/ssg/voterTurnout?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
+      path: `/ecommittee/ssg/turnout?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
       title: "Ballots",
@@ -484,24 +517,11 @@ export default function SSGPage() {
       textColor: "text-[#001f65]",
       description: "Manage voting ballots",
       count: cardCounts.ballots,
-      path: `/ecommittee/ssg/ballot?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
-    },
-    { 
-      title: "Statistics",
-      icon: BarChart3,
-      color: "bg-[#b0c8fe]/38",
-      hoverColor: "hover:bg-[#b0c8fe]/28",
-      borderColor: "border-[#b0c8fe]/48",
-      shadowColor: "shadow-[#b0c8fe]/28",
-      textColor: "text-[#001f65]",
-      description: "View election analytics",
-      count: cardCounts.statistics,
-      path: `/ecommittee/ssg/statistics?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
+      path: `/ecommittee/ssg/ballots?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
     }
   ]
 
   if (selectedElection) {
-    // Use SSGLayout for election management view
     return (
       <SSGLayout
         ssgElectionId={selectedElection._id || selectedElection.id}
@@ -843,4 +863,3 @@ export default function SSGPage() {
     </BackgroundWrapper>
   )
 }
-            

@@ -524,224 +524,394 @@ class SSGElectionController {
 
   // Get SSG election statistics
   static async getSSGElectionStatistics(req, res, next) {
-    try {
-      const { id } = req.params
+  try {
+    const { id } = req.params
 
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
-          `Failed to get SSG election statistics - Invalid election ID: ${id}`,
-          req
-        )
-        const error = new Error("Invalid election ID format")
-        error.statusCode = 400
-        return next(error)
-      }
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election statistics - Invalid election ID: ${id}`,
+        req
+      )
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
 
-      const election = await SSGElection.findById(id)
-      if (!election) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
-          `Failed to get SSG election statistics - Election not found: ${id}`,
-          req
-        )
-        const error = new Error("SSG election not found")
-        error.statusCode = 404
-        return next(error)
-      }
+    const election = await SSGElection.findById(id)
+    if (!election) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election statistics - Election not found: ${id}`,
+        req
+      )
+      const error = new Error("SSG election not found")
+      error.statusCode = 404
+      return next(error)
+    }
 
-      // Basic counts
-      const totalPositions = await Position.countDocuments({ ssgElectionId: id, isActive: true })
-      const totalCandidates = await Candidate.countDocuments({ ssgElectionId: id, isActive: true })
-      const totalPartylists = await Partylist.countDocuments({ ssgElectionId: id, isActive: true })
-      const totalRegisteredVoters = await Voter.countDocuments({ isActive: true, isRegistered: true })
-      const totalBallots = await Ballot.countDocuments({ ssgElectionId: id })
-      const submittedBallots = await Ballot.countDocuments({ ssgElectionId: id, isSubmitted: true })
+    // Enhanced basic counts with more detailed statistics
+    const totalPositions = await Position.countDocuments({ ssgElectionId: id, isActive: true })
+    const totalCandidates = await Candidate.countDocuments({ ssgElectionId: id, isActive: true })
+    const totalPartylists = await Partylist.countDocuments({ ssgElectionId: id, isActive: true })
+    const totalRegisteredVoters = await Voter.countDocuments({ isActive: true, isRegistered: true })
+    const totalBallots = await Ballot.countDocuments({ ssgElectionId: id })
+    const submittedBallots = await Ballot.countDocuments({ ssgElectionId: id, isSubmitted: true })
+    const pendingBallots = totalBallots - submittedBallots
+    const totalVotes = await Vote.countDocuments({ ssgElectionId: id })
 
-      // Get candidates by position with vote counts
-      const candidatesByPosition = await Position.aggregate([
-        { $match: { ssgElectionId: new mongoose.Types.ObjectId(id), isActive: true } },
-        { $sort: { positionOrder: 1 } },
-        {
-          $lookup: {
-            from: "candidates",
-            let: { positionId: "$_id" },
-            pipeline: [
-              { 
-                $match: { 
-                  $expr: { 
-                    $and: [
-                      { $eq: ["$positionId", "$$positionId"] },
-                      { $eq: ["$ssgElectionId", new mongoose.Types.ObjectId(id)] },
-                      { $eq: ["$isActive", true] }
-                    ]
-                  }
+    // Enhanced candidates by position with more detailed vote information
+    const candidatesByPosition = await Position.aggregate([
+      { $match: { ssgElectionId: new mongoose.Types.ObjectId(id), isActive: true } },
+      { $sort: { positionOrder: 1 } },
+      {
+        $lookup: {
+          from: "candidates",
+          let: { positionId: "$_id" },
+          pipeline: [
+            { 
+              $match: { 
+                $expr: { 
+                  $and: [
+                    { $eq: ["$positionId", "$$positionId"] },
+                    { $eq: ["$ssgElectionId", new mongoose.Types.ObjectId(id)] },
+                    { $eq: ["$isActive", true] }
+                  ]
                 }
-              },
-              {
-                $lookup: {
-                  from: "voters",
-                  localField: "voterId",
-                  foreignField: "_id",
-                  as: "voter"
-                }
-              },
-              { $unwind: "$voter" },
-              {
-                $lookup: {
-                  from: "departments",
-                  localField: "voter.departmentId",
-                  foreignField: "_id",
-                  as: "voter.department"
-                }
-              },
-              {
-                $lookup: {
-                  from: "partylists",
-                  localField: "partylistId",
-                  foreignField: "_id",
-                  as: "partylist"
-                }
-              },
-              {
-                $addFields: {
-                  candidateName: {
-                    $concat: [
-                      "$voter.firstName",
-                      " ",
-                      { $ifNull: [{ $concat: ["$voter.middleName", " "] }, ""] },
-                      "$voter.lastName"
-                    ]
-                  },
-                  partylistName: { $arrayElemAt: ["$partylist.partylistName", 0] },
-                  department: { $arrayElemAt: ["$voter.department", 0] }
-                }
-              },
-              { $sort: { voteCount: -1, candidateNumber: 1 } }
-            ],
-            as: "candidates"
-          }
-        }
-      ])
-
-      // Get partylist statistics
-      const partylistStats = await Candidate.aggregate([
-        { $match: { ssgElectionId: new mongoose.Types.ObjectId(id), partylistId: { $ne: null }, isActive: true } },
-        {
-          $lookup: {
-            from: "partylists",
-            localField: "partylistId",
-            foreignField: "_id",
-            as: "partylist"
-          }
-        },
-        { $unwind: "$partylist" },
-        {
-          $group: {
-            _id: {
-              partylistId: "$partylistId",
-              partylistName: "$partylist.partylistName"
+              }
             },
-            candidateCount: { $sum: 1 },
-            totalVotes: { $sum: "$voteCount" }
-          }
-        },
-        { $sort: { "totalVotes": -1 } }
-      ])
+            {
+              $lookup: {
+                from: "votes",
+                localField: "_id",
+                foreignField: "candidateId",
+                as: "votes"
+              }
+            },
+            {
+              $addFields: {
+                actualVoteCount: { $size: "$votes" }
+              }
+            },
+            {
+              $lookup: {
+                from: "voters",
+                localField: "voterId",
+                foreignField: "_id",
+                as: "voter"
+              }
+            },
+            { $unwind: "$voter" },
+            {
+              $lookup: {
+                from: "departments",
+                localField: "voter.departmentId",
+                foreignField: "_id",
+                as: "voter.department"
+              }
+            },
+            {
+              $lookup: {
+                from: "partylists",
+                localField: "partylistId",
+                foreignField: "_id",
+                as: "partylist"
+              }
+            },
+            {
+              $addFields: {
+                candidateName: {
+                  $concat: [
+                    "$voter.firstName",
+                    " ",
+                    { $ifNull: [{ $concat: ["$voter.middleName", " "] }, ""] },
+                    "$voter.lastName"
+                  ]
+                },
+                partylistName: { $arrayElemAt: ["$partylist.partylistName", 0] },
+                department: { $arrayElemAt: ["$voter.department", 0] },
+                schoolId: "$voter.schoolId"
+              }
+            },
+            { $sort: { actualVoteCount: -1, candidateNumber: 1 } }
+          ],
+          as: "candidates"
+        }
+      },
+      {
+        $addFields: {
+          totalVotesForPosition: { 
+            $sum: "$candidates.actualVoteCount"
+          },
+          winner: { $arrayElemAt: ["$candidates", 0] },
+          candidateCount: { $size: "$candidates" }
+        }
+      }
+    ])
 
-      // Voting timeline (votes over time) - only for submitted ballots
-      const votingTimeline = await Ballot.aggregate([
-        { $match: { ssgElectionId: new mongoose.Types.ObjectId(id), isSubmitted: true } },
-        {
-          $group: {
-            _id: {
+    // Enhanced partylist statistics with vote counts
+    const partylistStats = await Partylist.aggregate([
+      { $match: { ssgElectionId: new mongoose.Types.ObjectId(id), isActive: true } },
+      {
+        $lookup: {
+          from: "candidates",
+          let: { partylistId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$partylistId", "$$partylistId"] },
+                    { $eq: ["$ssgElectionId", new mongoose.Types.ObjectId(id)] },
+                    { $eq: ["$isActive", true] }
+                  ]
+                }
+              }
+            },
+            {
+              $lookup: {
+                from: "votes",
+                localField: "_id",
+                foreignField: "candidateId",
+                as: "votes"
+              }
+            },
+            {
+              $addFields: {
+                actualVoteCount: { $size: "$votes" }
+              }
+            }
+          ],
+          as: "candidates"
+        }
+      },
+      {
+        $addFields: {
+          candidateCount: { $size: "$candidates" },
+          totalVotes: { $sum: "$candidates.actualVoteCount" }
+        }
+      },
+      { $sort: { totalVotes: -1, partylistName: 1 } }
+    ])
+
+    // Independent candidates (not affiliated with any partylist)
+    const independentCandidates = await Candidate.aggregate([
+      { 
+        $match: { 
+          ssgElectionId: new mongoose.Types.ObjectId(id), 
+          isActive: true, 
+          partylistId: null 
+        } 
+      },
+      {
+        $lookup: {
+          from: "votes",
+          localField: "_id",
+          foreignField: "candidateId",
+          as: "votes"
+        }
+      },
+      {
+        $addFields: {
+          actualVoteCount: { $size: "$votes" }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          count: { $sum: 1 },
+          totalVotes: { $sum: "$actualVoteCount" }
+        }
+      }
+    ])
+
+    // Voting timeline with more granular data
+    const votingTimeline = await Ballot.aggregate([
+      { $match: { ssgElectionId: new mongoose.Types.ObjectId(id), isSubmitted: true } },
+      {
+        $group: {
+          _id: {
+            date: {
               $dateToString: {
-                format: "%Y-%m-%d %H:00",
+                format: "%Y-%m-%d",
                 date: "$submittedAt"
               }
             },
-            count: { $sum: 1 }
-          }
-        },
-        { $sort: { "_id": 1 } }
-      ])
+            hour: {
+              $dateToString: {
+                format: "%H",
+                date: "$submittedAt"
+              }
+            }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $group: {
+          _id: "$_id.date",
+          hourlyData: {
+            $push: {
+              hour: "$_id.hour",
+              count: "$count"
+            }
+          },
+          dailyTotal: { $sum: "$count" }
+        }
+      },
+      { $sort: { "_id": 1 } }
+    ])
 
-      // Voter demographics (by department and year level) for registered voters
-      const voterDemographics = await Voter.aggregate([
-        { $match: { isActive: true, isRegistered: true } },
-        {
-          $lookup: {
-            from: "departments",
-            localField: "departmentId",
-            foreignField: "_id",
-            as: "department"
-          }
-        },
-        { $unwind: "$department" },
-        {
-          $group: {
-            _id: {
-              departmentCode: "$department.departmentCode",
-              degreeProgram: "$department.degreeProgram",
-              yearLevel: "$yearLevel"
-            },
-            count: { $sum: 1 }
-          }
-        },
-        { $sort: { "_id.departmentCode": 1, "_id.yearLevel": 1 } }
-      ])
-
-      // Election overview
-      const overview = {
-        totalPositions,
-        totalCandidates,
-        totalPartylists,
-        totalRegisteredVoters,
-        totalBallots,
-        submittedBallots,
-        pendingBallots: totalBallots - submittedBallots,
-        turnoutPercentage: totalRegisteredVoters > 0 ? ((submittedBallots / totalRegisteredVoters) * 100).toFixed(2) : 0,
-        status: election.status,
-        electionDate: election.electionDate,
-        electionType: "ssg"
-      }
-
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Accessed SSG election statistics - ${election.title} (${election.ssgElectionId}) - ${totalCandidates} candidates, ${submittedBallots} votes`,
-        req
-      )
-
-      res.json({
-        success: true,
-        data: {
-          overview,
-          candidatesByPosition,
-          partylistStats,
-          votingTimeline,
-          voterDemographics,
-          election: {
-            id: election._id,
-            title: election.title,
-            ssgElectionId: election.ssgElectionId,
-            electionType: "ssg",
-            status: election.status
+    // Voter demographics with voting status
+    const voterDemographics = await Voter.aggregate([
+      { $match: { isActive: true, isRegistered: true } },
+      {
+        $lookup: {
+          from: "ballots",
+          let: { voterId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$voterId", "$$voterId"] },
+                    { $eq: ["$ssgElectionId", new mongoose.Types.ObjectId(id)] },
+                    { $eq: ["$isSubmitted", true] }
+                  ]
+                }
+              }
+            }
+          ],
+          as: "ballot"
+        }
+      },
+      {
+        $lookup: {
+          from: "departments",
+          localField: "departmentId",
+          foreignField: "_id",
+          as: "department"
+        }
+      },
+      { $unwind: "$department" },
+      {
+        $group: {
+          _id: {
+            departmentCode: "$department.departmentCode",
+            degreeProgram: "$department.degreeProgram",
+            college: "$department.college",
+            yearLevel: "$yearLevel"
+          },
+          totalVoters: { $sum: 1 },
+          votedCount: {
+            $sum: {
+              $cond: [{ $gt: [{ $size: "$ballot" }, 0] }, 1, 0]
+            }
           }
         }
-      })
-    } catch (error) {
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Failed to retrieve SSG election statistics for ${req.params.id}: ${error.message}`,
-        req
-      )
-      next(error)
+      },
+      {
+        $addFields: {
+          notVotedCount: { $subtract: ["$totalVoters", "$votedCount"] },
+          turnoutPercentage: {
+            $round: [
+              { $multiply: [{ $divide: ["$votedCount", "$totalVoters"] }, 100] },
+              2
+            ]
+          }
+        }
+      },
+      { $sort: { "_id.departmentCode": 1, "_id.yearLevel": 1 } }
+    ])
+
+    // Ballot completion statistics
+    const ballotStats = await Ballot.aggregate([
+      { $match: { ssgElectionId: new mongoose.Types.ObjectId(id) } },
+      {
+        $group: {
+          _id: null,
+          totalBallots: { $sum: 1 },
+          submittedBallots: {
+            $sum: { $cond: ["$isSubmitted", 1, 0] }
+          },
+          pendingBallots: {
+            $sum: { $cond: ["$isSubmitted", 0, 1] }
+          },
+          averageBallotDuration: { $avg: "$ballotDuration" },
+          minBallotDuration: { $min: "$ballotDuration" },
+          maxBallotDuration: { $max: "$ballotDuration" }
+        }
+      }
+    ])
+
+    // Enhanced election overview
+    const overview = {
+      totalPositions,
+      totalCandidates,
+      totalPartylists,
+      independentCandidates: independentCandidates[0]?.count || 0,
+      totalRegisteredVoters,
+      totalBallots,
+      submittedBallots,
+      pendingBallots,
+      totalVotes,
+      averageVotesPerCandidate: totalCandidates > 0 ? (totalVotes / totalCandidates).toFixed(2) : 0,
+      averageVotesPerPosition: totalPositions > 0 ? (totalVotes / totalPositions).toFixed(2) : 0,
+      turnoutPercentage: totalRegisteredVoters > 0 ? ((submittedBallots / totalRegisteredVoters) * 100).toFixed(2) : 0,
+      completionRate: totalBallots > 0 ? ((submittedBallots / totalBallots) * 100).toFixed(2) : 0,
+      status: election.status,
+      electionDate: election.electionDate,
+      electionType: "ssg"
     }
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Accessed enhanced SSG election statistics - ${election.title} (${election.ssgElectionId}) - ${totalCandidates} candidates, ${submittedBallots} votes, ${totalVotes} total votes cast`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        overview,
+        candidatesByPosition,
+        partylistStats,
+        independentCandidatesStats: independentCandidates[0] || { count: 0, totalVotes: 0 },
+        votingTimeline,
+        voterDemographics,
+        ballotStatistics: ballotStats[0] || {
+          totalBallots: 0,
+          submittedBallots: 0,
+          pendingBallots: 0,
+          averageBallotDuration: 0,
+          minBallotDuration: 0,
+          maxBallotDuration: 0
+        },
+        election: {
+          id: election._id,
+          title: election.title,
+          ssgElectionId: election.ssgElectionId,
+          electionType: "ssg",
+          status: election.status,
+          electionDate: election.electionDate,
+          electionYear: election.electionYear
+        }
+      }
+    })
+  } catch (error) {
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Failed to retrieve enhanced SSG election statistics for ${req.params.id}: ${error.message}`,
+      req
+    )
+    next(error)
   }
+}
+
 
   // Get SSG election results
   static async getSSGElectionResults(req, res, next) {
@@ -1916,6 +2086,193 @@ static async getSSGElectionPositions(req, res, next) {
     next(error)
   }
 }
+
+static async getSSGElectionOverview(req, res, next) {
+  try {
+    const { id } = req.params
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election overview - Invalid election ID: ${id}`,
+        req
+      )
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await SSGElection.findById(id).populate("createdBy", "username")
+    if (!election) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election overview - Election not found: ${id}`,
+        req
+      )
+      const error = new Error("SSG election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Get comprehensive counts
+    const [
+      totalPositions,
+      totalCandidates,
+      totalPartylists,
+      totalRegisteredVoters,
+      totalBallots,
+      submittedBallots,
+      totalVotes,
+      activePositions,
+      activeCandidates,
+      activePartylists
+    ] = await Promise.all([
+      Position.countDocuments({ ssgElectionId: id }),
+      Candidate.countDocuments({ ssgElectionId: id }),
+      Partylist.countDocuments({ ssgElectionId: id }),
+      Voter.countDocuments({ isActive: true, isRegistered: true }),
+      Ballot.countDocuments({ ssgElectionId: id }),
+      Ballot.countDocuments({ ssgElectionId: id, isSubmitted: true }),
+      Vote.countDocuments({ ssgElectionId: id }),
+      Position.countDocuments({ ssgElectionId: id, isActive: true }),
+      Candidate.countDocuments({ ssgElectionId: id, isActive: true }),
+      Partylist.countDocuments({ ssgElectionId: id, isActive: true })
+    ])
+
+    // Calculate derived statistics
+    const pendingBallots = totalBallots - submittedBallots
+    const turnoutPercentage = totalRegisteredVoters > 0 ? ((submittedBallots / totalRegisteredVoters) * 100).toFixed(2) : 0
+    const completionRate = totalBallots > 0 ? ((submittedBallots / totalBallots) * 100).toFixed(2) : 0
+    const averageVotesPerCandidate = activeCandidates > 0 ? (totalVotes / activeCandidates).toFixed(2) : 0
+    const averageVotesPerPosition = activePositions > 0 ? (totalVotes / activePositions).toFixed(2) : 0
+
+    // Get quick candidate summary by partylist
+    const candidatesByPartylist = await Candidate.aggregate([
+      { $match: { ssgElectionId: new mongoose.Types.ObjectId(id), isActive: true } },
+      {
+        $lookup: {
+          from: "partylists",
+          localField: "partylistId",
+          foreignField: "_id",
+          as: "partylist"
+        }
+      },
+      {
+        $group: {
+          _id: {
+            partylistId: "$partylistId",
+            partylistName: { $arrayElemAt: ["$partylist.partylistName", 0] }
+          },
+          candidateCount: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          partylistName: {
+            $ifNull: ["$_id.partylistName", "Independent"]
+          },
+          candidateCount: 1
+        }
+      },
+      { $sort: { candidateCount: -1 } }
+    ])
+
+    // Get voting progress by day
+    const votingProgress = await Ballot.aggregate([
+      { $match: { ssgElectionId: new mongoose.Types.ObjectId(id), isSubmitted: true } },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: "%Y-%m-%d",
+              date: "$submittedAt"
+            }
+          },
+          dailyVotes: { $sum: 1 }
+        }
+      },
+      { $sort: { "_id": 1 } }
+    ])
+
+    const overview = {
+      election: {
+        id: election._id,
+        title: election.title,
+        ssgElectionId: election.ssgElectionId,
+        electionYear: election.electionYear,
+        status: election.status,
+        electionDate: election.electionDate,
+        createdBy: election.createdBy,
+        electionType: "ssg"
+      },
+      counts: {
+        positions: {
+          total: totalPositions,
+          active: activePositions,
+          inactive: totalPositions - activePositions
+        },
+        candidates: {
+          total: totalCandidates,
+          active: activeCandidates,
+          inactive: totalCandidates - activeCandidates
+        },
+        partylists: {
+          total: totalPartylists,
+          active: activePartylists,
+          inactive: totalPartylists - activePartylists
+        },
+        voters: {
+          totalRegistered: totalRegisteredVoters,
+          voted: submittedBallots,
+          notVoted: totalRegisteredVoters - submittedBallots
+        },
+        ballots: {
+          total: totalBallots,
+          submitted: submittedBallots,
+          pending: pendingBallots
+        },
+        votes: {
+          total: totalVotes
+        }
+      },
+      percentages: {
+        turnoutPercentage: parseFloat(turnoutPercentage),
+        completionRate: parseFloat(completionRate)
+      },
+      averages: {
+        votesPerCandidate: parseFloat(averageVotesPerCandidate),
+        votesPerPosition: parseFloat(averageVotesPerPosition)
+      },
+      summaries: {
+        candidatesByPartylist,
+        votingProgress
+      }
+    }
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Accessed SSG election overview - ${election.title} (${election.ssgElectionId})`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: overview
+    })
+  } catch (error) {
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Failed to retrieve SSG election overview for ${req.params.id}: ${error.message}`,
+      req
+    )
+    next(error)
+  }
+}
+
 }
 
 module.exports = SSGElectionController

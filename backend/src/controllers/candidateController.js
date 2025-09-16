@@ -224,6 +224,49 @@ class CandidateController {
   }
 }
 
+static async validateDepartmentalCandidate(candidateData, excludeCandidateId = null) {
+  const { voterId, deptElectionId, positionId } = candidateData
+  const errors = []
+
+  // Verify voter exists
+  const voter = await Voter.findById(voterId).populate('departmentId')
+  if (!voter) {
+    errors.push('Voter not found')
+    return { isValid: false, errors }
+  }
+
+  // NEW: Check if voter is a class officer for departmental elections
+  if (!voter.isClassOfficer) {
+    errors.push('Only class officers can be departmental candidates')
+    return { isValid: false, errors }
+  }
+
+  // Check if voter is already a candidate in this departmental election (any position)
+  const existingCandidateQuery = {
+    voterId,
+    deptElectionId,
+    ssgElectionId: null
+  }
+  
+  if (excludeCandidateId) {
+    existingCandidateQuery._id = { $ne: excludeCandidateId }
+  }
+  
+  const existingCandidate = await Candidate.findOne(existingCandidateQuery)
+    .populate('positionId', 'positionName')
+
+  if (existingCandidate) {
+    errors.push(`Voter is already a candidate for ${existingCandidate.positionId.positionName} in this departmental election`)
+    return { isValid: false, errors }
+  }
+
+  return { 
+    isValid: true, 
+    errors: [],
+    voter 
+  }
+}
+
 static async getPartylistCandidateSlots(req, res, next) {
   try {
     const { ssgElectionId, partylistId } = req.params
@@ -836,17 +879,39 @@ static async checkCandidateEligibility(req, res, next) {
 
   // Create Departmental candidate
   static async createDepartmentalCandidate(req, res, next) {
-    try {
-      req.body.ssgElectionId = null
-      req.body.partylistId = null
-      req.body.deptElectionId = req.body.deptElectionId || req.body.electionId
-      await CandidateController.createCandidate(req, res, next)
-    } catch (error) {
-      const err = new Error("Failed to create departmental candidate")
-      err.statusCode = 500
-      next(err)
+  try {
+    const candidateData = {
+      ...req.body,
+      deptElectionId: req.body.deptElectionId || req.body.electionId,
+      ssgElectionId: null,
+      partylistId: null
     }
+
+    // NEW: Use departmental candidate validation
+    const validation = await CandidateController.validateDepartmentalCandidate(candidateData)
+    if (!validation.isValid) {
+      await CandidateController.logAuditAction(
+        'UNAUTHORIZED_ACCESS_ATTEMPT',
+        req.user || {},
+        `Invalid departmental candidate creation: ${validation.errors.join(', ')}`,
+        req
+      )
+      
+      const error = new Error(validation.errors.join(', '))
+      error.statusCode = 400
+      return next(error)
+    }
+
+    // Continue with candidate creation
+    req.body = candidateData
+    await CandidateController.createCandidate(req, res, next)
+  } catch (error) {
+    console.error("Error creating departmental candidate:", error)
+    const err = new Error("Failed to create departmental candidate")
+    err.statusCode = 500
+    next(err)
   }
+}
 
   // Update candidate with validation
   static async updateCandidate(req, res, next) {
@@ -1061,34 +1126,52 @@ static async checkCandidateEligibility(req, res, next) {
 
   // Update Departmental candidate
   static async updateDepartmentalCandidate(req, res, next) {
-    try {
-      const { id } = req.params
-      
-      const candidate = await Candidate.findOne({
-        _id: id,
-        deptElectionId: { $ne: null },
-        ssgElectionId: null
-      })
+  try {
+    const { id } = req.params
+    const updateData = req.body
+    
+    const candidate = await Candidate.findOne({
+      _id: id,
+      deptElectionId: { $ne: null },
+      ssgElectionId: null
+    })
 
-      if (!candidate) {
-        const error = new Error("Departmental candidate not found")
-        error.statusCode = 404
-        return next(error)
+    if (!candidate) {
+      const error = new Error("Departmental candidate not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    if (updateData.partylistId) {
+      const error = new Error("Departmental candidates cannot have partylists")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    // NEW: If changing voter, validate that new voter is a class officer
+    if (updateData.voterId && updateData.voterId !== candidate.voterId.toString()) {
+      const candidateData = {
+        voterId: updateData.voterId,
+        deptElectionId: candidate.deptElectionId,
+        positionId: updateData.positionId || candidate.positionId
       }
 
-      if (req.body.partylistId) {
-        const error = new Error("Departmental candidates cannot have partylists")
+      const validation = await CandidateController.validateDepartmentalCandidate(candidateData, id)
+      if (!validation.isValid) {
+        const error = new Error(validation.errors.join(', '))
         error.statusCode = 400
         return next(error)
       }
-
-      await CandidateController.updateCandidate(req, res, next)
-    } catch (error) {
-      const err = new Error("Failed to update departmental candidate")
-      err.statusCode = 500
-      next(err)
     }
+
+    await CandidateController.updateCandidate(req, res, next)
+  } catch (error) {
+    console.error("Error updating departmental candidate:", error)
+    const err = new Error("Failed to update departmental candidate")
+    err.statusCode = 500
+    next(err)
   }
+}
 
   // Delete candidate with safety checks
   static async deleteCandidate(req, res, next) {
@@ -1895,7 +1978,7 @@ static async getCandidatesByElection(req, res, next) {
     CandidateController.validateObjectId(id, 'candidate ID')
 
     if (!credentials) {
-      const error = new Error("Credentials file is required")
+      const error = new Error("Credentials image is required")
       error.statusCode = 400
       return next(error)
     }
@@ -1924,21 +2007,28 @@ static async getCandidatesByElection(req, res, next) {
       return next(error)
     }
 
-    // Convert base64 to buffer
+    // Convert base64 image to buffer - UPDATED for images
     let credentialsBuffer
     try {
       if (typeof credentials === 'string') {
-        const base64Data = credentials.replace(/^data:[^;]+;base64,/, '')
+        // Handle image data URL (data:image/jpeg;base64,...)
+        const base64Data = credentials.replace(/^data:image\/[a-z]+;base64,/, '')
         credentialsBuffer = Buffer.from(base64Data, 'base64')
-      } else {
+      } else if (Buffer.isBuffer(credentials)) {
         credentialsBuffer = credentials
       }
 
       if (credentialsBuffer.length === 0) {
-        throw new Error("Invalid credentials data")
+        throw new Error("Invalid credentials image data")
       }
+
+      // Optional: Add image size validation (e.g., max 5MB)
+      if (credentialsBuffer.length > 5 * 1024 * 1024) {
+        throw new Error("Credentials image is too large (max 5MB)")
+      }
+
     } catch (error) {
-      const err = new Error("Invalid credentials format")
+      const err = new Error("Invalid credentials image format")
       err.statusCode = 400
       return next(err)
     }
@@ -1949,7 +2039,7 @@ static async getCandidatesByElection(req, res, next) {
     await CandidateController.logAuditAction(
       "CREDENTIALS_UPDATE",
       req.user,
-      `Updated credentials for SSG candidate: ${candidate.getDisplayName()} (${candidate.voterId.schoolId})`,
+      `Updated credentials image for SSG candidate: ${candidate.getDisplayName()} (${candidate.voterId.schoolId})`,
       req
     )
 
@@ -1960,11 +2050,11 @@ static async getCandidatesByElection(req, res, next) {
         candidateNumber: candidate.candidateNumber,
         hasCredentials: candidate.hasCredentials()
       },
-      message: "Credentials uploaded successfully"
+      message: "Credentials image uploaded successfully"
     })
   } catch (error) {
     console.error("Error uploading credentials:", error)
-    const err = new Error(error.message || "Failed to upload credentials")
+    const err = new Error(error.message || "Failed to upload credentials image")
     err.statusCode = error.statusCode || 500
     next(err)
   }
@@ -1991,18 +2081,19 @@ static async getCandidateCredentials(req, res, next) {
     }
 
     if (!candidate.hasCredentials()) {
-      const error = new Error("No credentials found")
+      const error = new Error("No credentials image found")
       error.statusCode = 404
       return next(error)
     }
 
-    res.setHeader('Content-Type', 'application/pdf')
+    // UPDATED: Set image content type instead of PDF
+    res.setHeader('Content-Type', 'image/jpeg') // or 'image/png' based on your needs
     res.setHeader('Cache-Control', 'public, max-age=3600')
     res.send(candidate.credentials)
 
   } catch (error) {
     console.error("Error fetching credentials:", error)
-    const err = new Error(error.message || "Failed to fetch credentials")
+    const err = new Error(error.message || "Failed to fetch credentials image")
     err.statusCode = error.statusCode || 500
     next(err)
   }

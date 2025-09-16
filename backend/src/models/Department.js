@@ -5,7 +5,6 @@ const departmentSchema = new mongoose.Schema(
     departmentCode: {
       type: String,
       required: true,
-      unique: true,
       uppercase: true,
       trim: true,
     },
@@ -26,7 +25,6 @@ const departmentSchema = new mongoose.Schema(
 )
 
 // Indexes for better query performance
-departmentSchema.index({ departmentCode: 1 })
 departmentSchema.index({ college: 1 })
 departmentSchema.index({ degreeProgram: 1 })
 

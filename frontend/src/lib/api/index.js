@@ -1,4 +1,3 @@
-// Export all API modules
 export { authAPI } from './auth'
 export { usersAPI } from './users'
 export { votersAPI } from './voters'

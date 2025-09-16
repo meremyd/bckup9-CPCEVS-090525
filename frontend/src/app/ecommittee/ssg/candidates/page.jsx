@@ -594,7 +594,7 @@ export default function SSGCandidatesPage() {
         <option value="">All Positions ({candidateStats.total})</option>
         {ssgPositions.map(position => {
           const candidateCount = candidateStats.byPosition[position._id]?.count || 0
-          const maxCandidates = position.maxCandidates || 10
+          const maxCandidates = position.maxCandidates || 2
           
           return (
             <option key={position._id} value={position._id}>

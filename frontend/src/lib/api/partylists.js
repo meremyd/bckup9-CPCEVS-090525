@@ -21,6 +21,30 @@ export const partylistsAPI = {
     }
   },
   
+  // Get partylist logo
+  getLogo: async (id) => {
+    try {
+      const response = await api.get(`/partylists/${id}/logo`, {
+        responseType: 'blob' // For binary data
+      })
+      return response.data
+    } catch (error) {
+      throw error.response?.data || error.message
+    }
+  },
+  
+  // Get partylist platform document
+  getPlatform: async (id) => {
+    try {
+      const response = await api.get(`/partylists/${id}/platform`, {
+        responseType: 'blob' // For binary data
+      })
+      return response.data
+    } catch (error) {
+      throw error.response?.data || error.message
+    }
+  },
+  
   // Create new partylist
   create: async (partylistData) => {
     try {

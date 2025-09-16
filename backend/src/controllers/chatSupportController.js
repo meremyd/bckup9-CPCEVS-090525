@@ -4,170 +4,303 @@ const Voter = require("../models/Voter")
 const AuditLog = require("../models/AuditLog")
 
 class ChatSupportController {
+  // Helper method to validate ObjectId format
+  static validateObjectId(id, fieldName) {
+    const mongoose = require('mongoose')
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      throw new Error(`Invalid ${fieldName} format`)
+    }
+    return id
+  }
+
+  // Helper method for consistent audit logging
+  static async logAuditAction(action, user, message, req, isVoter = false) {
+    try {
+      const logData = {
+        action,
+        details: message,
+        ipAddress: req.ip,
+        userAgent: req.get("User-Agent"),
+      }
+
+      if (isVoter) {
+        logData.username = user?.schoolId?.toString() || "unknown"
+        logData.voterId = user?._id
+        logData.schoolId = user?.schoolId
+      } else {
+        logData.username = user?.username || "unknown"
+        logData.userId = user?.userId
+      }
+
+      await AuditLog.create(logData)
+    } catch (error) {
+      console.error("Audit log error:", error)
+    }
+  }
+
   // Submit chat support request
   static async submitRequest(req, res, next) {
     try {
       const { schoolId, fullName, departmentId, birthday, email, message } = req.body
 
-      // Validation
-      if (!schoolId || !fullName || !departmentId || !birthday || !email || !message) {
-        // Log unauthorized access attempt
-        await AuditLog.create({
-          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
-          username: schoolId?.toString() || "unknown",
-          details: `Invalid chat support request submission - missing required fields from ${req.ip}`,
-          ipAddress: req.ip,
-          userAgent: req.get("User-Agent"),
-        })
+      // Enhanced validation
+      const errors = []
+      if (!schoolId) errors.push("School ID is required")
+      if (!fullName) errors.push("Full name is required")
+      if (!departmentId) errors.push("Department is required")
+      if (!birthday) errors.push("Birthday is required")
+      if (!email) errors.push("Email is required")
+      if (!message) errors.push("Message is required")
 
-        const error = new Error("All fields are required")
+      if (errors.length > 0) {
+        await ChatSupportController.logAuditAction(
+          "UNAUTHORIZED_ACCESS_ATTEMPT",
+          { schoolId },
+          `Invalid chat support request - missing fields: ${errors.join(', ')} from ${req.ip}`,
+          req
+        )
+
+        const error = new Error(errors.join(', '))
         error.statusCode = 400
         return next(error)
       }
 
-      // Validate schoolId is a number
+      // Validate and convert schoolId
       const schoolIdNumber = Number(schoolId)
-      if (isNaN(schoolIdNumber)) {
-        await AuditLog.create({
-          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
-          username: schoolId?.toString() || "unknown",
-          details: `Invalid school ID format in chat support request: ${schoolId}`,
-          ipAddress: req.ip,
-          userAgent: req.get("User-Agent"),
-        })
+      if (isNaN(schoolIdNumber) || schoolIdNumber <= 0) {
+        await ChatSupportController.logAuditAction(
+          "UNAUTHORIZED_ACCESS_ATTEMPT",
+          { schoolId },
+          `Invalid school ID format: ${schoolId}`,
+          req
+        )
 
-        const error = new Error("Invalid school ID format")
+        const error = new Error("School ID must be a valid positive number")
         error.statusCode = 400
         return next(error)
       }
 
-      // Validate departmentId exists in database
+      // Validate department exists
+      ChatSupportController.validateObjectId(departmentId, 'department ID')
       const department = await Department.findById(departmentId)
       if (!department) {
-        await AuditLog.create({
-          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
-          username: schoolIdNumber.toString(),
-          details: `Invalid department selection in chat support request: ${departmentId}`,
-          ipAddress: req.ip,
-          userAgent: req.get("User-Agent"),
-        })
+        await ChatSupportController.logAuditAction(
+          "UNAUTHORIZED_ACCESS_ATTEMPT",
+          { schoolId: schoolIdNumber },
+          `Invalid department selection: ${departmentId}`,
+          req
+        )
 
-        const error = new Error("Invalid department selection")
+        const error = new Error("Selected department does not exist")
         error.statusCode = 400
         return next(error)
       }
 
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      // Enhanced email validation
+      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
       if (!emailRegex.test(email)) {
-        await AuditLog.create({
-          action: "UNAUTHORIZED_ACCESS_ATTEMPT",
-          username: schoolIdNumber.toString(),
-          details: `Invalid email format in chat support request: ${email}`,
-          ipAddress: req.ip,
-          userAgent: req.get("User-Agent"),
-        })
+        await ChatSupportController.logAuditAction(
+          "UNAUTHORIZED_ACCESS_ATTEMPT",
+          { schoolId: schoolIdNumber },
+          `Invalid email format: ${email}`,
+          req
+        )
 
-        const error = new Error("Invalid email format")
+        const error = new Error("Please enter a valid email address")
         error.statusCode = 400
         return next(error)
       }
 
-      // Check if voter exists with this schoolId (optional validation)
+      // Validate birthday
+      const birthdayDate = new Date(birthday)
+      if (isNaN(birthdayDate.getTime())) {
+        const error = new Error("Please enter a valid birthday")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Check for reasonable age limits (optional)
+      const age = (new Date() - birthdayDate) / (365.25 * 24 * 60 * 60 * 1000)
+      if (age < 16 || age > 100) {
+        const error = new Error("Please enter a valid birthday")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Check if voter exists (optional linkage)
       const voter = await Voter.findOne({ schoolId: schoolIdNumber })
-      
-      // Create chat support request
+
+      // Check for duplicate recent requests (spam prevention)
+      const recentRequest = await ChatSupport.findOne({
+        $or: [
+          { schoolId: schoolIdNumber },
+          { email: email.toLowerCase() }
+        ],
+        submittedAt: { 
+          $gte: new Date(Date.now() - 5 * 60 * 1000) // 5 minutes ago
+        }
+      })
+
+      if (recentRequest) {
+        await ChatSupportController.logAuditAction(
+          "UNAUTHORIZED_ACCESS_ATTEMPT",
+          { schoolId: schoolIdNumber },
+          `Duplicate support request attempt within 5 minutes`,
+          req
+        )
+
+        const error = new Error("Please wait 5 minutes before submitting another support request")
+        error.statusCode = 429
+        return next(error)
+      }
+
+      // Create support request
       const chatSupport = new ChatSupport({
         schoolId: schoolIdNumber,
-        voterId: voter ? voter._id : null, // Link to voter if exists
-        fullName,
+        voterId: voter ? voter._id : null,
+        fullName: fullName.trim(),
         departmentId,
-        birthday: new Date(birthday),
-        email,
-        message,
+        birthday: birthdayDate,
+        email: email.toLowerCase().trim(),
+        message: message.trim(),
         status: "pending",
       })
 
       await chatSupport.save()
 
-      // Log the support request submission
-      await AuditLog.create({
-        action: "CHAT_SUPPORT_REQUEST",
-        username: schoolIdNumber.toString(),
-        voterId: voter ? voter._id : null,
-        schoolId: schoolIdNumber,
-        details: `Chat support request submitted by ${fullName} (${email}) - Request ID: ${chatSupport._id}`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      await ChatSupportController.logAuditAction(
+        "CHAT_SUPPORT_REQUEST",
+        { schoolId: schoolIdNumber, _id: voter?._id },
+        `Support request submitted: ${fullName} (${email}) - ID: ${chatSupport._id}`,
+        req,
+        !!voter
+      )
 
       res.status(201).json({
+        success: true,
         message: "Support request submitted successfully",
         requestId: chatSupport._id,
       })
     } catch (error) {
-      // Log system error
-      await AuditLog.create({
-        action: "SYSTEM_ERROR",
-        username: req.body?.schoolId?.toString() || "unknown",
-        details: `Chat support request submission failed: ${error.message}`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
-      next(error)
+      console.error("Error submitting support request:", error)
+      
+      await ChatSupportController.logAuditAction(
+        "SYSTEM_ERROR",
+        { schoolId: req.body?.schoolId },
+        `Support request submission failed: ${error.message}`,
+        req
+      )
+      
+      // Handle validation errors
+      if (error.name === 'ValidationError') {
+        const validationErrors = Object.values(error.errors).map(err => err.message)
+        const err = new Error(`Validation failed: ${validationErrors.join(', ')}`)
+        err.statusCode = 400
+        return next(err)
+      }
+      
+      const err = new Error(error.message || "Failed to submit support request")
+      err.statusCode = error.statusCode || 500
+      next(err)
     }
   }
 
-  // Get all chat support requests (for admin)
+  // Get all requests with enhanced filtering
   static async getAllRequests(req, res, next) {
     try {
-      const { status, departmentId, page = 1, limit = 50 } = req.query
+      const { 
+        status, 
+        departmentId, 
+        page = 1, 
+        limit = 50, 
+        search,
+        dateFrom,
+        dateTo,
+        sortBy = 'submittedAt',
+        sortOrder = 'desc'
+      } = req.query
 
       // Build filter
       const filter = {}
       if (status) filter.status = status
-      if (departmentId) filter.departmentId = departmentId
+      if (departmentId) {
+        ChatSupportController.validateObjectId(departmentId, 'department ID')
+        filter.departmentId = departmentId
+      }
+
+      // Date range filter
+      if (dateFrom || dateTo) {
+        filter.submittedAt = {}
+        if (dateFrom) filter.submittedAt.$gte = new Date(dateFrom)
+        if (dateTo) filter.submittedAt.$lte = new Date(dateTo)
+      }
+
+      // Search filter
+      if (search) {
+        const searchRegex = new RegExp(search.trim(), 'i')
+        filter.$or = [
+          { fullName: searchRegex },
+          { email: searchRegex },
+          { message: searchRegex },
+          { schoolId: isNaN(search) ? null : Number(search) }
+        ].filter(condition => condition.schoolId !== null)
+      }
 
       // Pagination
-      const skip = (page - 1) * limit
+      const pageNum = Math.max(1, parseInt(page))
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit))) // Max 100 per page
+      const skip = (pageNum - 1) * limitNum
 
-      const requests = await ChatSupport.find(filter)
-        .populate("departmentId", "departmentCode degreeProgram college")
-        .populate("voterId", "firstName middleName lastName email schoolId yearLevel") // Added yearLevel
-        .sort({ submittedAt: -1 })
-        .skip(skip)
-        .limit(Number.parseInt(limit))
+      // Sort configuration
+      const sortConfig = {}
+      sortConfig[sortBy] = sortOrder === 'asc' ? 1 : -1
 
-      const total = await ChatSupport.countDocuments(filter)
+      const [requests, total] = await Promise.all([
+        ChatSupport.find(filter)
+          .populate("departmentId", "departmentCode degreeProgram college")
+          .populate("voterId", "firstName middleName lastName email schoolId yearLevel")
+          .sort(sortConfig)
+          .skip(skip)
+          .limit(limitNum),
+        ChatSupport.countDocuments(filter)
+      ])
 
-      // Log admin access to chat support requests
-      await AuditLog.create({
-        action: "SYSTEM_ACCESS",
-        username: req.user?.username || "system",
-        userId: req.user?.userId,
-        details: `Admin accessed chat support requests list - Filter: ${JSON.stringify(filter)}, Page: ${page}`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
+      await ChatSupportController.logAuditAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Accessed chat support requests - Filter: ${JSON.stringify(filter)}, Page: ${pageNum}, Results: ${requests.length}`,
+        req
+      )
 
       res.json({
-        requests,
-        pagination: {
-          current: Number.parseInt(page),
-          total: Math.ceil(total / limit),
-          count: requests.length,
-          totalRequests: total,
+        success: true,
+        data: {
+          requests,
+          pagination: {
+            currentPage: pageNum,
+            totalPages: Math.ceil(total / limitNum),
+            totalItems: total,
+            itemsPerPage: limitNum,
+            hasNext: skip + limitNum < total,
+            hasPrev: pageNum > 1
+          },
+          filters: { status, departmentId, search, dateFrom, dateTo }
         },
+        message: "Support requests retrieved successfully"
       })
     } catch (error) {
-      await AuditLog.create({
-        action: "UNAUTHORIZED_ACCESS_ATTEMPT",
-        username: req.user?.username || "unknown",
-        details: `Failed to access chat support requests: ${error.message}`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      })
-      next(error)
+      console.error("Error fetching support requests:", error)
+      
+      await ChatSupportController.logAuditAction(
+        'UNAUTHORIZED_ACCESS_ATTEMPT',
+        req.user,
+        `Failed to access support requests: ${error.message}`,
+        req
+      )
+      
+      const err = new Error(error.message || "Failed to fetch support requests")
+      err.statusCode = error.statusCode || 500
+      next(err)
     }
   }
 

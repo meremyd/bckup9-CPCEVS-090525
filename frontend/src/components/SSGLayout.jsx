@@ -178,16 +178,16 @@ useEffect(() => {
       active: activeItem === 'status'
     },
     { 
+      icon: Clipboard, 
+      label: "Position - Partylist", 
+      path: `/ecommittee/ssg/partylist-position?ssgElectionId=${ssgElectionId}`,
+      active: activeItem === 'partylist'
+    },
+    { 
       icon: Users, 
       label: "Candidates", 
       path: `/ecommittee/ssg/candidates?ssgElectionId=${ssgElectionId}`,
       active: activeItem === 'candidates'
-    },
-    { 
-      icon: Clipboard, 
-      label: "Partylist", 
-      path: `/ecommittee/ssg/partylist-position?ssgElectionId=${ssgElectionId}`,
-      active: activeItem === 'partylist'
     },
     { 
       icon: User, 

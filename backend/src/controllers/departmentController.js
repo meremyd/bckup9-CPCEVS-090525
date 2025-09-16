@@ -54,6 +54,46 @@ class DepartmentController {
     }
   }
 
+  // NEW: Get department by department code
+  static async getDepartmentByCode(req, res, next) {
+    try {
+      const { code } = req.params
+
+      if (!code || code.trim().length === 0) {
+        const error = new Error("Department code is required")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      const departmentCode = code.trim().toUpperCase()
+
+      const department = await Department.findOne({ departmentCode })
+        .select('departmentCode degreeProgram college')
+
+      if (!department) {
+        const error = new Error("Department not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      // Log department access
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user || { username: "anonymous" },
+        `Department accessed by code - ${department.departmentCode} (${department.degreeProgram})`,
+        req
+      )
+
+      res.json({
+        departmentCode: department.departmentCode,
+        degreeProgram: department.degreeProgram,
+        college: department.college
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
   // Get single department
   static async getDepartment(req, res, next) {
     try {
@@ -148,16 +188,6 @@ class DepartmentController {
         return next(error)
       }
 
-      // Check for existing department with same code
-      const existingDepartmentCode = await Department.findOne({ 
-        departmentCode: trimmedDepartmentCode
-      })
-      if (existingDepartmentCode) {
-        const error = new Error("Department with this code already exists")
-        error.statusCode = 400
-        return next(error)
-      }
-
       // Check for existing degree program and college combination
       const existingDegreeCollege = await Department.findOne({ 
         degreeProgram: trimmedDegreeProgram,
@@ -189,9 +219,7 @@ class DepartmentController {
     } catch (error) {
       // Handle duplicate key errors
       if (error.code === 11000) {
-        if (error.keyPattern?.departmentCode) {
-          error.message = "Department code already exists"
-        } else if (error.keyPattern?.degreeProgram && error.keyPattern?.college) {
+        if (error.keyPattern?.degreeProgram && error.keyPattern?.college) {
           error.message = "Department with this degree program and college combination already exists"
         } else {
           error.message = "Department with this information already exists"
@@ -264,20 +292,6 @@ class DepartmentController {
         updateFields.college = trimmedCollege
       }
 
-      // Check for existing department with same code (excluding current)
-      if (updateFields.departmentCode !== undefined) {
-        const existingDepartmentCode = await Department.findOne({ 
-          departmentCode: updateFields.departmentCode, 
-          _id: { $ne: id } 
-        })
-        
-        if (existingDepartmentCode) {
-          const error = new Error("Department code already exists")
-          error.statusCode = 400
-          return next(error)
-        }
-      }
-
       // Check for existing degree program and college combination (excluding current)
       if (updateFields.degreeProgram !== undefined || updateFields.college !== undefined) {
         const checkProgram = updateFields.degreeProgram || department.degreeProgram
@@ -312,9 +326,7 @@ class DepartmentController {
     } catch (error) {
       // Handle duplicate key errors
       if (error.code === 11000) {
-        if (error.keyPattern?.departmentCode) {
-          error.message = "Department code already exists"
-        } else if (error.keyPattern?.degreeProgram && error.keyPattern?.college) {
+        if (error.keyPattern?.degreeProgram && error.keyPattern?.college) {
           error.message = "Department with this degree program and college combination already exists"
         } else {
           error.message = "Department with this information already exists"
@@ -590,17 +602,9 @@ class DepartmentController {
       }
 
       // Check for duplicates within the batch
-      const seenCodes = new Set()
       const seenDegreeCollegeCombos = new Set()
       
       for (const department of validatedDepartments) {
-        if (seenCodes.has(department.departmentCode)) {
-          const error = new Error(`Duplicate department code in batch: ${department.departmentCode}`)
-          error.statusCode = 400
-          return next(error)
-        }
-        seenCodes.add(department.departmentCode)
-
         const combo = `${department.degreeProgram}|${department.college}`
         if (seenDegreeCollegeCombos.has(combo)) {
           const error = new Error(`Duplicate degree program and college combination in batch: ${department.degreeProgram} - ${department.college}`)
@@ -628,7 +632,7 @@ class DepartmentController {
     } catch (error) {
       // Handle bulk insert errors
       if (error.code === 11000) {
-        error.message = "One or more departments have duplicate codes or degree program/college combinations with existing records"
+        error.message = "One or more departments have duplicate degree program/college combinations with existing records"
         error.statusCode = 400
       }
       next(error)

@@ -19,10 +19,9 @@ const partylistSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-    description: {
-      type: String,
+    platform: {
+      type: Buffer,
       default: null,
-      trim: true,
     },
     logo: {
       type: Buffer,

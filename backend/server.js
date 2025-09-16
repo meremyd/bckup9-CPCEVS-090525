@@ -115,15 +115,6 @@ try {
   process.exit(1)
 }
 
-// try {
-//   console.log("Loading elections routes...")
-//   app.use("/api/elections", require("./src/routes/elections"))
-//   console.log("Elections routes loaded")
-// } catch (error) {
-//   console.error("Error loading elections routes:", error.message)
-//   process.exit(1)
-// }
-
 try {
   console.log("Loading positions routes...")
   app.use("/api/positions", require("./src/routes/positions"))
@@ -192,7 +183,7 @@ try {
   app.use("/api/ssgElections", require("./src/routes/ssgElection"))
   console.log("SSG election routes loaded")
 } catch (error) {
-  console.error("âŒ Error loading SSG election routes:", error.message)
+  console.error("Error loading SSG election routes:", error.message)
   process.exit(1)
 }
 
@@ -225,7 +216,6 @@ app.listen(PORT, () => {
   console.log(`   - GET  http://localhost:${PORT}/api/users (Protected - Admin)`)
   console.log(`   - GET  http://localhost:${PORT}/api/voters (Protected - Admin/Committee)`)
   console.log(`   - GET  http://localhost:${PORT}/api/departments`)
-  console.log(`   - GET  http://localhost:${PORT}/api/elections`)
   console.log(`   - GET  http://localhost:${PORT}/api/candidates`)
   console.log(`   - GET  http://localhost:${PORT}/api/positions`)
   console.log(`   - GET  http://localhost:${PORT}/api/partylists`)

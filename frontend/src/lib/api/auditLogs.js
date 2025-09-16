@@ -17,5 +17,15 @@ export const auditLogsAPI = {
   getStatistics: async () => {
     const response = await api.get('/audit-logs/stats/summary')
     return response.data
+  }, 
+  getUserAuditLogs: async (params = {}) => {
+    const response = await api.get('/audit-logs/user', { params })
+    return response.data
+  },
+  
+  exportAuditLogs: async (params = {}) => {
+    const response = await api.get('/audit-logs/export', { params })
+    return response.data
   }
+
 }

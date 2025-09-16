@@ -17,8 +17,7 @@ class PartylistController {
       if (search) {
         filter.$or = [
           { partylistId: { $regex: search, $options: "i" } },
-          { partylistName: { $regex: search, $options: "i" } },
-          { description: { $regex: search, $options: "i" } }
+          { partylistName: { $regex: search, $options: "i" } }
         ]
       }
 
@@ -193,6 +192,86 @@ class PartylistController {
     }
   }
 
+  // Get partylist logo
+  static async getPartylistLogo(req, res, next) {
+    try {
+      const { id } = req.params
+
+      const partylist = await Partylist.findById(id).select('logo partylistName partylistId')
+      if (!partylist) {
+        const error = new Error("Partylist not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      if (!partylist.logo) {
+        const error = new Error("No logo found for this partylist")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      // Set appropriate headers for image
+      res.set({
+        'Content-Type': 'image/jpeg', // Default to JPEG, could be made dynamic
+        'Content-Length': partylist.logo.length,
+        'Cache-Control': 'public, max-age=86400', // Cache for 1 day
+        'Content-Disposition': `inline; filename="${partylist.partylistId}-logo.jpg"`
+      })
+
+      // Log the access
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Logo accessed for partylist: ${partylist.partylistName}`,
+        req
+      )
+
+      res.send(partylist.logo)
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Get partylist platform
+  static async getPartylistPlatform(req, res, next) {
+  try {
+    const { id } = req.params
+
+    const partylist = await Partylist.findById(id).select('platform partylistName partylistId')
+    if (!partylist) {
+      const error = new Error("Partylist not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    if (!partylist.platform) {
+      const error = new Error("No platform found for this partylist")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // ✅ UPDATED: Set appropriate headers for IMAGE instead of PDF
+    res.set({
+      'Content-Type': 'image/jpeg', // Changed from application/pdf
+      'Content-Length': partylist.platform.length,
+      'Cache-Control': 'public, max-age=86400', // Cache for 1 day
+      'Content-Disposition': `inline; filename="${partylist.partylistId}-platform.jpg"` // Changed extension
+    })
+
+    // Log the access
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Platform accessed for partylist: ${partylist.partylistName}`,
+      req
+    )
+
+    res.send(partylist.platform)
+  } catch (error) {
+    next(error)
+  }
+}
+
   // Get partylist statistics
   static async getPartylistStatistics(req, res, next) {
     try {
@@ -300,10 +379,10 @@ class PartylistController {
     }
   }
 
-  // FIXED: Create new partylist with correct validation logic
+  // Create new partylist
   static async createPartylist(req, res, next) {
     try {
-      const { partylistId, ssgElectionId, partylistName, description, logo } = req.body
+      const { partylistId, ssgElectionId, partylistName, platform, logo } = req.body
 
       // Validation
       if (!partylistId || !ssgElectionId || !partylistName) {
@@ -336,7 +415,7 @@ class PartylistController {
         return next(error)
       }
 
-      // FIXED: Check partylist ID globally (across all elections)
+      // Check partylist ID globally (across all elections)
       const existingPartylistId = await Partylist.findOne({ 
         partylistId: partylistId.trim().toUpperCase() 
       })
@@ -346,7 +425,7 @@ class PartylistController {
         return next(error)
       }
 
-      // FIXED: Check partylist name only within the specific SSG election
+      // Check partylist name only within the specific SSG election
       const existingPartylistName = await Partylist.findOne({
         ssgElectionId: electionObjectId,
         partylistName: { $regex: new RegExp(`^${partylistName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
@@ -378,27 +457,37 @@ class PartylistController {
         }
       }
 
-      console.log('Creating partylist document...')
+      // Process platform if provided
+      let platformBuffer = null
+if (platform) {
+  if (typeof platform === 'string' && platform.startsWith('data:image/')) {
+    const base64Data = platform.replace(/^data:image\/\w+;base64,/, '')
+    platformBuffer = Buffer.from(base64Data, 'base64')
+    
+    // Validate file size (max 2MB for images, same as logo)
+    if (platformBuffer.length > 2 * 1024 * 1024) {
+      const error = new Error("Platform file size must be less than 2MB")
+      error.statusCode = 400
+      return next(error)
+    }
+  } else {
+    const error = new Error("Invalid platform format. Must be base64 encoded image.")
+    error.statusCode = 400
+    return next(error)
+  }
+}
+
       const partylist = new Partylist({
         partylistId: partylistId.trim().toUpperCase(),
         ssgElectionId: electionObjectId,
         partylistName: partylistName.trim(),
-        description: description?.trim() || null,
+        platform: platformBuffer,
         logo: logoBuffer,
         isActive: true
       })
 
-      console.log('Partylist document to save:', {
-        partylistId: partylist.partylistId,
-        ssgElectionId: partylist.ssgElectionId,
-        partylistName: partylist.partylistName
-      })
-
       await partylist.save()
       await partylist.populate("ssgElectionId", "title ssgElectionId electionYear")
-
-      console.log('Partylist created successfully!')
-      console.log('=== END DEBUG ===')
 
       // Log the creation
       await AuditLog.logUserAction(
@@ -410,18 +499,10 @@ class PartylistController {
 
       res.status(201).json(partylist)
     } catch (error) {
-      console.log('Error caught in createPartylist:', error.message)
-      console.log('Error code:', error.code)
-      console.log('Error keyPattern:', error.keyPattern)
-      console.log('Error keyValue:', error.keyValue)
-      console.log('=== END DEBUG ===')
-      
       // Handle duplicate key errors with improved error messages
       if (error.code === 11000) {
         const keyPattern = error.keyPattern || {}
         const keyValue = error.keyValue || {}
-        
-        console.log('MongoDB duplicate key error details:', { keyPattern, keyValue })
         
         // Check the specific index that was violated
         if (keyPattern.partylistId === 1) {
@@ -445,11 +526,11 @@ class PartylistController {
     }
   }
 
-  // FIXED: Update partylist with correct validation logic
+  // Update partylist
   static async updatePartylist(req, res, next) {
     try {
       const { id } = req.params
-      const { partylistName, description, logo, isActive } = req.body
+      const { partylistName, platform, logo, isActive } = req.body
 
       const partylist = await Partylist.findById(id)
         .populate("ssgElectionId", "title status")
@@ -490,7 +571,7 @@ class PartylistController {
           return next(error)
         }
 
-        // FIXED: Check for duplicate name ONLY in same SSG election (excluding current partylist)
+        // Check for duplicate name ONLY in same SSG election (excluding current partylist)
         const existingName = await Partylist.findOne({
           ssgElectionId: partylist.ssgElectionId._id,
           partylistName: { $regex: new RegExp(`^${trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
@@ -506,10 +587,27 @@ class PartylistController {
         updateData.partylistName = trimmedName
       }
 
-      // Update description
-      if (description !== undefined) {
-        updateData.description = description?.trim() || null
-      }
+      // Update platform
+      if (platform !== undefined) {
+  if (platform === null) {
+    updateData.platform = null
+  } else if (typeof platform === 'string' && platform.startsWith('data:image/')) {
+    const base64Data = platform.replace(/^data:image\/\w+;base64,/, '')
+    const platformBuffer = Buffer.from(base64Data, 'base64')
+    
+    if (platformBuffer.length > 2 * 1024 * 1024) {
+      const error = new Error("Platform file size must be less than 2MB")
+      error.statusCode = 400
+      return next(error)
+    }
+    
+    updateData.platform = platformBuffer
+  } else {
+    const error = new Error("Invalid platform format. Must be base64 encoded image or null.")
+    error.statusCode = 400
+    return next(error)
+  }
+}
 
       // Update active status
       if (isActive !== undefined) {

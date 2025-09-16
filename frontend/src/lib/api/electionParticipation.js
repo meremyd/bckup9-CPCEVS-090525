@@ -1,66 +1,100 @@
-// FIXED: Import from correct path
 import api from '../api'
 
 export const electionParticipationAPI = {
   // Confirm participation in an election (SSG or Departmental)
   confirmParticipation: async (electionId, electionType) => {
-    const response = await api.post('/election-participation/confirm', {
-      electionId,
-      electionType
-    })
-    return response.data
+    try {
+      const response = await api.post('/election-participation/confirm', {
+        electionId,
+        electionType
+      })
+      return response.data
+    } catch (error) {
+      console.error('Error confirming participation:', error)
+      throw error
+    }
   },
 
   // Withdraw from an election (SSG or Departmental)
   withdrawParticipation: async (electionId, electionType) => {
-    const response = await api.post('/election-participation/withdraw', {
-      electionId,
-      electionType
-    })
-    return response.data
+    try {
+      const response = await api.post('/election-participation/withdraw', {
+        electionId,
+        electionType
+      })
+      return response.data
+    } catch (error) {
+      console.error('Error withdrawing participation:', error)
+      throw error
+    }
   },
 
   // Check voter's status for a specific election (SSG or Departmental)
   checkVoterStatus: async (electionId, electionType) => {
-    const response = await api.get(`/election-participation/status/${electionId}?electionType=${electionType}`)
-    return response.data
+    try {
+      const response = await api.get(`/election-participation/status/${electionId}?electionType=${electionType}`)
+      return response.data
+    } catch (error) {
+      console.error('Error checking voter status:', error)
+      throw error
+    }
   },
 
   // Get voter's participation history (both SSG and Departmental)
   getVoterHistory: async (voterId) => {
-    const response = await api.get(`/election-participation/voter/${voterId}/history`)
-    return response.data
+    try {
+      const response = await api.get(`/election-participation/voter/${voterId}/history`)
+      return response.data
+    } catch (error) {
+      console.error('Error fetching voter history:', error)
+      throw error
+    }
   },
 
   // Get all participants for an election (admin/committee/sao only)
   getElectionParticipants: async (electionId, electionType, params = {}) => {
-    const searchParams = new URLSearchParams({
-      electionType,
-      page: params.page || 1,
-      limit: params.limit || 100,
-      ...(params.status && { status: params.status }),
-      ...(params.hasVoted !== undefined && { hasVoted: params.hasVoted }),
-      ...(params.search && { search: params.search })
-    })
-    
-    const response = await api.get(`/election-participation/election/${electionId}/participants?${searchParams}`)
-    return response.data
+    try {
+      const searchParams = new URLSearchParams({
+        electionType,
+        page: params.page || 1,
+        limit: params.limit || 100,
+        ...(params.status && { status: params.status }),
+        ...(params.hasVoted !== undefined && { hasVoted: params.hasVoted }),
+        ...(params.search && { search: params.search })
+      })
+      
+      const response = await api.get(`/election-participation/election/${electionId}/participants?${searchParams}`)
+      return response.data
+    } catch (error) {
+      console.error('Error fetching election participants:', error)
+      throw error
+    }
   },
 
   // Get participation statistics for an election (admin/committee/sao only)
   getElectionStats: async (electionId, electionType) => {
-    const response = await api.get(`/election-participation/election/${electionId}/stats?electionType=${electionType}`)
-    return response.data
+    try {
+      const response = await api.get(`/election-participation/election/${electionId}/stats?electionType=${electionType}`)
+      return response.data
+    } catch (error) {
+      console.error('Error fetching election stats:', error)
+      throw error
+    }
   },
 
-  // Mark voter as having voted (admin/committee/sao only - usually called internally when vote is cast)
+  // Mark voter as having voted (admin/committee/sao only)
   markAsVoted: async (electionId, electionType, voterId) => {
-    const response = await api.post('/election-participation/mark-voted', {
-      electionId,
-      electionType,
-      voterId
-    })
-    return response.data
+    try {
+      const response = await api.post('/election-participation/mark-voted', {
+        electionId,
+        electionType,
+        voterId
+      })
+      return response.data
+    } catch (error) {
+      console.error('Error marking voter as voted:', error)
+      throw error
+    }
   },
 
   // Convenience methods for specific election types
@@ -82,6 +116,3 @@ export const electionParticipationAPI = {
     markAsVoted: (electionId, voterId) => electionParticipationAPI.markAsVoted(electionId, 'departmental', voterId)
   }
 }
-
-// Export for easier importing
-export default electionParticipationAPI

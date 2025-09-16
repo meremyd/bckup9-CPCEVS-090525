@@ -24,7 +24,7 @@ import {
 // Departmental Layout Component for consistent sidebar and header
 export default function DepartmentalLayout({ 
   children, 
-  departmentalElectionId, 
+  deptElectionId, 
   title = "Departmental Management", 
   subtitle = "Manage Election", 
   activeItem = "", 
@@ -57,10 +57,10 @@ export default function DepartmentalLayout({
         return
       }
 
-      console.log('DepartmentalLayout - departmentalElectionId:', departmentalElectionId)
+      console.log('DepartmentalLayout - deptElectionId:', deptElectionId)
 
       // Try to get election from localStorage first for better UX
-      if (departmentalElectionId) {
+      if (deptElectionId) {
         const storedElection = localStorage.getItem('selectedDepartmentalElection')
         console.log('DepartmentalLayout - stored election:', storedElection)
         
@@ -68,7 +68,7 @@ export default function DepartmentalLayout({
           try {
             const parsed = JSON.parse(storedElection)
             console.log('DepartmentalLayout - parsed stored election:', parsed)
-            if (parsed._id === departmentalElectionId || parsed.id === departmentalElectionId) {
+            if (parsed._id === deptElectionId || parsed.id === deptElectionId) {
               setElection(parsed)
               setLoading(false)
               return
@@ -88,14 +88,14 @@ export default function DepartmentalLayout({
       router.push("/adminlogin")
       return
     }
-  }, [router, departmentalElectionId])
+  }, [router, deptElectionId])
 
   const fetchElection = async () => {
     try {
       setLoading(true)
       setError('')
       
-      const response = await departmentalElectionsAPI.getById(departmentalElectionId)
+      const response = await departmentalElectionsAPI.getById(deptElectionId)
       
       // Handle different response structures
       let electionData
@@ -174,48 +174,48 @@ export default function DepartmentalLayout({
     { 
       icon: Settings, 
       label: "Status", 
-      path: `/ecommittee/departmental/status?departmentalElectionId=${departmentalElectionId}`,
+      path: `/ecommittee/departmental/status?deptElectionId=${deptElectionId}`,
       active: activeItem === 'status'
     },
     { 
       icon: Users, 
       label: "Candidates", 
-      path: `/ecommittee/departmental/candidates?departmentalElectionId=${departmentalElectionId}`,
+      path: `/ecommittee/departmental/candidates?deptElectionId=${deptElectionId}`,
       active: activeItem === 'candidates'
     },
     { 
       icon: Clipboard, 
       label: "Position", 
-      path: `/ecommittee/departmental/position?departmentalElectionId=${departmentalElectionId}`,
+      path: `/ecommittee/departmental/position?deptElectionId=${deptElectionId}`,
       active: activeItem === 'position'
     },
     { 
       icon: UserCheck, 
       label: "Class Officers", 
-      path: `/ecommittee/departmental/officers?departmentalElectionId=${departmentalElectionId}`,
+      path: `/ecommittee/departmental/officers?deptElectionId=${deptElectionId}`,
       active: activeItem === 'officers'
     },
     { 
       icon: Vote, 
       label: "Ballot", 
-      path: `/ecommittee/departmental/ballot?departmentalElectionId=${departmentalElectionId}`,
+      path: `/ecommittee/departmental/ballot?deptElectionId=${deptElectionId}`,
       active: activeItem === 'ballot'
     },
     { 
       icon: BarChart3, 
       label: "Statistics", 
-      path: `/ecommittee/departmental/statistics?departmentalElectionId=${departmentalElectionId}`,
+      path: `/ecommittee/departmental/statistics?deptElectionId=${deptElectionId}`,
       active: activeItem === 'statistics'
     },
     { 
       icon: TrendingUp, 
       label: "Voter Turnout", 
-      path: `/ecommittee/departmental/voterTurnout?departmentalElectionId=${departmentalElectionId}`,
+      path: `/ecommittee/departmental/voterTurnout?deptElectionId=${deptElectionId}`,
       active: activeItem === 'voterTurnout'
     }
   ]
 
-  if (loading && departmentalElectionId) {
+  if (loading && deptElectionId) {
     return (
       <BackgroundWrapper>
         <div className="min-h-screen flex items-center justify-center">
@@ -228,7 +228,7 @@ export default function DepartmentalLayout({
     )
   }
 
-  if (error && departmentalElectionId) {
+  if (error && deptElectionId) {
     return (
       <BackgroundWrapper>
         <div className="min-h-screen flex items-center justify-center">
@@ -259,15 +259,15 @@ export default function DepartmentalLayout({
   return (
     <BackgroundWrapper>
       {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && departmentalElectionId && (
+      {sidebarOpen && deptElectionId && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar - Only show when departmentalElectionId exists */}
-      {departmentalElectionId && (
+      {/* Sidebar - Only show when deptElectionId exists */}
+      {deptElectionId && (
         <div className={`fixed left-0 top-0 h-full w-64 z-50 transform transition-transform duration-300 ease-in-out ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         } lg:translate-x-0`}
@@ -281,7 +281,7 @@ export default function DepartmentalLayout({
                 <div className="flex items-center gap-2 mt-1">
                   <p className="text-sm text-white/70 truncate">{departmentalElection?.title || 'Departmental Election'}</p>
                 </div>
-                <p className="text-xs text-white/60 mt-1">ID: {departmentalElection?.deptElectionId || departmentalElectionId}</p>
+                <p className="text-xs text-white/60 mt-1">ID: {departmentalElection?.deptElectionId || deptElectionId}</p>
                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(departmentalElection?.status).replace('border-', 'bg-').replace('text-', 'text-white')}`}>
                   {departmentalElection?.status?.toUpperCase() || 'UNKNOWN'}
                 </span>
@@ -337,9 +337,9 @@ export default function DepartmentalLayout({
       )}
 
       {/* Header - Mobile */}
-      <div className={`${departmentalElectionId ? 'lg:hidden' : ''} bg-[#b0c8fe]/95 backdrop-blur-sm shadow-lg border-b border-[#b0c8fe]/30 px-4 py-4`}>
+      <div className={`${deptElectionId ? 'lg:hidden' : ''} bg-[#b0c8fe]/95 backdrop-blur-sm shadow-lg border-b border-[#b0c8fe]/30 px-4 py-4`}>
         <div className="flex items-center justify-between">
-          {departmentalElectionId && (
+          {deptElectionId && (
             <button
               onClick={() => setSidebarOpen(true)}
               className="lg:hidden p-2 hover:bg-white/10 rounded-lg transition-colors"
@@ -368,10 +368,10 @@ export default function DepartmentalLayout({
       </div>
 
       {/* Main Content */}
-      <div className={`${departmentalElectionId ? 'lg:ml-64' : ''} min-h-screen`}>
+      <div className={`${deptElectionId ? 'lg:ml-64' : ''} min-h-screen`}>
         <div className="p-4 lg:p-6 pt-20 lg:pt-6">
           {/* Header - Desktop */}
-          {departmentalElectionId && (
+          {deptElectionId && (
             <div className="hidden lg:flex items-center justify-between mb-8">
               <div className="flex items-center">
                 <div className="w-8 h-8 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-lg flex items-center justify-center mr-3 shadow-lg">

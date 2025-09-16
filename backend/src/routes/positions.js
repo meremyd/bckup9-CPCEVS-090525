@@ -16,6 +16,9 @@ router.get("/ssg/elections/:ssgElectionId", authorizeStaffAndVoters("election_co
 router.put("/ssg/elections/:ssgElectionId/reorder", authorizeRoles("election_committee"), PositionController.reorderSSGPositions)
 router.get("/ssg/:positionId/stats", authorizeStaffAndVoters("election_committee", "sao", "voter"), PositionController.getSSGPositionStats)
 router.get("/ssg/:positionId/can-delete", authorizeRoles("election_committee"), PositionController.canDeleteSSGPosition)
+router.get('/ssg/debug/:ssgElectionId', PositionController.debugSSGPositions);
+router.get('/debug-position-state', PositionController.debugPositionState);
+router.get('/ssg/debug/:ssgElectionId', PositionController.debugDatabaseState);
 
 router.get("/ssg/elections/:ssgElectionId/candidate-limits", authorizeStaffAndVoters("election_committee", "sao", "voter"), PositionController.getSSGPositionCandidateLimits)
 router.get("/ssg/:positionId/validate-deletion", authorizeRoles("election_committee"), PositionController.validateSSGPositionDeletion)

@@ -408,6 +408,196 @@ class AuthController {
       next(error)
     }
   }
+
+  static async checkAuth(req, res, next) {
+  try {
+    // The user should already be attached to req by the auth middleware
+    if (!req.user) {
+      const error = new Error("User not authenticated")
+      error.statusCode = 401
+      return next(error)
+    }
+
+    const { userId, voterId, username, userType, schoolId } = req.user
+
+    // For admin/staff users
+    if (userId) {
+      const user = await User.findById(userId).select('-passwordHash')
+      if (!user || !user.isActive) {
+        const error = new Error("User account not found or inactive")
+        error.statusCode = 401
+        return next(error)
+      }
+
+      return res.json({
+        authenticated: true,
+        userType: 'staff',
+        user: {
+          id: user._id,
+          username: user.username,
+          userType: user.userType,
+        }
+      })
+    }
+
+    // For voters
+    if (voterId) {
+      const voter = await Voter.findById(voterId)
+        .populate("departmentId")
+        .select('-password')
+        
+      if (!voter || !voter.isActive) {
+        const error = new Error("Voter account not found or inactive")
+        error.statusCode = 401
+        return next(error)
+      }
+
+      return res.json({
+        authenticated: true,
+        userType: 'voter',
+        user: {
+          id: voter._id,
+          schoolId: voter.schoolId,
+          firstName: voter.firstName,
+          lastName: voter.lastName,
+          yearLevel: voter.yearLevel,
+          department: voter.departmentId ? {
+            id: voter.departmentId._id,
+            departmentCode: voter.departmentId.departmentCode,
+            degreeProgram: voter.departmentId.degreeProgram,
+            college: voter.departmentId.college
+          } : null,
+          userType: "voter",
+        }
+      })
+    }
+
+    const error = new Error("Invalid token format")
+    error.statusCode = 401
+    next(error)
+  } catch (error) {
+    next(error)
+  }
+}
+
+// Refresh JWT token
+static async refreshToken(req, res, next) {
+  try {
+    if (!req.user) {
+      const error = new Error("User not authenticated")
+      error.statusCode = 401
+      return next(error)
+    }
+
+    const { userId, voterId, username, userType, schoolId } = req.user
+
+    // For admin/staff users
+    if (userId) {
+      const user = await User.findById(userId)
+      if (!user || !user.isActive) {
+        const error = new Error("User account not found or inactive")
+        error.statusCode = 401
+        return next(error)
+      }
+
+      // Generate new JWT token
+      const newToken = jwt.sign(
+        {
+          userId: user._id,
+          username: user.username,
+          userType: user.userType,
+        },
+        process.env.JWT_SECRET || "your-secret-key",
+        { expiresIn: "24h" }
+      )
+
+      // Log token refresh
+      try {
+        await AuditLog.create({
+          action: "LOGIN", // Using LOGIN as it's similar to token refresh
+          username: user.username,
+          userId: user._id,
+          details: "Token refreshed successfully",
+          ipAddress: req.ip,
+          userAgent: req.get("User-Agent"),
+        })
+      } catch (logError) {
+        console.error("Failed to log token refresh:", logError.message)
+      }
+
+      return res.json({
+        message: "Token refreshed successfully",
+        token: newToken,
+        user: {
+          id: user._id,
+          username: user.username,
+          userType: user.userType,
+        }
+      })
+    }
+
+    // For voters
+    if (voterId) {
+      const voter = await Voter.findById(voterId).populate("departmentId")
+      if (!voter || !voter.isActive) {
+        const error = new Error("Voter account not found or inactive")
+        error.statusCode = 401
+        return next(error)
+      }
+
+      // Generate new JWT token for voter
+      const newToken = jwt.sign(
+        {
+          voterId: voter._id,
+          schoolId: voter.schoolId,
+          userType: "voter",
+        },
+        process.env.JWT_SECRET || "your-secret-key",
+        { expiresIn: "24h" }
+      )
+
+      // Log token refresh
+      try {
+        await AuditLog.create({
+          action: "LOGIN", // Using LOGIN as it's similar to token refresh
+          username: voter.schoolId.toString(),
+          voterId: voter._id,
+          schoolId: voter.schoolId,
+          details: "Voter token refreshed successfully",
+          ipAddress: req.ip,
+          userAgent: req.get("User-Agent"),
+        })
+      } catch (logError) {
+        console.error("Failed to log token refresh:", logError.message)
+      }
+
+      return res.json({
+        message: "Token refreshed successfully",
+        token: newToken,
+        user: {
+          id: voter._id,
+          schoolId: voter.schoolId,
+          firstName: voter.firstName,
+          lastName: voter.lastName,
+          yearLevel: voter.yearLevel,
+          department: voter.departmentId ? {
+            id: voter.departmentId._id,
+            departmentCode: voter.departmentId.departmentCode,
+            degreeProgram: voter.departmentId.degreeProgram,
+            college: voter.departmentId.college
+          } : null,
+          userType: "voter",
+        }
+      })
+    }
+
+    const error = new Error("Invalid token format")
+    error.statusCode = 401
+    next(error)
+  } catch (error) {
+    next(error)
+  }
+}
 }
 
 module.exports = AuthController

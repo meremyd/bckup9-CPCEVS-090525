@@ -133,8 +133,8 @@ export default function DepartmentalPage() {
     console.log('Selected election:', selectedElection)
 
     try {
-      const departmentalElectionId = selectedElection._id || selectedElection.id
-      console.log('Using departmentalElectionId:', departmentalElectionId)
+      const deptElectionId = selectedElection._id || selectedElection.id
+      console.log('Using deptElectionId:', deptElectionId)
       
       let counts = {
         candidates: 0,
@@ -177,7 +177,7 @@ export default function DepartmentalPage() {
       // Fetch candidates
       console.log('Fetching candidates...')
       try {
-        const candidatesResponse = await candidatesAPI.departmental.getByElection(departmentalElectionId)
+        const candidatesResponse = await candidatesAPI.departmental.getByElection(deptElectionId)
         console.log('Candidates response:', candidatesResponse)
         counts.candidates = getCount(candidatesResponse)
         console.log('Candidates count:', counts.candidates)
@@ -202,7 +202,7 @@ export default function DepartmentalPage() {
       console.log('Fetching ballots...')
       try {
         const ballotsResponse = await ballotAPI.getAllDepartmentalBallots({ 
-          electionId: departmentalElectionId,
+          electionId: deptElectionId,
           limit: 1 
         })
         console.log('Ballots response:', ballotsResponse)
@@ -323,7 +323,7 @@ export default function DepartmentalPage() {
     }
   }
 
-  const handleDeleteElection = async (departmentalElectionId, e) => {
+  const handleDeleteElection = async (deptElectionId, e) => {
     e.stopPropagation()
     
     const result = await Swal.fire({
@@ -351,10 +351,10 @@ export default function DepartmentalPage() {
           }
         })
 
-        await departmentalElectionsAPI.delete(departmentalElectionId)
+        await departmentalElectionsAPI.delete(deptElectionId)
         await fetchElections()
         
-        if (selectedElection && (selectedElection._id === departmentalElectionId || selectedElection.id === departmentalElectionId)) {
+        if (selectedElection && (selectedElection._id === deptElectionId || selectedElection.id === deptElectionId)) {
           handleBackToElections()
         }
 
@@ -429,7 +429,7 @@ export default function DepartmentalPage() {
       textColor: "text-[#001f65]",
       description: "Manage election positions",
       count: cardCounts.position,
-      path: `/ecommittee/departmental/position?departmentalElectionId=${selectedElection?._id || selectedElection?.id}`
+      path: `/ecommittee/departmental/position?deptElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
       title: "Class Officers",
@@ -441,7 +441,7 @@ export default function DepartmentalPage() {
       textColor: "text-[#001f65]",
       description: "Manage class officers",
       count: cardCounts.officers,
-      path: `/ecommittee/departmental/officers?departmentalElectionId=${selectedElection?._id || selectedElection?.id}`
+      path: `/ecommittee/departmental/officers?deptElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
       title: "Ballot",
@@ -453,7 +453,7 @@ export default function DepartmentalPage() {
       textColor: "text-[#001f65]",
       description: "Manage voting ballots",
       count: cardCounts.ballot,
-      path: `/ecommittee/departmental/ballot?departmentalElectionId=${selectedElection?._id || selectedElection?.id}`
+      path: `/ecommittee/departmental/ballot?deptElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
       title: "Statistics",
@@ -465,7 +465,7 @@ export default function DepartmentalPage() {
       textColor: "text-[#001f65]",
       description: "View election analytics",
       count: cardCounts.statistics,
-      path: `/ecommittee/departmental/statistics?departmentalElectionId=${selectedElection?._id || selectedElection?.id}`
+      path: `/ecommittee/departmental/statistics?deptElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
       title: "Candidates",
@@ -477,7 +477,7 @@ export default function DepartmentalPage() {
       textColor: "text-[#001f65]",
       description: "Manage election candidates",
       count: cardCounts.candidates,
-      path: `/ecommittee/departmental/candidates?departmentalElectionId=${selectedElection?._id || selectedElection?.id}`
+      path: `/ecommittee/departmental/candidates?deptElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
       title: "Voter Turnout",
@@ -489,7 +489,7 @@ export default function DepartmentalPage() {
       textColor: "text-[#001f65]",
       description: "Monitor voting activity",
       count: `${cardCounts.voterTurnout}%`,
-      path: `/ecommittee/departmental/voterTurnout?departmentalElectionId=${selectedElection?._id || selectedElection?.id}`
+      path: `/ecommittee/departmental/voterTurnout?deptElectionId=${selectedElection?._id || selectedElection?.id}`
     }
   ]
 
@@ -497,7 +497,7 @@ export default function DepartmentalPage() {
     // Use DepartmentalLayout for election management view
     return (
       <DepartmentalLayout
-        departmentalElectionId={selectedElection._id || selectedElection.id}
+        deptElectionId={selectedElection._id || selectedElection.id}
         title={selectedElection.title}
         subtitle="Election Management"
         activeItem=""
@@ -866,7 +866,7 @@ export default function DepartmentalPage() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
-                                router.push(`/ecommittee/departmental/status?departmentalElectionId=${election._id || election.id}`)
+                                router.push(`/ecommittee/departmental/status?deptElectionId=${election._id || election.id}`)
                               }}
                               className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
                               title="Manage Election Status"
