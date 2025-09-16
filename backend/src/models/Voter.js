@@ -25,7 +25,7 @@ const voterSchema = new mongoose.Schema(
     },
     birthdate: {
       type: Date,
-      required: true,
+      // required: true,
     },
     departmentId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -34,7 +34,7 @@ const voterSchema = new mongoose.Schema(
     },
     yearLevel: {
       type: Number,
-      required: true,
+      // required: true,
       min: 1,
       max: 4,
       validate: {
@@ -46,7 +46,7 @@ const voterSchema = new mongoose.Schema(
     },
     email: {
       type: String,
-      required: true,
+      // required: true,
       unique: true,
       trim: true,
       lowercase: true,

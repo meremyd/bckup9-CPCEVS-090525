@@ -155,7 +155,7 @@ export default function AdminDashboard() {
       icon: <CheckCircle className="w-8 h-8 sm:w-10 md:w-12" />
     },
     {
-      title: "Departments",
+      title: "Degree Programs",
       value: dashboardData?.totalDepartments || dashboardData?.totalDegrees || 0,
       color: "violet",
       path: "/admin/departments",

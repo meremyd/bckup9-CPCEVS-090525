@@ -436,7 +436,7 @@ export default function DepartmentalCandidatesPage() {
         <option value="">All Positions ({candidateStats.total})</option>
         {departmentalPositions.map(position => {
           const candidateCount = candidateStats.byPosition[position._id]?.count || 0
-          const maxCandidates = position.maxCandidates || 2
+          const maxCandidates = position.maxCandidates || 10
           
           return (
             <option key={position._id} value={position._id}>

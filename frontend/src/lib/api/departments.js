@@ -23,7 +23,7 @@ export const departmentsAPI = {
     }
   },
   
-  // NEW: Get department by department code (public)
+  // Get department by department code (public)
   getByCode: async (code) => {
     try {
       const response = await api.get(`/departments/code/${code}`)
@@ -46,12 +46,78 @@ export const departmentsAPI = {
   },
   
   // Get all colleges (public)
-  getColleges: async () => {
+  getColleges: async (params = {}) => {
     try {
-      const response = await api.get('/departments/colleges/all')
+      const response = await api.get('/departments/colleges/all', { params })
       return response.data
     } catch (error) {
       console.error('Error fetching colleges:', error)
+      throw error
+    }
+  },
+
+  // NEW: Get degree programs (public)
+  getDegreePrograms: async (params = {}) => {
+    try {
+      const response = await api.get('/departments/degree-programs', { params })
+      return response.data
+    } catch (error) {
+      console.error('Error fetching degree programs:', error)
+      throw error
+    }
+  },
+
+  // NEW: Get department codes (public)
+  getDepartmentCodes: async (params = {}) => {
+    try {
+      const response = await api.get('/departments/department-codes', { params })
+      return response.data
+    } catch (error) {
+      console.error('Error fetching department codes:', error)
+      throw error
+    }
+  },
+
+  // NEW: Get all total counts (public)
+  getTotalCounts: async () => {
+    try {
+      const response = await api.get('/departments/counts/all')
+      return response.data
+    } catch (error) {
+      console.error('Error fetching total counts:', error)
+      throw error
+    }
+  },
+
+  // NEW: Get total departments count only (public)
+  getTotalDepartments: async () => {
+    try {
+      const response = await api.get('/departments/counts/departments')
+      return response.data
+    } catch (error) {
+      console.error('Error fetching total departments count:', error)
+      throw error
+    }
+  },
+
+  // NEW: Get total colleges count only (public)
+  getTotalColleges: async () => {
+    try {
+      const response = await api.get('/departments/counts/colleges')
+      return response.data
+    } catch (error) {
+      console.error('Error fetching total colleges count:', error)
+      throw error
+    }
+  },
+
+  // NEW: Get total degree programs count only (public)
+  getTotalDegreePrograms: async () => {
+    try {
+      const response = await api.get('/departments/counts/degree-programs')
+      return response.data
+    } catch (error) {
+      console.error('Error fetching total degree programs count:', error)
       throw error
     }
   },

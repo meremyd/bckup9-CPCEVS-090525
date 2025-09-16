@@ -375,7 +375,7 @@ static async debugPositionState(req, res) {
     // Parse and validate numbers
     let parsedPositionOrder = 1
     let parsedMaxVotes = 1
-    let parsedMaxCandidates = 2
+    let parsedMaxCandidates = 10
     let parsedMaxCandidatesPerPartylist = 1
 
     if (positionOrder !== undefined && positionOrder !== null) {

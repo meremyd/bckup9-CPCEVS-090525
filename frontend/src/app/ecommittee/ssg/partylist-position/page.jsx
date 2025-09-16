@@ -242,8 +242,8 @@ export default function SSGPositionsPartylistsPage() {
   // Parse numbers with proper validation
   const positionOrder = positionOrderValue ? parseInt(positionOrderValue, 10) : 1;
   const maxVotes = maxVotesValue ? parseInt(maxVotesValue, 10) : 1;
-  const maxCandidates = maxCandidatesValue ? parseInt(maxCandidatesValue, 24) : 2;
-  const maxCandidatesPerPartylist = maxCandidatesPerPartylistValue ? parseInt(maxCandidatesPerPartylistValue, 12) : 1;
+  const maxCandidates = maxCandidatesValue ? parseInt(maxCandidatesValue, 10) : 10;
+  const maxCandidatesPerPartylist = maxCandidatesPerPartylistValue ? parseInt(maxCandidatesPerPartylistValue, 10) : 1;
 
   if (isNaN(positionOrder) || positionOrder < 1) {
     Swal.showValidationMessage('Position order must be a valid number greater than 0');
@@ -622,9 +622,9 @@ export default function SSGPositionsPartylistsPage() {
 
   // Parse numbers properly
   const positionOrder = parseInt(positionOrderValue, 10);
-  const maxVotes = parseInt(maxVotesValue, 12);
-  const maxCandidates = parseInt(maxCandidatesValue, 24);
-  const maxCandidatesPerPartylist = parseInt(maxCandidatesPerPartylistValue, 12);
+  const maxVotes = parseInt(maxVotesValue, 10);
+  const maxCandidates = parseInt(maxCandidatesValue, 10);
+  const maxCandidatesPerPartylist = parseInt(maxCandidatesPerPartylistValue, 10);
 
   if (isNaN(positionOrder) || positionOrder < 1) {
     Swal.showValidationMessage('Position order is required and must be at least 1');

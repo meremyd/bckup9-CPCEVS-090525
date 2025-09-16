@@ -469,7 +469,7 @@ export default function SSGPage() {
       textColor: "text-[#001f65]",
       description: "Manage election positions",
       count: cardCounts.positions,
-      path: `/ecommittee/ssg/positions?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
+      path: `/ecommittee/ssg/partylist-position?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
       title: "Partylist",

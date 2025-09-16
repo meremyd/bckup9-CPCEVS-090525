@@ -401,7 +401,7 @@ export default function SSGCandidatesPage() {
             partylistName: candidate.partylistId.partylistName || 'Independent'
           } : null,
           
-          // Campaign picture and credentials
+          // Campaign picture and credentials (both now images)
           campaignPicture: candidate.campaignPicture || null,
           hasCampaignPicture: !!candidate.campaignPicture,
           credentials: candidate.credentials || null,
@@ -504,84 +504,84 @@ export default function SSGCandidatesPage() {
 
   // Enhanced voter search with eligibility checking
   const searchVoters = async (searchValue) => {
-  if (!searchValue.trim()) {
-    setVoterSearchResults([])
-    setShowVoterDropdown(false)
-    return
-  }
-
-  setVoterSearchLoading(true)
-  
-  try {
-    const searchTerm = searchValue.toLowerCase()
-    
-    // Filter ALL voters (removed isRegistered filter)
-    const filteredVoters = allVoters.filter(voter => {
-      const matchesSchoolId = voter.schoolId?.toString().toLowerCase().includes(searchTerm)
-      const matchesName = voter.fullName?.toLowerCase().includes(searchTerm) ||
-                         voter.firstName?.toLowerCase().includes(searchTerm) ||
-                         voter.lastName?.toLowerCase().includes(searchTerm)
-      
-      return matchesSchoolId || matchesName
-    }).filter(voter => {
-      // Exclude voters who are already candidates in this SSG election (unless editing)
-      if (editingCandidate && editingCandidate.voterId === voter._id) {
-        return true // Allow current candidate when editing
-      }
-      
-      return !ssgCandidates.some(candidate => 
-        candidate.voterId === voter._id || candidate.voterId?._id === voter._id
-      )
-    })
-    
-    // Sort by name
-    const sortedVoters = filteredVoters.sort((a, b) => 
-      a.fullName.localeCompare(b.fullName)
-    )
-    
-    setVoterSearchResults(sortedVoters.slice(0, 15)) // Show top 15 results
-    setShowVoterDropdown(true)
-  } catch (error) {
-    console.error('Error searching voters:', error)
-    setVoterSearchResults([])
-  } finally {
-    setVoterSearchLoading(false)
-  }
-}
-
-  const selectVoter = async (voter) => {
-  try {
-    setCheckingEligibility(true)
-    
-    // Check if voter is already a candidate in this SSG election (unless editing)
-    if (!editingCandidate || editingCandidate.voterId !== voter._id) {
-      const existingCandidate = ssgCandidates.find(candidate => 
-        candidate.voterId === voter._id || candidate.voterId?._id === voter._id
-      )
-      
-      if (existingCandidate) {
-        Swal.fire({
-          icon: 'error',
-          title: 'Voter Already a Candidate',
-          text: `${voter.fullName} is already a candidate for ${existingCandidate.position} in this SSG election.`,
-          confirmButtonColor: '#001f65'
-        })
-        return
-      }
+    if (!searchValue.trim()) {
+      setVoterSearchResults([])
+      setShowVoterDropdown(false)
+      return
     }
 
-    setSelectedVoter(voter)
-    setVoterSearchId(voter.fullName)
-    setFormData(prev => ({ ...prev, voterId: voter._id }))
-    setShowVoterDropdown(false)
-    setVoterSearchResults([])
-  } catch (error) {
-    console.error('Error selecting voter:', error)
-    showErrorAlert(error)
-  } finally {
-    setCheckingEligibility(false)
+    setVoterSearchLoading(true)
+    
+    try {
+      const searchTerm = searchValue.toLowerCase()
+      
+      // Filter ALL voters (removed isRegistered filter)
+      const filteredVoters = allVoters.filter(voter => {
+        const matchesSchoolId = voter.schoolId?.toString().toLowerCase().includes(searchTerm)
+        const matchesName = voter.fullName?.toLowerCase().includes(searchTerm) ||
+                           voter.firstName?.toLowerCase().includes(searchTerm) ||
+                           voter.lastName?.toLowerCase().includes(searchTerm)
+        
+        return matchesSchoolId || matchesName
+      }).filter(voter => {
+        // Exclude voters who are already candidates in this SSG election (unless editing)
+        if (editingCandidate && editingCandidate.voterId === voter._id) {
+          return true // Allow current candidate when editing
+        }
+        
+        return !ssgCandidates.some(candidate => 
+          candidate.voterId === voter._id || candidate.voterId?._id === voter._id
+        )
+      })
+      
+      // Sort by name
+      const sortedVoters = filteredVoters.sort((a, b) => 
+        a.fullName.localeCompare(b.fullName)
+      )
+      
+      setVoterSearchResults(sortedVoters.slice(0, 15)) // Show top 15 results
+      setShowVoterDropdown(true)
+    } catch (error) {
+      console.error('Error searching voters:', error)
+      setVoterSearchResults([])
+    } finally {
+      setVoterSearchLoading(false)
+    }
   }
-}
+
+  const selectVoter = async (voter) => {
+    try {
+      setCheckingEligibility(true)
+      
+      // Check if voter is already a candidate in this SSG election (unless editing)
+      if (!editingCandidate || editingCandidate.voterId !== voter._id) {
+        const existingCandidate = ssgCandidates.find(candidate => 
+          candidate.voterId === voter._id || candidate.voterId?._id === voter._id
+        )
+        
+        if (existingCandidate) {
+          Swal.fire({
+            icon: 'error',
+            title: 'Voter Already a Candidate',
+            text: `${voter.fullName} is already a candidate for ${existingCandidate.position} in this SSG election.`,
+            confirmButtonColor: '#001f65'
+          })
+          return
+        }
+      }
+
+      setSelectedVoter(voter)
+      setVoterSearchId(voter.fullName)
+      setFormData(prev => ({ ...prev, voterId: voter._id }))
+      setShowVoterDropdown(false)
+      setVoterSearchResults([])
+    } catch (error) {
+      console.error('Error selecting voter:', error)
+      showErrorAlert(error)
+    } finally {
+      setCheckingEligibility(false)
+    }
+  }
 
   // Enhanced Position Filter Dropdown with candidate counts and limits
   const PositionFilterDropdown = () => {
@@ -594,7 +594,7 @@ export default function SSGCandidatesPage() {
         <option value="">All Positions ({candidateStats.total})</option>
         {ssgPositions.map(position => {
           const candidateCount = candidateStats.byPosition[position._id]?.count || 0
-          const maxCandidates = position.maxCandidates || 2
+          const maxCandidates = position.maxCandidates || 10
           
           return (
             <option key={position._id} value={position._id}>
@@ -606,7 +606,7 @@ export default function SSGCandidatesPage() {
     )
   }
 
-  // Handle image upload for campaign picture
+  // Handle image upload for both campaign picture and credentials
   const handleImageUpload = (e, fieldName) => {
     const file = e.target.files[0]
     if (!file) return
@@ -622,7 +622,7 @@ export default function SSGCandidatesPage() {
       return
     }
 
-    // Validate file type
+    // Validate file type - allow images for both campaign picture and credentials
     if (!file.type.startsWith('image/')) {
       Swal.fire({
         icon: 'error',
@@ -649,53 +649,6 @@ export default function SSGCandidatesPage() {
           icon: 'error',
           title: 'Image Processing Error',
           text: 'Failed to process the selected image. Please try another image.',
-          confirmButtonColor: '#001f65'
-        })
-      }
-    }
-    reader.onerror = () => {
-      Swal.fire({
-        icon: 'error',
-        title: 'File Read Error',
-        text: 'Failed to read the selected file. Please try again.',
-        confirmButtonColor: '#001f65'
-      })
-    }
-    reader.readAsDataURL(file)
-  }
-
-  // Handle file upload for credentials
-  const handleCredentialsUpload = (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      Swal.fire({
-        icon: 'error',
-        title: 'File Too Large',
-        text: 'Please select a file smaller than 5MB.',
-        confirmButtonColor: '#001f65'
-      })
-      return
-    }
-
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      try {
-        // Extract base64 data
-        const base64Data = reader.result.split(',')[1]
-        if (base64Data) {
-          setFormData(prev => ({ ...prev, credentials: base64Data }))
-        } else {
-          throw new Error('Invalid file data')
-        }
-      } catch (error) {
-        console.error('Error processing credentials file:', error)
-        Swal.fire({
-          icon: 'error',
-          title: 'File Processing Error',
-          text: 'Failed to process the selected file. Please try another file.',
           confirmButtonColor: '#001f65'
         })
       }
@@ -784,84 +737,79 @@ export default function SSGCandidatesPage() {
   }
 
   const validateForm = () => {
-  const errors = []
-  
-  if (!selectedVoter) {
-    errors.push('Please select a voter.')
-  } else {
-    // Check if voter is already a candidate (except when editing)
-    const existingCandidate = ssgCandidates.find(candidate => 
-      (candidate.voterId === selectedVoter._id || candidate.voterId?._id === selectedVoter._id) &&
-      (!editingCandidate || candidate._id !== editingCandidate._id)
-    )
+    const errors = []
     
-    if (existingCandidate) {
-      errors.push(`${selectedVoter.fullName} is already a candidate for ${existingCandidate.position} in this SSG election.`)
-    }
-    
-    // Remove the registered voter check
-    // if (!selectedVoter.isRegistered) {
-    //   errors.push('Only registered voters can be SSG candidates.')
-    // }
-  }
-
-  if (!formData.positionId) {
-    errors.push('Please select a position.')
-  }
-
-  // Enhanced position and partylist limit validation
-  if (formData.positionId && formData.partylistId) {
-    const positionLimit = positionLimits[formData.positionId]
-    const partylistKey = formData.partylistId || 'independent'
-    
-    if (positionLimit && positionLimit.byPartylist[partylistKey]) {
-      const partylistLimit = positionLimit.byPartylist[partylistKey]
+    if (!selectedVoter) {
+      errors.push('Please select a voter.')
+    } else {
+      // Check if voter is already a candidate (except when editing)
+      const existingCandidate = ssgCandidates.find(candidate => 
+        (candidate.voterId === selectedVoter._id || candidate.voterId?._id === selectedVoter._id) &&
+        (!editingCandidate || candidate._id !== editingCandidate._id)
+      )
       
-      // Check if adding a new candidate or if editing candidate changed position/partylist
-      let shouldCheckLimit = true
-      if (editingCandidate) {
-        const currentPositionId = editingCandidate.positionId?._id || editingCandidate.positionId
-        const currentPartylistId = editingCandidate.partylistId?._id || editingCandidate.partylistId || 'independent'
+      if (existingCandidate) {
+        errors.push(`${selectedVoter.fullName} is already a candidate for ${existingCandidate.position} in this SSG election.`)
+      }
+    }
+
+    if (!formData.positionId) {
+      errors.push('Please select a position.')
+    }
+
+    // Enhanced position and partylist limit validation
+    if (formData.positionId && formData.partylistId) {
+      const positionLimit = positionLimits[formData.positionId]
+      const partylistKey = formData.partylistId || 'independent'
+      
+      if (positionLimit && positionLimit.byPartylist[partylistKey]) {
+        const partylistLimit = positionLimit.byPartylist[partylistKey]
         
-        // Don't check limit if position and partylist haven't changed
-        if (currentPositionId === formData.positionId && currentPartylistId === partylistKey) {
-          shouldCheckLimit = false
+        // Check if adding a new candidate or if editing candidate changed position/partylist
+        let shouldCheckLimit = true
+        if (editingCandidate) {
+          const currentPositionId = editingCandidate.positionId?._id || editingCandidate.positionId
+          const currentPartylistId = editingCandidate.partylistId?._id || editingCandidate.partylistId || 'independent'
+          
+          // Don't check limit if position and partylist haven't changed
+          if (currentPositionId === formData.positionId && currentPartylistId === partylistKey) {
+            shouldCheckLimit = false
+          }
+        }
+        
+        if (shouldCheckLimit && !partylistLimit.canAddMore) {
+          const positionName = ssgPositions.find(p => p._id === formData.positionId)?.positionName || 'this position'
+          const partylistName = formData.partylistId ? 
+            (ssgPartylists.find(p => p._id === formData.partylistId)?.partylistName || 'this partylist') : 
+            'independents'
+          
+          errors.push(`${partylistName} already has the maximum number of candidates (${partylistLimit.max}) for ${positionName}.`)
         }
       }
+    }
+
+    // Validate partylist membership across all positions in this election
+    if (formData.partylistId && selectedVoter) {
+      const existingPartylistCandidate = ssgCandidates.find(candidate => 
+        (candidate.voterId === selectedVoter._id || candidate.voterId?._id === selectedVoter._id) &&
+        candidate.partylistId && 
+        candidate.partylistId !== formData.partylistId &&
+        candidate.partylistId?._id !== formData.partylistId &&
+        (!editingCandidate || candidate._id !== editingCandidate._id)
+      )
       
-      if (shouldCheckLimit && !partylistLimit.canAddMore) {
-        const positionName = ssgPositions.find(p => p._id === formData.positionId)?.positionName || 'this position'
-        const partylistName = formData.partylistId ? 
-          (ssgPartylists.find(p => p._id === formData.partylistId)?.partylistName || 'this partylist') : 
-          'independents'
+      if (existingPartylistCandidate) {
+        const partylistName = ssgPartylists.find(p => 
+          p._id === existingPartylistCandidate.partylistId || 
+          p._id === existingPartylistCandidate.partylistId?._id
+        )?.partylistName || 'another partylist'
         
-        errors.push(`${partylistName} already has the maximum number of candidates (${partylistLimit.max}) for ${positionName}.`)
+        errors.push(`${selectedVoter.fullName} is already a member of ${partylistName} in this SSG election.`)
       }
     }
-  }
 
-  // Validate partylist membership across all positions in this election
-  if (formData.partylistId && selectedVoter) {
-    const existingPartylistCandidate = ssgCandidates.find(candidate => 
-      (candidate.voterId === selectedVoter._id || candidate.voterId?._id === selectedVoter._id) &&
-      candidate.partylistId && 
-      candidate.partylistId !== formData.partylistId &&
-      candidate.partylistId?._id !== formData.partylistId &&
-      (!editingCandidate || candidate._id !== editingCandidate._id)
-    )
-    
-    if (existingPartylistCandidate) {
-      const partylistName = ssgPartylists.find(p => 
-        p._id === existingPartylistCandidate.partylistId || 
-        p._id === existingPartylistCandidate.partylistId?._id
-      )?.partylistName || 'another partylist'
-      
-      errors.push(`${selectedVoter.fullName} is already a member of ${partylistName} in this SSG election.`)
-    }
+    return errors
   }
-
-  return errors
-}
 
   const handleFormSubmit = async (e) => {
     e.preventDefault()
@@ -1017,40 +965,24 @@ export default function SSGCandidatesPage() {
     return options
   }
 
-  // Handle credentials download
-  const handleCredentialsDownload = async (candidate) => {
-    try {
-      if (candidate.credentials) {
-        // Create blob from base64 and download
-        const byteCharacters = atob(candidate.credentials)
-        const byteNumbers = new Array(byteCharacters.length)
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i)
+  // Handle image preview and view
+  const handleImageView = (candidate, imageType) => {
+    const imageData = imageType === 'campaign' ? candidate.campaignPicture : candidate.credentials
+    const title = imageType === 'campaign' ? 'Campaign Picture' : 'Credentials'
+    
+    if (imageData) {
+      Swal.fire({
+        title: `${candidate.fullName} - ${title}`,
+        imageUrl: `data:image/jpeg;base64,${imageData}`,
+        imageAlt: `${candidate.fullName} ${title}`,
+        showCloseButton: true,
+        showConfirmButton: false,
+        width: 'auto',
+        customClass: {
+          popup: 'max-w-4xl',
+          image: 'max-h-96 object-contain'
         }
-        const byteArray = new Uint8Array(byteNumbers)
-        const blob = new Blob([byteArray])
-        
-        const url = window.URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.href = url
-        link.download = `${candidate.fullName}_credentials`
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        window.URL.revokeObjectURL(url)
-      } else if (candidatesAPI.getCredentialsUrl) {
-        // Use API endpoint
-        const url = candidatesAPI.getCredentialsUrl(candidate._id)
-        const link = document.createElement('a')
-        link.href = url
-        link.download = `${candidate.fullName}_credentials`
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-      }
-    } catch (error) {
-      console.error('Error downloading credentials:', error)
-      showErrorAlert(error)
+      })
     }
   }
 
@@ -1132,89 +1064,89 @@ export default function SSGCandidatesPage() {
                       
                       {/* Enhanced Dropdown with eligibility indicators */}
                       {showVoterDropdown && voterSearchResults.length > 0 && (
-  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-    {voterSearchResults.map((voter) => {
-      // Check if voter is already a candidate
-      const isAlreadyCandidate = ssgCandidates.some(candidate => 
-        (candidate.voterId === voter._id || candidate.voterId?._id === voter._id) &&
-        (!editingCandidate || candidate._id !== editingCandidate._id)
-      )
-      
-      return (
-        <button
-          key={voter._id}
-          type="button"
-          onClick={() => selectVoter(voter)}
-          disabled={isAlreadyCandidate}
-          className={`w-full px-3 py-2 text-left border-b border-gray-100 last:border-b-0 ${
-            isAlreadyCandidate 
-              ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-              : 'hover:bg-blue-50 focus:bg-blue-50'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-medium text-gray-900">{voter.fullName}</div>
-              <div className="text-sm text-gray-500">
-                ID: {voter.schoolId} • {voter.departmentId?.departmentCode || 'N/A'}
-              </div>
-            </div>
-            <div className="flex items-center space-x-1">
-              {voter.isRegistered && (
-                <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full">
-                  Registered
-                </span>
-              )}
-              {!voter.isRegistered && (
-                <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-full">
-                  Not Registered
-                </span>
-              )}
-              {isAlreadyCandidate && (
-                <span className="text-xs px-2 py-1 bg-red-100 text-red-800 rounded-full">
-                  Already Candidate
-                </span>
-              )}
-            </div>
-          </div>
-        </button>
-      )
-    })}
-  </div>
-)}
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                          {voterSearchResults.map((voter) => {
+                            // Check if voter is already a candidate
+                            const isAlreadyCandidate = ssgCandidates.some(candidate => 
+                              (candidate.voterId === voter._id || candidate.voterId?._id === voter._id) &&
+                              (!editingCandidate || candidate._id !== editingCandidate._id)
+                            )
+                            
+                            return (
+                              <button
+                                key={voter._id}
+                                type="button"
+                                onClick={() => selectVoter(voter)}
+                                disabled={isAlreadyCandidate}
+                                className={`w-full px-3 py-2 text-left border-b border-gray-100 last:border-b-0 ${
+                                  isAlreadyCandidate 
+                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                                    : 'hover:bg-blue-50 focus:bg-blue-50'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <div className="font-medium text-gray-900">{voter.fullName}</div>
+                                    <div className="text-sm text-gray-500">
+                                      ID: {voter.schoolId} • {voter.departmentId?.departmentCode || 'N/A'}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center space-x-1">
+                                    {voter.isRegistered && (
+                                      <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full">
+                                        Registered
+                                      </span>
+                                    )}
+                                    {!voter.isRegistered && (
+                                      <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-full">
+                                        Not Registered
+                                      </span>
+                                    )}
+                                    {isAlreadyCandidate && (
+                                      <span className="text-xs px-2 py-1 bg-red-100 text-red-800 rounded-full">
+                                        Already Candidate
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                     
                     {/* Selected voter display with validation status */}
                     {selectedVoter && (
-  <div className={`mt-2 p-3 border rounded-lg ${
-    selectedVoter.isRegistered ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'
-  }`}>
-    <div className="flex items-center">
-      <UserCheck className={`w-4 h-4 mr-2 ${
-        selectedVoter.isRegistered ? 'text-green-600' : 'text-blue-600'
-      }`} />
-      <div className="text-sm">
-        <p className={`font-medium ${
-          selectedVoter.isRegistered ? 'text-green-800' : 'text-blue-800'
-        }`}>
-          {selectedVoter.fullName}
-        </p>
-        <p className={selectedVoter.isRegistered ? 'text-green-600' : 'text-blue-600'}>
-          ID: {selectedVoter.schoolId} • {selectedVoter.departmentId?.departmentCode || 'N/A'} - Year {selectedVoter.yearLevel}
-        </p>
-        {selectedVoter.isRegistered ? (
-          <p className="text-green-700 text-xs mt-1">
-            ✓ Registered voter
-          </p>
-        ) : (
-          <p className="text-blue-700 text-xs mt-1">
-            ℹ️ Not registered (can still be a candidate)
-          </p>
-        )}
-      </div>
-    </div>
-  </div>
-)}
+                      <div className={`mt-2 p-3 border rounded-lg ${
+                        selectedVoter.isRegistered ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'
+                      }`}>
+                        <div className="flex items-center">
+                          <UserCheck className={`w-4 h-4 mr-2 ${
+                            selectedVoter.isRegistered ? 'text-green-600' : 'text-blue-600'
+                          }`} />
+                          <div className="text-sm">
+                            <p className={`font-medium ${
+                              selectedVoter.isRegistered ? 'text-green-800' : 'text-blue-800'
+                            }`}>
+                              {selectedVoter.fullName}
+                            </p>
+                            <p className={selectedVoter.isRegistered ? 'text-green-600' : 'text-blue-600'}>
+                              ID: {selectedVoter.schoolId} • {selectedVoter.departmentId?.departmentCode || 'N/A'} - Year {selectedVoter.yearLevel}
+                            </p>
+                            {selectedVoter.isRegistered ? (
+                              <p className="text-green-700 text-xs mt-1">
+                                ✓ Registered voter
+                              </p>
+                            ) : (
+                              <p className="text-blue-700 text-xs mt-1">
+                                ℹ️ Not registered (can still be a candidate)
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Enhanced Position Selection with Limits */}
@@ -1305,23 +1237,38 @@ export default function SSGCandidatesPage() {
                           Image uploaded
                         </div>
                       )}
+                      {editingCandidate?.campaignPicture && !formData.campaignPicture && (
+                        <div className="flex items-center text-sm text-blue-600">
+                          <Image className="w-4 h-4 mr-1" />
+                          Current image available
+                        </div>
+                      )}
                     </div>
+                    {formData.campaignPicture && (
+                      <div className="mt-2">
+                        <img
+                          src={`data:image/jpeg;base64,${formData.campaignPicture}`}
+                          alt="Campaign picture preview"
+                          className="w-20 h-20 object-cover rounded-lg border"
+                        />
+                      </div>
+                    )}
                     <p className="text-xs text-gray-500 mt-1">
                       Maximum file size: 2MB. Supported formats: JPG, PNG, GIF
                     </p>
                   </div>
 
-                  {/* Credentials Upload */}
+                  {/* Credentials Upload - Now Image */}
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Credentials (Optional)
+                      Credentials Image (Optional)
                     </label>
                     <div className="flex items-center space-x-4">
                       <input
                         type="file"
                         id="credentials"
-                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                        onChange={handleCredentialsUpload}
+                        accept="image/*"
+                        onChange={(e) => handleImageUpload(e, 'credentials')}
                         className="hidden"
                       />
                       <label
@@ -1329,17 +1276,32 @@ export default function SSGCandidatesPage() {
                         className="flex items-center px-4 py-2 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
                       >
                         <Upload className="w-4 h-4 mr-2 text-gray-600" />
-                        Choose File
+                        Choose Image
                       </label>
                       {formData.credentials && (
                         <div className="flex items-center text-sm text-green-600">
                           <FileText className="w-4 h-4 mr-1" />
-                          File uploaded
+                          Image uploaded
+                        </div>
+                      )}
+                      {editingCandidate?.credentials && !formData.credentials && (
+                        <div className="flex items-center text-sm text-blue-600">
+                          <FileText className="w-4 h-4 mr-1" />
+                          Current credentials available
                         </div>
                       )}
                     </div>
+                    {formData.credentials && (
+                      <div className="mt-2">
+                        <img
+                          src={`data:image/jpeg;base64,${formData.credentials}`}
+                          alt="Credentials preview"
+                          className="w-20 h-20 object-cover rounded-lg border"
+                        />
+                      </div>
+                    )}
                     <p className="text-xs text-gray-500 mt-1">
-                      Maximum file size: 5MB. Supported formats: PDF, DOC, DOCX, JPG, PNG
+                      Maximum file size: 2MB. Upload credentials document as image (JPG, PNG, GIF)
                     </p>
                   </div>
                 </div>
@@ -1732,107 +1694,6 @@ export default function SSGCandidatesPage() {
             </tbody>
           </table>
         </div>
-
-        {/* Enhanced Limits Information Panel */}
-        {(Object.keys(positionLimits).length > 0 || Object.keys(partylistLimits).length > 0) && (
-          <div className="p-6 border-t border-gray-200 bg-gray-50">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Position Limits */}
-              {Object.keys(positionLimits).length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-800 mb-3">Position Limits</h4>
-                  <div className="space-y-2">
-                    {Object.entries(positionLimits).map(([positionId, limit]) => {
-                      const position = ssgPositions.find(p => p._id === positionId)
-                      if (!position) return null
-                      
-                      const percentage = limit.maxCandidates > 0 ? 
-                        Math.round((limit.currentTotal / limit.maxCandidates) * 100) : 0
-                      
-                      return (
-                        <div key={positionId} className="flex items-center justify-between p-2 bg-white rounded border">
-                          <div>
-                            <span className="text-sm font-medium text-gray-900">
-                              {position.positionName}
-                            </span>
-                            <span className="text-xs text-gray-500 ml-2">
-                              ({limit.currentTotal}/{limit.maxCandidates})
-                            </span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <div className="w-16 bg-gray-200 rounded-full h-2">
-                              <div 
-                                className={`h-2 rounded-full ${
-                                  percentage >= 100 ? 'bg-red-500' : 
-                                  percentage >= 80 ? 'bg-yellow-500' : 'bg-green-500'
-                                }`}
-                                style={{ width: `${Math.min(percentage, 100)}%` }}
-                              ></div>
-                            </div>
-                            <span className={`text-xs font-medium ${
-                              percentage >= 100 ? 'text-red-600' : 
-                              percentage >= 80 ? 'text-yellow-600' : 'text-green-600'
-                            }`}>
-                              {percentage}%
-                            </span>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-              
-              {/* Partylist Summary */}
-              {Object.keys(partylistLimits).length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-800 mb-3">Partylist Summary</h4>
-                  <div className="space-y-2">
-                    {Object.entries(partylistLimits)
-                      .filter(([partylistId]) => partylistId !== 'independent')
-                      .map(([partylistId, limit]) => {
-                        const partylist = ssgPartylists.find(p => p._id === partylistId)
-                        if (!partylist) return null
-                        
-                        return (
-                          <div key={partylistId} className="flex items-center justify-between p-2 bg-white rounded border">
-                            <div>
-                              <span className="text-sm font-medium text-gray-900">
-                                {partylist.partylistName}
-                              </span>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <span className="text-sm text-gray-600">
-                                {limit.totalCandidates} candidates
-                              </span>
-                              <CheckCircle className={`w-4 h-4 ${
-                                limit.totalCandidates > 0 ? 'text-green-500' : 'text-gray-400'
-                              }`} />
-                            </div>
-                          </div>
-                        )
-                      })}
-                    
-                    {/* Independent candidates */}
-                    <div className="flex items-center justify-between p-2 bg-white rounded border">
-                      <div>
-                        <span className="text-sm font-medium text-gray-900">Independent</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm text-gray-600">
-                          {partylistLimits['independent']?.totalCandidates || 0} candidates
-                        </span>
-                        <CheckCircle className={`w-4 h-4 ${
-                          (partylistLimits['independent']?.totalCandidates || 0) > 0 ? 'text-green-500' : 'text-gray-400'
-                        }`} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     </SSGLayout>
   )

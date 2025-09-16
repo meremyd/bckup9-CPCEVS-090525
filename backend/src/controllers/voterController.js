@@ -445,7 +445,7 @@ class VoterController {
       const { schoolId, firstName, middleName, lastName, birthdate, departmentId, yearLevel, email } = req.body
 
       // Validation
-      if (!schoolId || !firstName || !lastName || !birthdate || !departmentId || !yearLevel || !email) {
+      if (!schoolId || !firstName || !lastName || !departmentId) {
         const error = new Error("Required fields are missing")
         error.statusCode = 400
         return next(error)
@@ -823,6 +823,1060 @@ class VoterController {
       next(error)
     }
   }
+
+  static async getVotersByDepartmentCode(req, res, next) {
+    try {
+      const { departmentCode } = req.params
+      const { yearLevel, page = 1, limit = 100, search } = req.query
+
+      if (!departmentCode) {
+        const error = new Error("Department code is required")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // First get all departments with this code
+      const departments = await Department.find({ 
+        departmentCode: departmentCode.toUpperCase() 
+      })
+
+      if (departments.length === 0) {
+        const error = new Error("Department code not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      const departmentIds = departments.map(dept => dept._id)
+
+      const filter = { departmentId: { $in: departmentIds } }
+      if (yearLevel) filter.yearLevel = Number(yearLevel)
+      
+      if (search) {
+        const searchNumber = Number(search)
+        const searchConditions = [
+          { firstName: { $regex: search, $options: "i" } },
+          { lastName: { $regex: search, $options: "i" } },
+        ]
+        
+        if (!isNaN(searchNumber)) {
+          searchConditions.push({ schoolId: searchNumber })
+        }
+        
+        filter.$or = searchConditions
+      }
+
+      const skip = (page - 1) * limit
+
+      const voters = await Voter.find(filter)
+        .populate("departmentId")
+        .sort({ schoolId: 1 })
+        .skip(skip)
+        .limit(Number.parseInt(limit))
+        .select("-password -faceEncoding -profilePicture")
+
+      const total = await Voter.countDocuments(filter)
+
+      // Get department info for response
+      const departmentInfo = {
+        departmentCode: departmentCode.toUpperCase(),
+        programs: departments.map(dept => ({
+          id: dept._id,
+          degreeProgram: dept.degreeProgram,
+          college: dept.college
+        })),
+        colleges: [...new Set(departments.map(dept => dept.college))]
+      }
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        { username: req.user?.username },
+        `Voters by department code accessed - ${departmentCode}: ${voters.length} voters returned`,
+        req
+      )
+
+      res.json({
+        success: true,
+        data: voters,
+        departmentInfo,
+        pagination: {
+          current: Number(page),
+          total: Math.ceil(total / limit),
+          count: voters.length,
+          totalRecords: total
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Get voters by college
+  static async getVotersByCollege(req, res, next) {
+    try {
+      const { college } = req.params
+      const { departmentCode, yearLevel, page = 1, limit = 100, search } = req.query
+
+      if (!college) {
+        const error = new Error("College is required")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Get all departments in this college
+      const departmentFilter = { college: { $regex: new RegExp(college, 'i') } }
+      if (departmentCode) {
+        departmentFilter.departmentCode = departmentCode.toUpperCase()
+      }
+
+      const departments = await Department.find(departmentFilter)
+
+      if (departments.length === 0) {
+        const error = new Error("No departments found for this college")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      const departmentIds = departments.map(dept => dept._id)
+
+      const filter = { departmentId: { $in: departmentIds } }
+      if (yearLevel) filter.yearLevel = Number(yearLevel)
+      
+      if (search) {
+        const searchNumber = Number(search)
+        const searchConditions = [
+          { firstName: { $regex: search, $options: "i" } },
+          { lastName: { $regex: search, $options: "i" } },
+        ]
+        
+        if (!isNaN(searchNumber)) {
+          searchConditions.push({ schoolId: searchNumber })
+        }
+        
+        filter.$or = searchConditions
+      }
+
+      const skip = (page - 1) * limit
+
+      const voters = await Voter.find(filter)
+        .populate("departmentId")
+        .sort({ schoolId: 1 })
+        .skip(skip)
+        .limit(Number.parseInt(limit))
+        .select("-password -faceEncoding -profilePicture")
+
+      const total = await Voter.countDocuments(filter)
+
+      // College info for response
+      const collegeInfo = {
+        college: departments[0].college, // Use the actual college name from DB
+        departmentCodes: [...new Set(departments.map(dept => dept.departmentCode))],
+        programs: departments.map(dept => ({
+          id: dept._id,
+          departmentCode: dept.departmentCode,
+          degreeProgram: dept.degreeProgram
+        }))
+      }
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        { username: req.user?.username },
+        `Voters by college accessed - ${college}: ${voters.length} voters returned`,
+        req
+      )
+
+      res.json({
+        success: true,
+        data: voters,
+        collegeInfo,
+        pagination: {
+          current: Number(page),
+          total: Math.ceil(total / limit),
+          count: voters.length,
+          totalRecords: total
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Get registered voters by department code
+  static async getRegisteredVotersByDepartmentCode(req, res, next) {
+    try {
+      const { departmentCode } = req.params
+      const { yearLevel, page = 1, limit = 100, search } = req.query
+
+      if (!departmentCode) {
+        const error = new Error("Department code is required")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      const departments = await Department.find({ 
+        departmentCode: departmentCode.toUpperCase() 
+      })
+
+      if (departments.length === 0) {
+        const error = new Error("Department code not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      const departmentIds = departments.map(dept => dept._id)
+
+      const filter = { 
+        departmentId: { $in: departmentIds },
+        isRegistered: true,
+        isActive: true 
+      }
+      if (yearLevel) filter.yearLevel = Number(yearLevel)
+      
+      if (search) {
+        const searchNumber = Number(search)
+        const searchConditions = [
+          { firstName: { $regex: search, $options: "i" } },
+          { lastName: { $regex: search, $options: "i" } },
+        ]
+        
+        if (!isNaN(searchNumber)) {
+          searchConditions.push({ schoolId: searchNumber })
+        }
+        
+        filter.$or = searchConditions
+      }
+
+      const skip = (page - 1) * limit
+
+      const voters = await Voter.find(filter)
+        .populate("departmentId")
+        .sort({ schoolId: 1 })
+        .skip(skip)
+        .limit(Number.parseInt(limit))
+        .select("-password -faceEncoding -profilePicture")
+
+      const total = await Voter.countDocuments(filter)
+
+      const departmentInfo = {
+        departmentCode: departmentCode.toUpperCase(),
+        programs: departments.map(dept => ({
+          id: dept._id,
+          degreeProgram: dept.degreeProgram,
+          college: dept.college
+        })),
+        colleges: [...new Set(departments.map(dept => dept.college))]
+      }
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        { username: req.user?.username },
+        `Registered voters by department code accessed - ${departmentCode}: ${voters.length} voters returned`,
+        req
+      )
+
+      res.json({
+        success: true,
+        data: voters,
+        departmentInfo,
+        pagination: {
+          current: Number(page),
+          total: Math.ceil(total / limit),
+          count: voters.length,
+          totalRecords: total
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Get officers by department code
+  static async getOfficersByDepartmentCode(req, res, next) {
+    try {
+      const { departmentCode } = req.params
+      const { yearLevel, page = 1, limit = 100, search } = req.query
+
+      if (!departmentCode) {
+        const error = new Error("Department code is required")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      const departments = await Department.find({ 
+        departmentCode: departmentCode.toUpperCase() 
+      })
+
+      if (departments.length === 0) {
+        const error = new Error("Department code not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      const departmentIds = departments.map(dept => dept._id)
+
+      const filter = { 
+        departmentId: { $in: departmentIds },
+        isClassOfficer: true,
+        isActive: true 
+      }
+      if (yearLevel) filter.yearLevel = Number(yearLevel)
+      
+      if (search) {
+        const searchNumber = Number(search)
+        const searchConditions = [
+          { firstName: { $regex: search, $options: "i" } },
+          { lastName: { $regex: search, $options: "i" } },
+        ]
+        
+        if (!isNaN(searchNumber)) {
+          searchConditions.push({ schoolId: searchNumber })
+        }
+        
+        filter.$or = searchConditions
+      }
+
+      const skip = (page - 1) * limit
+
+      const officers = await Voter.find(filter)
+        .populate("departmentId")
+        .sort({ schoolId: 1 })
+        .skip(skip)
+        .limit(Number.parseInt(limit))
+        .select("-password -faceEncoding -profilePicture")
+
+      const total = await Voter.countDocuments(filter)
+
+      const departmentInfo = {
+        departmentCode: departmentCode.toUpperCase(),
+        programs: departments.map(dept => ({
+          id: dept._id,
+          degreeProgram: dept.degreeProgram,
+          college: dept.college
+        })),
+        colleges: [...new Set(departments.map(dept => dept.college))]
+      }
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        { username: req.user?.username },
+        `Officers by department code accessed - ${departmentCode}: ${officers.length} officers returned`,
+        req
+      )
+
+      res.json({
+        success: true,
+        data: officers,
+        departmentInfo,
+        pagination: {
+          current: Number(page),
+          total: Math.ceil(total / limit),
+          count: officers.length,
+          totalRecords: total
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Get voter profile (for authenticated voters)
+  static async getVoterProfile(req, res, next) {
+    try {
+      const voterId = req.voter.id // Assumes voterAuthMiddleware sets req.voter
+
+      const voter = await Voter.findById(voterId)
+        .populate("departmentId")
+        .select("-password -faceEncoding")
+
+      if (!voter) {
+        const error = new Error("Voter profile not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      await AuditLog.logVoterAction(
+        "PROFILE_ACCESS",
+        voter,
+        `Profile accessed by voter - ${voter.firstName} ${voter.lastName} (${voter.schoolId})`,
+        req
+      )
+
+      res.json({
+        success: true,
+        data: voter
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Update voter profile (for authenticated voters)
+  static async updateVoterProfile(req, res, next) {
+    try {
+      const voterId = req.voter.id
+      const { firstName, middleName, lastName, email } = req.body
+
+      const voter = await Voter.findById(voterId)
+      if (!voter) {
+        const error = new Error("Voter profile not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      let updateDetails = []
+
+      // Check for duplicate email if changed
+      if (email && email !== voter.email) {
+        const existingEmail = await Voter.findOne({ email, _id: { $ne: voterId } })
+        if (existingEmail) {
+          const error = new Error("Email already exists")
+          error.statusCode = 409
+          return next(error)
+        }
+        updateDetails.push(`Email changed from ${voter.email} to ${email}`)
+      }
+
+      // Update allowed fields only
+      const updateData = {}
+      if (firstName) {
+        updateData.firstName = firstName
+        if (firstName !== voter.firstName) {
+          updateDetails.push(`First name changed from ${voter.firstName} to ${firstName}`)
+        }
+      }
+      if (middleName !== undefined) {
+        updateData.middleName = middleName
+        if (middleName !== voter.middleName) {
+          updateDetails.push(`Middle name changed`)
+        }
+      }
+      if (lastName) {
+        updateData.lastName = lastName
+        if (lastName !== voter.lastName) {
+          updateDetails.push(`Last name changed from ${voter.lastName} to ${lastName}`)
+        }
+      }
+      if (email) updateData.email = email
+
+      const updatedVoter = await Voter.findByIdAndUpdate(voterId, updateData, { new: true })
+        .populate("departmentId")
+        .select("-password -faceEncoding")
+
+      const detailsString = updateDetails.length > 0 
+        ? `Profile updated by voter - ${updatedVoter.firstName} ${updatedVoter.lastName} (${updatedVoter.schoolId}): ${updateDetails.join(', ')}`
+        : `Profile accessed by voter - ${updatedVoter.firstName} ${updatedVoter.lastName} (${updatedVoter.schoolId})`
+
+      await AuditLog.logVoterAction(
+        "PROFILE_UPDATE",
+        updatedVoter,
+        detailsString,
+        req
+      )
+
+      res.json({
+        success: true,
+        message: "Profile updated successfully",
+        data: updatedVoter
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Export voters (PDF/DOCX format)
+  static async exportVoters(req, res, next) {
+    try {
+      const { department, yearLevel, format = 'pdf' } = req.query
+
+      const filter = {}
+      if (department) filter.departmentId = department
+      if (yearLevel) filter.yearLevel = Number(yearLevel)
+
+      const voters = await Voter.find(filter)
+        .populate("departmentId")
+        .sort({ schoolId: 1 })
+        .select("-password -faceEncoding -profilePicture")
+
+      const exportDate = new Date().toISOString().split('T')[0]
+      const exportTime = new Date().toLocaleString()
+
+      // Get filter description for report header
+      let filterDescription = "All Voters"
+      if (department) {
+        const dept = await Department.findById(department)
+        if (dept) {
+          filterDescription = `Department: ${dept.departmentCode} - ${dept.degreeProgram}`
+        }
+      }
+      if (yearLevel) {
+        filterDescription += ` | Year Level: ${yearLevel}`
+      }
+
+      if (format === 'pdf') {
+        const PDFDocument = require('pdfkit')
+        const doc = new PDFDocument({ margin: 50, size: 'A4' })
+        
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Disposition', `attachment; filename="voters_export_${exportDate}.pdf"`)
+        
+        doc.pipe(res)
+
+        // Header
+        doc.fontSize(18).font('Helvetica-Bold')
+        doc.text('VOTER DATABASE EXPORT', { align: 'center' })
+        doc.moveDown()
+        
+        doc.fontSize(12).font('Helvetica')
+        doc.text(`Filter: ${filterDescription}`)
+        doc.text(`Export Date: ${exportTime}`)
+        doc.text(`Total Records: ${voters.length}`)
+        doc.moveDown()
+
+        // Table headers
+        doc.fontSize(10).font('Helvetica-Bold')
+        let yPosition = doc.y
+        const startY = yPosition
+        const rowHeight = 20
+        const colWidths = [60, 80, 80, 80, 60, 120, 80, 40]
+        const headers = ['School ID', 'First Name', 'Last Name', 'Email', 'Year', 'Department', 'Program', 'Status']
+        
+        let xPosition = 50
+        headers.forEach((header, i) => {
+          doc.rect(xPosition, yPosition, colWidths[i], rowHeight).stroke()
+          doc.text(header, xPosition + 2, yPosition + 5, { width: colWidths[i] - 4, height: rowHeight - 10 })
+          xPosition += colWidths[i]
+        })
+
+        yPosition += rowHeight
+        doc.font('Helvetica').fontSize(8)
+
+        // Table rows
+        voters.forEach((voter, index) => {
+          if (yPosition > 700) { // Start new page if needed
+            doc.addPage()
+            yPosition = 50
+          }
+
+          const rowData = [
+            voter.schoolId?.toString() || '',
+            voter.firstName || '',
+            voter.lastName || '',
+            voter.email || '',
+            voter.yearLevel?.toString() || '',
+            voter.departmentId?.departmentCode || '',
+            voter.departmentId?.degreeProgram?.substring(0, 15) + '...' || '',
+            `${voter.isActive ? 'A' : 'I'}${voter.isRegistered ? 'R' : ''}${voter.isClassOfficer ? 'O' : ''}`
+          ]
+
+          xPosition = 50
+          rowData.forEach((data, i) => {
+            doc.rect(xPosition, yPosition, colWidths[i], rowHeight).stroke()
+            doc.text(data, xPosition + 2, yPosition + 5, { width: colWidths[i] - 4, height: rowHeight - 10 })
+            xPosition += colWidths[i]
+          })
+          yPosition += rowHeight
+        })
+
+        // Footer legend
+        if (doc.y > 700) doc.addPage()
+        doc.moveDown(2)
+        doc.fontSize(8).font('Helvetica')
+        doc.text('Legend: A = Active, I = Inactive, R = Registered, O = Officer')
+
+        doc.end()
+
+        await AuditLog.logUserAction(
+          "EXPORT_DATA",
+          { username: req.user?.username },
+          `Voters exported - ${voters.length} records exported in PDF format`,
+          req
+        )
+
+      } else if (format === 'docx') {
+        const { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun, HeadingLevel, AlignmentType } = require('docx')
+
+        // Create table rows
+        const tableRows = [
+          new TableRow({
+            children: [
+              new TableCell({ children: [new Paragraph({ text: "School ID", style: "tableHeader" })] }),
+              new TableCell({ children: [new Paragraph({ text: "Full Name", style: "tableHeader" })] }),
+              new TableCell({ children: [new Paragraph({ text: "Email", style: "tableHeader" })] }),
+              new TableCell({ children: [new Paragraph({ text: "Department", style: "tableHeader" })] }),
+              new TableCell({ children: [new Paragraph({ text: "Program", style: "tableHeader" })] }),
+              new TableCell({ children: [new Paragraph({ text: "College", style: "tableHeader" })] }),
+              new TableCell({ children: [new Paragraph({ text: "Year", style: "tableHeader" })] }),
+              new TableCell({ children: [new Paragraph({ text: "Status", style: "tableHeader" })] })
+            ]
+          }),
+          ...voters.map(voter => new TableRow({
+            children: [
+              new TableCell({ children: [new Paragraph(voter.schoolId?.toString() || '')] }),
+              new TableCell({ children: [new Paragraph(voter.fullName || '')] }),
+              new TableCell({ children: [new Paragraph(voter.email || '')] }),
+              new TableCell({ children: [new Paragraph(voter.departmentId?.departmentCode || '')] }),
+              new TableCell({ children: [new Paragraph(voter.departmentId?.degreeProgram || '')] }),
+              new TableCell({ children: [new Paragraph(voter.departmentId?.college || '')] }),
+              new TableCell({ children: [new Paragraph(voter.yearLevel?.toString() || '')] }),
+              new TableCell({ children: [new Paragraph(`${voter.isActive ? 'Active' : 'Inactive'}${voter.isRegistered ? ', Registered' : ''}${voter.isClassOfficer ? ', Officer' : ''}`)] })
+            ]
+          }))
+        ]
+
+        const doc = new Document({
+          sections: [{
+            children: [
+              new Paragraph({
+                text: "VOTER DATABASE EXPORT",
+                heading: HeadingLevel.TITLE,
+                alignment: AlignmentType.CENTER
+              }),
+              new Paragraph({
+                children: [
+                  new TextRun({ text: `Filter: ${filterDescription}`, bold: true }),
+                  new TextRun({ text: `\nExport Date: ${exportTime}` }),
+                  new TextRun({ text: `\nTotal Records: ${voters.length}` })
+                ]
+              }),
+              new Paragraph({ text: "" }), // Empty paragraph for spacing
+              new Table({
+                rows: tableRows,
+                width: { size: 100, type: "pct" }
+              })
+            ]
+          }]
+        })
+
+        const buffer = await Packer.toBuffer(doc)
+        
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        res.setHeader('Content-Disposition', `attachment; filename="voters_export_${exportDate}.docx"`)
+        res.send(buffer)
+
+        await AuditLog.logUserAction(
+          "EXPORT_DATA",
+          { username: req.user?.username },
+          `Voters exported - ${voters.length} records exported in DOCX format`,
+          req
+        )
+
+      } else {
+        // JSON format fallback
+        res.json({
+          success: true,
+          data: voters,
+          count: voters.length,
+          exportedAt: new Date().toISOString(),
+          filter: filterDescription
+        })
+      }
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Export registered voters (PDF/DOCX format)
+  static async exportRegisteredVoters(req, res, next) {
+    try {
+      const { department, yearLevel, format = 'pdf' } = req.query
+
+      const filter = { 
+        isRegistered: true,
+        isActive: true 
+      }
+      if (department) filter.departmentId = department
+      if (yearLevel) filter.yearLevel = Number(yearLevel)
+
+      const voters = await Voter.find(filter)
+        .populate("departmentId")
+        .sort({ schoolId: 1 })
+        .select("-password -faceEncoding -profilePicture")
+
+      const exportDate = new Date().toISOString().split('T')[0]
+      const exportTime = new Date().toLocaleString()
+
+      // Get filter description for report header
+      let filterDescription = "All Registered Voters"
+      if (department) {
+        const dept = await Department.findById(department)
+        if (dept) {
+          filterDescription = `Registered Voters - Department: ${dept.departmentCode} - ${dept.degreeProgram}`
+        }
+      }
+      if (yearLevel) {
+        filterDescription += ` | Year Level: ${yearLevel}`
+      }
+
+      if (format === 'pdf') {
+        const PDFDocument = require('pdfkit')
+        const doc = new PDFDocument({ margin: 50, size: 'A4' })
+        
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Disposition', `attachment; filename="registered_voters_export_${exportDate}.pdf"`)
+        
+        doc.pipe(res)
+
+        // Header
+        doc.fontSize(18).font('Helvetica-Bold')
+        doc.text('REGISTERED VOTERS EXPORT', { align: 'center' })
+        doc.moveDown()
+        
+        doc.fontSize(12).font('Helvetica')
+        doc.text(`Filter: ${filterDescription}`)
+        doc.text(`Export Date: ${exportTime}`)
+        doc.text(`Total Records: ${voters.length}`)
+        doc.moveDown()
+
+        // Table headers
+        doc.fontSize(10).font('Helvetica-Bold')
+        let yPosition = doc.y
+        const rowHeight = 20
+        const colWidths = [60, 100, 100, 80, 120, 80, 60, 40]
+        const headers = ['School ID', 'Full Name', 'Email', 'Department', 'Program', 'College', 'Year', 'Officer']
+        
+        let xPosition = 50
+        headers.forEach((header, i) => {
+          doc.rect(xPosition, yPosition, colWidths[i], rowHeight).stroke()
+          doc.text(header, xPosition + 2, yPosition + 5, { width: colWidths[i] - 4, height: rowHeight - 10 })
+          xPosition += colWidths[i]
+        })
+
+        yPosition += rowHeight
+        doc.font('Helvetica').fontSize(8)
+
+        // Table rows
+        voters.forEach((voter, index) => {
+          if (yPosition > 700) { // Start new page if needed
+            doc.addPage()
+            yPosition = 50
+          }
+
+          const rowData = [
+            voter.schoolId?.toString() || '',
+            voter.fullName || '',
+            voter.email || '',
+            voter.departmentId?.departmentCode || '',
+            voter.departmentId?.degreeProgram?.substring(0, 15) + (voter.departmentId?.degreeProgram?.length > 15 ? '...' : '') || '',
+            voter.departmentId?.college?.substring(0, 12) + (voter.departmentId?.college?.length > 12 ? '...' : '') || '',
+            voter.yearLevel?.toString() || '',
+            voter.isClassOfficer ? 'Yes' : 'No'
+          ]
+
+          xPosition = 50
+          rowData.forEach((data, i) => {
+            doc.rect(xPosition, yPosition, colWidths[i], rowHeight).stroke()
+            doc.text(data, xPosition + 2, yPosition + 5, { width: colWidths[i] - 4, height: rowHeight - 10 })
+            xPosition += colWidths[i]
+          })
+          yPosition += rowHeight
+        })
+
+        // Footer with registration stats
+        if (doc.y > 650) doc.addPage()
+        doc.moveDown(2)
+        doc.fontSize(10).font('Helvetica-Bold')
+        doc.text('REGISTRATION SUMMARY', { align: 'center' })
+        doc.moveDown()
+        doc.fontSize(9).font('Helvetica')
+        
+        const officerCount = voters.filter(v => v.isClassOfficer).length
+        const regularCount = voters.length - officerCount
+        
+        doc.text(`Total Registered Voters: ${voters.length}`)
+        doc.text(`Class Officers: ${officerCount}`)
+        doc.text(`Regular Voters: ${regularCount}`)
+
+        doc.end()
+
+        await AuditLog.logUserAction(
+          "EXPORT_DATA",
+          { username: req.user?.username },
+          `Registered voters exported - ${voters.length} records exported in PDF format`,
+          req
+        )
+
+      } else if (format === 'docx') {
+        const { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun, HeadingLevel, AlignmentType } = require('docx')
+
+        // Create table rows
+        const tableRows = [
+          new TableRow({
+            children: [
+              new TableCell({ children: [new Paragraph({ text: "School ID", style: "tableHeader" })] }),
+              new TableCell({ children: [new Paragraph({ text: "Full Name", style: "tableHeader" })] }),
+              new TableCell({ children: [new Paragraph({ text: "Email", style: "tableHeader" })] }),
+              new TableCell({ children: [new Paragraph({ text: "Department Code", style: "tableHeader" })] }),
+              new TableCell({ children: [new Paragraph({ text: "Degree Program", style: "tableHeader" })] }),
+              new TableCell({ children: [new Paragraph({ text: "College", style: "tableHeader" })] }),
+              new TableCell({ children: [new Paragraph({ text: "Year Level", style: "tableHeader" })] }),
+              new TableCell({ children: [new Paragraph({ text: "Class Officer", style: "tableHeader" })] }),
+              new TableCell({ children: [new Paragraph({ text: "Password Created", style: "tableHeader" })] }),
+              new TableCell({ children: [new Paragraph({ text: "Password Expires", style: "tableHeader" })] })
+            ]
+          }),
+          ...voters.map(voter => new TableRow({
+            children: [
+              new TableCell({ children: [new Paragraph(voter.schoolId?.toString() || '')] }),
+              new TableCell({ children: [new Paragraph(voter.fullName || '')] }),
+              new TableCell({ children: [new Paragraph(voter.email || '')] }),
+              new TableCell({ children: [new Paragraph(voter.departmentId?.departmentCode || '')] }),
+              new TableCell({ children: [new Paragraph(voter.departmentId?.degreeProgram || '')] }),
+              new TableCell({ children: [new Paragraph(voter.departmentId?.college || '')] }),
+              new TableCell({ children: [new Paragraph(voter.yearLevel?.toString() || '')] }),
+              new TableCell({ children: [new Paragraph(voter.isClassOfficer ? 'Yes' : 'No')] }),
+              new TableCell({ children: [new Paragraph(voter.passwordCreatedAt?.toISOString().split('T')[0] || '')] }),
+              new TableCell({ children: [new Paragraph(voter.passwordExpiresAt?.toISOString().split('T')[0] || '')] })
+            ]
+          }))
+        ]
+
+        // Create summary statistics
+        const officerCount = voters.filter(v => v.isClassOfficer).length
+        const regularCount = voters.length - officerCount
+
+        const doc = new Document({
+          sections: [{
+            children: [
+              new Paragraph({
+                text: "REGISTERED VOTERS EXPORT",
+                heading: HeadingLevel.TITLE,
+                alignment: AlignmentType.CENTER
+              }),
+              new Paragraph({
+                children: [
+                  new TextRun({ text: `Filter: ${filterDescription}`, bold: true }),
+                  new TextRun({ text: `\nExport Date: ${exportTime}` }),
+                  new TextRun({ text: `\nTotal Records: ${voters.length}` })
+                ]
+              }),
+              new Paragraph({ text: "" }), // Empty paragraph for spacing
+              new Table({
+                rows: tableRows,
+                width: { size: 100, type: "pct" }
+              }),
+              new Paragraph({ text: "" }), // Empty paragraph for spacing
+              new Paragraph({
+                text: "REGISTRATION SUMMARY",
+                heading: HeadingLevel.HEADING_2,
+                alignment: AlignmentType.CENTER
+              }),
+              new Paragraph({
+                children: [
+                  new TextRun({ text: `Total Registered Voters: ${voters.length}`, bold: true }),
+                  new TextRun({ text: `\nClass Officers: ${officerCount}` }),
+                  new TextRun({ text: `\nRegular Voters: ${regularCount}` })
+                ]
+              })
+            ]
+          }]
+        })
+
+        const buffer = await Packer.toBuffer(doc)
+        
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        res.setHeader('Content-Disposition', `attachment; filename="registered_voters_export_${exportDate}.docx"`)
+        res.send(buffer)
+
+        await AuditLog.logUserAction(
+          "EXPORT_DATA",
+          { username: req.user?.username },
+          `Registered voters exported - ${voters.length} records exported in DOCX format`,
+          req
+        )
+
+      } else {
+        // JSON format fallback
+        const summaryStats = {
+          total: voters.length,
+          officers: voters.filter(v => v.isClassOfficer).length,
+          regular: voters.filter(v => !v.isClassOfficer).length
+        }
+
+        res.json({
+          success: true,
+          data: voters,
+          count: voters.length,
+          statistics: summaryStats,
+          exportedAt: new Date().toISOString(),
+          filter: filterDescription
+        })
+      }
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  static async bulkCreate(req, res, next) {
+    try {
+      const { voters } = req.body
+
+      if (!Array.isArray(voters)) {
+        const error = new Error("Voters data must be an array")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      const results = []
+      const errors = []
+
+      for (let i = 0; i < voters.length; i++) {
+        const voterData = voters[i]
+        try {
+          const { schoolId, firstName, middleName, lastName, birthdate, departmentId, yearLevel, email } = voterData
+
+          // Validation
+          if (!schoolId || !firstName || !lastName || !departmentId) {
+            errors.push({ index: i, error: "Required fields are missing", data: voterData })
+            continue
+          }
+
+          const schoolIdNumber = Number(schoolId)
+          if (isNaN(schoolIdNumber)) {
+            errors.push({ index: i, error: "Invalid School ID format", data: voterData })
+            continue
+          }
+
+          const yearLevelNumber = Number(yearLevel)
+          if (isNaN(yearLevelNumber) || yearLevelNumber < 1 || yearLevelNumber > 4) {
+            errors.push({ index: i, error: "Year level must be between 1 and 4", data: voterData })
+            continue
+          }
+
+          // Check if voter already exists
+          const existingVoter = await Voter.findOne({ schoolId: schoolIdNumber })
+          if (existingVoter) {
+            errors.push({ index: i, error: `School ID ${schoolIdNumber} already exists`, data: voterData })
+            continue
+          }
+
+          const existingEmail = await Voter.findOne({ email })
+          if (existingEmail) {
+            errors.push({ index: i, error: `Email ${email} already exists`, data: voterData })
+            continue
+          }
+
+          const department = await Department.findById(departmentId)
+          if (!department) {
+            errors.push({ index: i, error: "Invalid department ID", data: voterData })
+            continue
+          }
+
+          const voter = new Voter({
+            schoolId: schoolIdNumber,
+            firstName,
+            middleName,
+            lastName,
+            birthdate: new Date(birthdate),
+            departmentId,
+            yearLevel: yearLevelNumber,
+            email,
+            isActive: true,
+            isRegistered: false,
+            isClassOfficer: false,
+            isPasswordActive: false
+          })
+
+          await voter.save()
+          const populatedVoter = await Voter.findById(voter._id)
+            .populate("departmentId")
+            .select("-password -faceEncoding -profilePicture")
+
+          results.push({ index: i, success: true, data: populatedVoter })
+
+        } catch (error) {
+          errors.push({ index: i, error: error.message, data: voterData })
+        }
+      }
+
+      await AuditLog.logUserAction(
+        "BULK_CREATE_VOTERS",
+        { username: req.user?.username, userId: req.user?.userId },
+        `Bulk voter creation - ${results.length} successful, ${errors.length} failed`,
+        req
+      )
+
+      res.status(201).json({
+        success: true,
+        message: `Bulk creation completed: ${results.length} successful, ${errors.length} failed`,
+        data: results,
+        errors: errors,
+        summary: {
+          total: voters.length,
+          successful: results.length,
+          failed: errors.length
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Update voter year level (election committee only)
+  static async updateYearLevel(req, res, next) {
+    try {
+      const { id } = req.params
+      const { yearLevel } = req.body
+
+      // Check if user has permission (should be handled by middleware, but double-check)
+      if (!req.user || !["admin", "election_committee"].includes(req.user.role)) {
+        const error = new Error("Only admin or election committee members can update year levels")
+        error.statusCode = 403
+        return next(error)
+      }
+
+      const voter = await Voter.findById(id).populate("departmentId")
+      if (!voter) {
+        await AuditLog.logUserAction(
+          "UPDATE_YEAR_LEVEL",
+          { username: req.user?.username },
+          `Failed to update year level - Voter ID ${id} not found`,
+          req
+        )
+        
+        const error = new Error("Voter not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      const yearLevelNumber = Number(yearLevel)
+      if (isNaN(yearLevelNumber) || yearLevelNumber < 1 || yearLevelNumber > 4) {
+        const error = new Error("Year level must be between 1 and 4")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      if (!voter.isActive) {
+        const error = new Error("Cannot update year level of inactive voter")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      const oldYearLevel = voter.yearLevel
+      voter.yearLevel = yearLevelNumber
+      await voter.save()
+
+      await AuditLog.logVoterAction(
+        "UPDATE_YEAR_LEVEL",
+        voter,
+        `Year level updated - ${voter.firstName} ${voter.lastName} (${voter.schoolId}) from ${oldYearLevel} to ${yearLevelNumber} by ${req.user.username}`,
+        req
+      )
+
+      const updatedVoter = await Voter.findById(id)
+        .populate("departmentId")
+        .select("-password -faceEncoding -profilePicture")
+
+      res.json({
+        success: true,
+        message: "Year level updated successfully",
+        data: updatedVoter,
+        previousYearLevel: oldYearLevel,
+        currentYearLevel: yearLevelNumber
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
 }
 
 module.exports = VoterController

@@ -54,7 +54,7 @@ class DepartmentController {
     }
   }
 
-  // NEW: Get department by department code
+  // UPDATED: Get departments by department code (handles multiple degree programs per code)
   static async getDepartmentByCode(req, res, next) {
     try {
       const { code } = req.params
@@ -67,28 +67,47 @@ class DepartmentController {
 
       const departmentCode = code.trim().toUpperCase()
 
-      const department = await Department.findOne({ departmentCode })
+      // Find ALL departments with this code
+      const departments = await Department.find({ departmentCode })
         .select('departmentCode degreeProgram college')
+        .sort({ college: 1, degreeProgram: 1 })
 
-      if (!department) {
-        const error = new Error("Department not found")
+      if (!departments || departments.length === 0) {
+        const error = new Error("Department code not found")
         error.statusCode = 404
         return next(error)
       }
+
+      // Group by college and collect degree programs
+      const departmentInfo = {
+        departmentCode: departmentCode,
+        colleges: []
+      }
+
+      const collegeMap = new Map()
+
+      departments.forEach(dept => {
+        if (!collegeMap.has(dept.college)) {
+          collegeMap.set(dept.college, {
+            college: dept.college,
+            degreePrograms: []
+          })
+        }
+        collegeMap.get(dept.college).degreePrograms.push(dept.degreeProgram)
+      })
+
+      departmentInfo.colleges = Array.from(collegeMap.values())
+      departmentInfo.totalPrograms = departments.length
 
       // Log department access
       await AuditLog.logUserAction(
         "SYSTEM_ACCESS",
         req.user || { username: "anonymous" },
-        `Department accessed by code - ${department.departmentCode} (${department.degreeProgram})`,
+        `Department accessed by code - ${departmentCode} (${departments.length} programs found)`,
         req
       )
 
-      res.json({
-        departmentCode: department.departmentCode,
-        degreeProgram: department.degreeProgram,
-        college: department.college
-      })
+      res.json(departmentInfo)
     } catch (error) {
       next(error)
     }
@@ -522,20 +541,300 @@ class DepartmentController {
     }
   }
 
-  // Get unique colleges
+  // UPDATED: Get unique colleges with additional info
   static async getColleges(req, res, next) {
     try {
-      const colleges = await Department.distinct("college")
+      const { includeStats = false } = req.query
+
+      let colleges
+      
+      if (includeStats === 'true') {
+        // Get colleges with department counts and voter statistics
+        colleges = await Department.aggregate([
+          {
+            $lookup: {
+              from: "voters",
+              localField: "_id",
+              foreignField: "departmentId",
+              as: "voters"
+            }
+          },
+          {
+            $group: {
+              _id: "$college",
+              departmentCount: { $sum: 1 },
+              totalVoters: { $sum: { $size: "$voters" } },
+              registeredVoters: {
+                $sum: {
+                  $size: {
+                    $filter: {
+                      input: "$voters",
+                      cond: { $eq: ["$$this.isRegistered", true] }
+                    }
+                  }
+                }
+              },
+              departmentCodes: { $addToSet: "$departmentCode" },
+              degreePrograms: { $addToSet: "$degreeProgram" }
+            }
+          },
+          {
+            $sort: { _id: 1 }
+          },
+          {
+            $project: {
+              college: "$_id",
+              departmentCount: 1,
+              totalVoters: 1,
+              registeredVoters: 1,
+              uniqueDepartmentCodes: { $size: "$departmentCodes" },
+              totalDegreePrograms: { $size: "$degreePrograms" },
+              _id: 0
+            }
+          }
+        ])
+      } else {
+        // Simple list of college names
+        colleges = await Department.distinct("college")
+        colleges.sort()
+      }
       
       // Log college access
       await AuditLog.logUserAction(
         "SYSTEM_ACCESS",
         req.user || { username: "anonymous" },
-        `Colleges list accessed - ${colleges.length} colleges returned`,
+        `Colleges list accessed - ${Array.isArray(colleges) ? colleges.length : 'unknown'} colleges returned${includeStats === 'true' ? ' with statistics' : ''}`,
         req
       )
       
-      res.json(colleges.sort())
+      res.json({
+        colleges,
+        count: Array.isArray(colleges) ? colleges.length : 0,
+        includesStatistics: includeStats === 'true'
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // NEW: Get degree programs with optional filtering
+  static async getDegreePrograms(req, res, next) {
+    try {
+      const { college, departmentCode, includeStats = false } = req.query
+
+      let pipeline = []
+      let matchStage = {}
+
+      // Apply filters
+      if (college) {
+        matchStage.college = { $regex: college, $options: "i" }
+      }
+      if (departmentCode) {
+        matchStage.departmentCode = departmentCode.trim().toUpperCase()
+      }
+
+      if (Object.keys(matchStage).length > 0) {
+        pipeline.push({ $match: matchStage })
+      }
+
+      if (includeStats === 'true') {
+        // Get degree programs with statistics
+        pipeline.push(
+          {
+            $lookup: {
+              from: "voters",
+              localField: "_id",
+              foreignField: "departmentId",
+              as: "voters"
+            }
+          },
+          {
+            $group: {
+              _id: {
+                degreeProgram: "$degreeProgram",
+                college: "$college",
+                departmentCode: "$departmentCode"
+              },
+              departmentCount: { $sum: 1 },
+              totalVoters: { $sum: { $size: "$voters" } },
+              registeredVoters: {
+                $sum: {
+                  $size: {
+                    $filter: {
+                      input: "$voters",
+                      cond: { $eq: ["$$this.isRegistered", true] }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            $sort: { 
+              "_id.college": 1, 
+              "_id.departmentCode": 1,
+              "_id.degreeProgram": 1 
+            }
+          },
+          {
+            $project: {
+              degreeProgram: "$_id.degreeProgram",
+              college: "$_id.college",
+              departmentCode: "$_id.departmentCode",
+              departmentCount: 1,
+              totalVoters: 1,
+              registeredVoters: 1,
+              _id: 0
+            }
+          }
+        )
+      } else {
+        // Simple aggregation for unique degree programs
+        pipeline.push(
+          {
+            $group: {
+              _id: {
+                degreeProgram: "$degreeProgram",
+                college: "$college",
+                departmentCode: "$departmentCode"
+              }
+            }
+          },
+          {
+            $sort: { 
+              "_id.college": 1, 
+              "_id.departmentCode": 1,
+              "_id.degreeProgram": 1 
+            }
+          },
+          {
+            $project: {
+              degreeProgram: "$_id.degreeProgram",
+              college: "$_id.college",
+              departmentCode: "$_id.departmentCode",
+              _id: 0
+            }
+          }
+        )
+      }
+
+      const degreePrograms = await Department.aggregate(pipeline)
+      
+      // Log degree program access
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user || { username: "anonymous" },
+        `Degree programs list accessed - ${degreePrograms.length} programs returned${includeStats === 'true' ? ' with statistics' : ''}${college ? ` filtered by college: ${college}` : ''}${departmentCode ? ` filtered by department code: ${departmentCode}` : ''}`,
+        req
+      )
+      
+      res.json({
+        degreePrograms,
+        count: degreePrograms.length,
+        includesStatistics: includeStats === 'true',
+        filters: {
+          college: college || null,
+          departmentCode: departmentCode || null
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // NEW: Get unique department codes with their associated data
+  static async getDepartmentCodes(req, res, next) {
+    try {
+      const { includeStats = false } = req.query
+
+      let pipeline = []
+
+      if (includeStats === 'true') {
+        // Get department codes with statistics
+        pipeline = [
+          {
+            $lookup: {
+              from: "voters",
+              localField: "_id",
+              foreignField: "departmentId",
+              as: "voters"
+            }
+          },
+          {
+            $group: {
+              _id: "$departmentCode",
+              departmentCount: { $sum: 1 },
+              colleges: { $addToSet: "$college" },
+              degreePrograms: { $addToSet: "$degreeProgram" },
+              totalVoters: { $sum: { $size: "$voters" } },
+              registeredVoters: {
+                $sum: {
+                  $size: {
+                    $filter: {
+                      input: "$voters",
+                      cond: { $eq: ["$$this.isRegistered", true] }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            $sort: { _id: 1 }
+          },
+          {
+            $project: {
+              departmentCode: "$_id",
+              departmentCount: 1,
+              colleges: 1,
+              degreePrograms: 1,
+              totalVoters: 1,
+              registeredVoters: 1,
+              uniqueColleges: { $size: "$colleges" },
+              totalDegreePrograms: { $size: "$degreePrograms" },
+              _id: 0
+            }
+          }
+        ]
+      } else {
+        // Simple list of department codes
+        pipeline = [
+          {
+            $group: {
+              _id: "$departmentCode",
+              colleges: { $addToSet: "$college" },
+              degreePrograms: { $addToSet: "$degreeProgram" }
+            }
+          },
+          {
+            $sort: { _id: 1 }
+          },
+          {
+            $project: {
+              departmentCode: "$_id",
+              colleges: 1,
+              degreePrograms: 1,
+              _id: 0
+            }
+          }
+        ]
+      }
+
+      const departmentCodes = await Department.aggregate(pipeline)
+      
+      // Log department codes access
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user || { username: "anonymous" },
+        `Department codes list accessed - ${departmentCodes.length} codes returned${includeStats === 'true' ? ' with statistics' : ''}`,
+        req
+      )
+      
+      res.json({
+        departmentCodes,
+        count: departmentCodes.length,
+        includesStatistics: includeStats === 'true'
+      })
     } catch (error) {
       next(error)
     }
@@ -914,6 +1213,112 @@ class DepartmentController {
       next(error)
     }
   }
+
+  static async getTotalCounts(req, res, next) {
+  try {
+    // Get total departments
+    const totalDepartments = await Department.countDocuments()
+    
+    // Get total unique colleges
+    const uniqueColleges = await Department.distinct("college")
+    const totalColleges = uniqueColleges.length
+    
+    // Get total unique degree programs
+    const uniqueDegreePrograms = await Department.distinct("degreeProgram")
+    const totalDegreePrograms = uniqueDegreePrograms.length
+    
+    // Get total unique department codes
+    const uniqueDepartmentCodes = await Department.distinct("departmentCode")
+    const totalDepartmentCodes = uniqueDepartmentCodes.length
+
+    // Log access
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user || { username: "anonymous" },
+      "Retrieved total counts for departments, colleges, and degree programs",
+      req
+    )
+
+    res.json({
+      totals: {
+        departments: totalDepartments,
+        colleges: totalColleges,
+        degreePrograms: totalDegreePrograms,
+        departmentCodes: totalDepartmentCodes
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// Get total number of departments only
+static async getTotalDepartments(req, res, next) {
+  try {
+    const total = await Department.countDocuments()
+    
+    // Log access
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user || { username: "anonymous" },
+      `Retrieved total department count: ${total}`,
+      req
+    )
+    
+    res.json({
+      totalDepartments: total
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// Get total number of unique colleges only
+static async getTotalColleges(req, res, next) {
+  try {
+    const uniqueColleges = await Department.distinct("college")
+    const total = uniqueColleges.length
+    
+    // Log access
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user || { username: "anonymous" },
+      `Retrieved total college count: ${total}`,
+      req
+    )
+    
+    res.json({
+      totalColleges: total,
+      colleges: uniqueColleges.sort()
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// Get total number of unique degree programs only
+static async getTotalDegreePrograms(req, res, next) {
+  try {
+    const uniqueDegreePrograms = await Department.distinct("degreeProgram")
+    const total = uniqueDegreePrograms.length
+    
+    // Log access
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user || { username: "anonymous" },
+      `Retrieved total degree program count: ${total}`,
+      req
+    )
+    
+    res.json({
+      totalDegreePrograms: total,
+      degreePrograms: uniqueDegreePrograms.sort()
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
 }
 
 module.exports = DepartmentController

@@ -3,9 +3,21 @@
 import { useState, useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import Link from "next/link"
-import { Home, Users, CheckCircle, Building2, User, MessageCircle, FileText, LogOut, Loader2, Menu, X } from "lucide-react"
-
+import { 
+  Home, 
+  Users, 
+  CheckCircle, 
+  Building2, 
+  User, 
+  MessageCircle, 
+  FileText, 
+  LogOut, 
+  Loader2, 
+  Menu, 
+  X 
+} from "lucide-react"
 import { getUserFromToken, logout } from "../../lib/auth"
+import BackgroundWrapper from "@/components/BackgroundWrapper"
 
 export default function AdminLayout({ children }) {
   const [user, setUser] = useState(null)
@@ -19,7 +31,7 @@ export default function AdminLayout({ children }) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const userData = getUserFromToken() 
+        const userData = getUserFromToken()
 
         if (!userData) {
           router.push("/adminlogin")
@@ -29,13 +41,11 @@ export default function AdminLayout({ children }) {
         setUser(userData)
 
         if (userData.userType !== "admin") {
-          console.warn("Unauthorized access: User is not an admin. Redirecting.")
-          logout() 
+          logout()
           router.push("/adminlogin")
           return
         }
       } catch (error) {
-        console.error("Authentication check failed:", error)
         logout()
         router.push("/adminlogin")
       } finally {
@@ -46,102 +56,39 @@ export default function AdminLayout({ children }) {
     checkAuth()
   }, [router])
 
-  // Close sidebar when clicking outside on mobile
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth >= 1024) {
-        setSidebarOpen(false)
-      }
-    }
-
-    const handleClickOutside = (event) => {
-      if (sidebarOpen && window.innerWidth < 1024) {
-        const sidebar = document.getElementById('admin-sidebar')
-        const menuButton = document.getElementById('mobile-menu-button')
-        
-        if (sidebar && !sidebar.contains(event.target) && 
-            menuButton && !menuButton.contains(event.target)) {
-          setSidebarOpen(false)
-        }
-      }
-    }
-
-    window.addEventListener('resize', handleResize)
-    document.addEventListener('mousedown', handleClickOutside)
-    
-    return () => {
-      window.removeEventListener('resize', handleResize)
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [sidebarOpen])
-
   const handleLogout = () => {
-    logout() 
+    logout()
     localStorage.removeItem("token")
-    localStorage.removeItem("user") 
+    localStorage.removeItem("user")
     router.push("/adminlogin")
   }
 
   const handleSidebarItemClick = () => {
-    // Close sidebar on mobile when item is clicked
     if (window.innerWidth < 1024) {
       setSidebarOpen(false)
     }
   }
 
   const menuItems = [
-    {
-      id: "dashboard",
-      name: "Home",
-      path: "/admin/dashboard",
-      icon: <Home className="w-5 h-5" />,
-    },
-    {
-      id: "voters",
-      name: "Voters",
-      path: "/admin/voters",
-      icon: <Users className="w-5 h-5" />,
-    },
-    {
-      id: "registered-voters",
-      name: "Registered Voters",
-      path: "/admin/registered-voters",
-      icon: <CheckCircle className="w-5 h-5" />,
-    },
-    {
-      id: "departments",
-      name: "Departments",
-      path: "/admin/departments",
-      icon: <Building2 className="w-5 h-5" />,
-    },
-    {
-      id: "users",
-      name: "Users",
-      path: "/admin/users",
-      icon: <User className="w-5 h-5" />,
-    },
-    {
-      id: "messages",
-      name: "Messages",
-      path: "/admin/messages",
-      icon: <MessageCircle className="w-5 h-5" />,
-    },
-    {
-      id: "audit-logs",
-      name: "Audit Logs",
-      path: "/admin/audit-logs",
-      icon: <FileText className="w-5 h-5" />,
-    },
+    { id: "dashboard", name: "Home", path: "/admin/dashboard", icon: Home },
+    { id: "voters", name: "Voters", path: "/admin/voters", icon: Users },
+    { id: "registered-voters", name: "Registered Voters", path: "/admin/registered-voters", icon: CheckCircle },
+    { id: "departments", name: "Departments", path: "/admin/departments", icon: Building2 },
+    { id: "users", name: "Users", path: "/admin/users", icon: User },
+    { id: "messages", name: "Messages", path: "/admin/messages", icon: MessageCircle },
+    { id: "audit-logs", name: "Audit Logs", path: "/admin/audit-logs", icon: FileText },
   ]
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <div className="text-center">
-          <Loader2 className="animate-spin rounded-full h-12 w-12 mx-auto text-blue-600" />
-          <p className="mt-4 text-gray-600">Loading...</p>
+      <BackgroundWrapper>
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center bg-white/10 backdrop-blur-md p-8 rounded-2xl border border-white/20">
+            <Loader2 className="animate-spin rounded-full h-12 w-12 mx-auto text-white" />
+            <p className="mt-4 text-white font-medium">Loading...</p>
+          </div>
         </div>
-      </div>
+      </BackgroundWrapper>
     )
   }
 
@@ -150,7 +97,7 @@ export default function AdminLayout({ children }) {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100">
+    <BackgroundWrapper>
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
         <div 
@@ -162,100 +109,85 @@ export default function AdminLayout({ children }) {
       {/* Sidebar */}
       <div 
         id="admin-sidebar"
-        className={`
-          fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-        `}
+        className={`fixed left-0 top-0 h-full w-64 z-50 transform transition-transform duration-300 ease-in-out 
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}
+        style={{
+          background: 'linear-gradient(135deg, #001f65 0%, #6895fd 100%)'
+        }}
       >
-        <div className="flex flex-col h-full">
-          {/* Logo/Header */}
-          <div className="flex items-center justify-between h-16 px-4 bg-blue-600 text-white">
-            <h1 className="text-xl font-bold">Admin Panel</h1>
-            {/* Mobile close button */}
+        <div className="p-6 flex flex-col h-full">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-white">Admin Panel</h2>
             <button
               onClick={() => setSidebarOpen(false)}
-              className="lg:hidden p-1 rounded hover:bg-blue-700 transition-colors"
-              aria-label="Close sidebar"
+              className="lg:hidden p-1 rounded-lg hover:bg-white/10"
             >
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5 text-white" />
             </button>
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-            {menuItems.map((item) => (
-              <Link
-                key={item.id}
-                href={item.path}
-                onClick={handleSidebarItemClick}
-                className={`flex items-center px-4 py-3 text-left rounded-lg transition-colors ${
-                  pathname === item.path
-                    ? "bg-blue-100 text-blue-700 border-r-4 border-blue-700"
-                    : "text-gray-600 hover:bg-gray-100"
-                }`}
-              >
-                {item.icon}
-                <span className="ml-3">{item.name}</span>
-              </Link>
-            ))}
+          <nav className="space-y-2 flex-1">
+            {menuItems.map((item) => {
+              const IconComponent = item.icon
+              return (
+                <Link
+                  key={item.id}
+                  href={item.path}
+                  onClick={handleSidebarItemClick}
+                  className={`flex items-center px-4 py-3 rounded-lg transition-colors ${
+                    pathname === item.path
+                      ? "bg-white/20 text-white"
+                      : "text-white/80 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  <IconComponent className="w-5 h-5" />
+                  <span className="ml-3">{item.name}</span>
+                </Link>
+              )
+            })}
           </nav>
 
-          {/* Logout Button */}
-          <div className="p-4 border-t">
+          {/* Logout */}
+          <div className="pt-6">
             <button
               onClick={handleLogout}
-              className="w-full flex items-center px-4 py-3 text-left rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+              className="w-full flex items-center px-4 py-3 rounded-lg text-red-300 hover:bg-red-500/20 transition-colors"
             >
-              <LogOut className="w-5 h-5" />
-              <span className="ml-3">Logout</span>
+              <LogOut className="w-5 h-5 mr-3" />
+              Logout
             </button>
           </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="bg-white shadow-sm border-b px-4 lg:px-6 py-4">
+      <div className="lg:ml-64 min-h-screen">
+        {/* Header - Mobile */}
+        <div className="lg:hidden bg-[#b0c8fe]/95 backdrop-blur-sm shadow-lg border-b border-[#b0c8fe]/30 px-4 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              {/* Mobile menu button */}
-              <button
-                id="mobile-menu-button"
-                onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 rounded-lg hover:bg-gray-100 mr-3 transition-colors"
-                aria-label="Open sidebar"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
-              <h2 className="text-xl lg:text-2xl font-bold text-gray-800">
-                {menuItems.find((item) => item.path === pathname)?.name || "Admin Dashboard"}
-              </h2>
-            </div>
-            
-            {/* Desktop user info */}
-            <div className="text-sm text-gray-600 hidden sm:block">
-              Welcome, {user?.username}
-            </div>
-            
-            {/* Mobile user indicator */}
-            <div className="sm:hidden">
-              <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-                <span className="text-white text-sm font-medium">
-                  {user?.username?.charAt(0)?.toUpperCase()}
-                </span>
-              </div>
+            <button
+              id="mobile-menu-button"
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden p-2 hover:bg-white/10 rounded-lg"
+            >
+              <Menu className="w-6 h-6 text-[#001f65]" />
+            </button>
+            <h1 className="text-lg font-bold text-[#001f65]">Admin Panel</h1>
+            <div className="w-8 h-8 bg-[#001f65] rounded-full flex items-center justify-center">
+              <span className="text-white text-sm font-medium">
+                {user?.username?.charAt(0)?.toUpperCase()}
+              </span>
             </div>
           </div>
-        </header>
+        </div>
 
-        {/* Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6 bg-gray-50">
-          <div className="max-w-7xl mx-auto">
-            {children}
-          </div>
-        </main>
+        {/* Content */}
+        <div className="p-4 lg:p-6 pt-20 lg:pt-6">
+          {children}
+        </div>
       </div>
-    </div>
+    </BackgroundWrapper>
   )
 }
