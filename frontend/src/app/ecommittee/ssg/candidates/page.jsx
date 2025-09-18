@@ -636,13 +636,8 @@ export default function SSGCandidatesPage() {
     const reader = new FileReader()
     reader.onloadend = () => {
       try {
-        // Extract base64 data (remove data:image/jpeg;base64, prefix)
-        const base64Data = reader.result.split(',')[1]
-        if (base64Data) {
-          setFormData(prev => ({ ...prev, [fieldName]: base64Data }))
-        } else {
-          throw new Error('Invalid image data')
-        }
+        // Store the complete data URL for preview
+        setFormData(prev => ({ ...prev, [fieldName]: reader.result }))
       } catch (error) {
         console.error('Error processing image:', error)
         Swal.fire({
@@ -686,13 +681,24 @@ export default function SSGCandidatesPage() {
     setEditingCandidate(candidate)
     setShowAddForm(true)
     
+    // Prepare image data URLs for existing images
+    const campaignPictureData = candidate.campaignPicture ? 
+      (candidate.campaignPicture.startsWith('data:') ? 
+        candidate.campaignPicture : 
+        `data:image/jpeg;base64,${candidate.campaignPicture}`) : ''
+    
+    const credentialsData = candidate.credentials ? 
+      (candidate.credentials.startsWith('data:') ? 
+        candidate.credentials : 
+        `data:image/jpeg;base64,${candidate.credentials}`) : ''
+    
     setFormData({
       voterId: candidate.voterId?._id || candidate.voterId || '',
       positionId: candidate.positionId?._id || candidate.positionId || '',
       partylistId: candidate.partylistId?._id || candidate.partylistId || '',
       candidateNumber: candidate.candidateNumber || '',
-      credentials: candidate.credentials || '',
-      campaignPicture: candidate.campaignPicture || '',
+      credentials: credentialsData,
+      campaignPicture: campaignPictureData,
       isActive: candidate.isActive !== false
     })
     
@@ -834,6 +840,15 @@ export default function SSGCandidatesPage() {
         ssgElectionId: ssgElectionId
       }
 
+      // Convert data URLs to base64 for API submission
+      if (submitData.campaignPicture && submitData.campaignPicture.startsWith('data:')) {
+        submitData.campaignPicture = submitData.campaignPicture.split(',')[1]
+      }
+      
+      if (submitData.credentials && submitData.credentials.startsWith('data:')) {
+        submitData.credentials = submitData.credentials.split(',')[1]
+      }
+
       // Remove empty partylistId to make candidate independent
       if (!submitData.partylistId) {
         delete submitData.partylistId
@@ -965,27 +980,53 @@ export default function SSGCandidatesPage() {
     return options
   }
 
-  // Handle image preview and view
+  // Handle image preview and view - Updated for both campaign picture and credentials
   const handleImageView = (candidate, imageType) => {
-    const imageData = imageType === 'campaign' ? candidate.campaignPicture : candidate.credentials
-    const title = imageType === 'campaign' ? 'Campaign Picture' : 'Credentials'
+  const imageData = imageType === 'campaign' ? candidate.campaignPicture : candidate.credentials
+  const title = imageType === 'campaign' ? 'Campaign Picture' : 'Credentials'
+  
+  if (imageData) {
+    let imageUrl
     
-    if (imageData) {
-      Swal.fire({
-        title: `${candidate.fullName} - ${title}`,
-        imageUrl: `data:image/jpeg;base64,${imageData}`,
-        imageAlt: `${candidate.fullName} ${title}`,
-        showCloseButton: true,
-        showConfirmButton: false,
-        width: 'auto',
-        customClass: {
-          popup: 'max-w-4xl',
-          image: 'max-h-96 object-contain'
-        }
-      })
+    if (imageData.startsWith('data:')) {
+      // Already a proper data URL
+      imageUrl = imageData
+    } else {
+      // Raw base64 data - convert to proper data URL
+      // The data starting with "LzlqL..." is base64 encoded "/9j/" which is JPEG signature
+      imageUrl = `data:image/jpeg;base64,${imageData}`
     }
+    
+    Swal.fire({
+      title: `${candidate.fullName} - ${title}`,
+      imageUrl: imageUrl,
+      imageAlt: `${candidate.fullName} ${title}`,
+      showCloseButton: true,
+      showConfirmButton: false,
+      width: 'auto',
+      customClass: {
+        popup: 'max-w-4xl',
+        image: 'max-h-96 w-auto object-contain'
+      },
+      didOpen: () => {
+        // Ensure proper image sizing
+        const img = document.querySelector('.swal2-image')
+        if (img) {
+          img.style.maxWidth = '100%'
+          img.style.height = 'auto'
+          img.style.objectFit = 'contain'
+        }
+      }
+    })
+  } else {
+    Swal.fire({
+      icon: 'info',
+      title: 'No Image Available',
+      text: `No ${title.toLowerCase()} has been uploaded for ${candidate.fullName}.`,
+      confirmButtonColor: '#001f65'
+    })
   }
-
+}
   if (loading) {
     return (
       <SSGLayout 
@@ -1247,18 +1288,32 @@ export default function SSGCandidatesPage() {
                     {formData.campaignPicture && (
                       <div className="mt-2">
                         <img
-                          src={`data:image/jpeg;base64,${formData.campaignPicture}`}
+                          src={formData.campaignPicture}
                           alt="Campaign picture preview"
-                          className="w-20 h-20 object-cover rounded-lg border"
+                          className="w-20 h-20 object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
+                          onClick={() => {
+                            Swal.fire({
+                              title: 'Campaign Picture Preview',
+                              imageUrl: formData.campaignPicture,
+                              imageAlt: 'Campaign picture preview',
+                              showCloseButton: true,
+                              showConfirmButton: false,
+                              width: 'auto',
+                              customClass: {
+                                popup: 'max-w-4xl',
+                                image: 'max-h-96 object-contain'
+                              }
+                            })
+                          }}
                         />
                       </div>
                     )}
                     <p className="text-xs text-gray-500 mt-1">
-                      Maximum file size: 2MB. Supported formats: JPG, PNG, GIF
+                      Maximum file size: 2MB. Supported formats: JPG, PNG, GIF. Click image to preview.
                     </p>
                   </div>
 
-                  {/* Credentials Upload - Now Image */}
+                  {/* Credentials Upload - Now Image with Preview */}
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Credentials Image (Optional)
@@ -1294,14 +1349,28 @@ export default function SSGCandidatesPage() {
                     {formData.credentials && (
                       <div className="mt-2">
                         <img
-                          src={`data:image/jpeg;base64,${formData.credentials}`}
+                          src={formData.credentials}
                           alt="Credentials preview"
-                          className="w-20 h-20 object-cover rounded-lg border"
+                          className="w-20 h-20 object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
+                          onClick={() => {
+                            Swal.fire({
+                              title: 'Credentials Preview',
+                              imageUrl: formData.credentials,
+                              imageAlt: 'Credentials preview',
+                              showCloseButton: true,
+                              showConfirmButton: false,
+                              width: 'auto',
+                              customClass: {
+                                popup: 'max-w-4xl',
+                                image: 'max-h-96 object-contain'
+                              }
+                            })
+                          }}
                         />
                       </div>
                     )}
                     <p className="text-xs text-gray-500 mt-1">
-                      Maximum file size: 2MB. Upload credentials document as image (JPG, PNG, GIF)
+                      Maximum file size: 2MB. Upload credentials document as image (JPG, PNG, GIF). Click image to preview.
                     </p>
                   </div>
                 </div>
@@ -1348,92 +1417,94 @@ export default function SSGCandidatesPage() {
         </div>
       )}
 
-      {/* Enhanced Partylist Filter Cards with accurate candidate counts */}
-      {ssgPartylists.length > 0 && (
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 mb-6">
-          <h3 className="text-lg font-semibold text-[#001f65] mb-4">Filter by Partylist</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {/* All Candidates Card */}
-            <div 
-              onClick={() => setSelectedPartylist('')}
-              className={`p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${
-                selectedPartylist === '' 
-                  ? 'border-[#001f65] bg-[#001f65] text-white shadow-lg' 
-                  : 'border-gray-200 bg-white hover:border-[#001f65] hover:shadow-md'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className={`font-semibold ${selectedPartylist === '' ? 'text-white' : 'text-gray-800'}`}>
-                    All Candidates
-                  </h4>
-                  <p className={`text-sm ${selectedPartylist === '' ? 'text-blue-100' : 'text-gray-600'}`}>
-                    View all candidates
-                  </p>
-                </div>
-                <div className={`text-2xl font-bold ${selectedPartylist === '' ? 'text-white' : 'text-[#001f65]'}`}>
-                  {candidateStats.total}
-                </div>
-              </div>
-            </div>
 
-            {/* Independent Candidates Card */}
-            <div 
-              onClick={() => setSelectedPartylist('independent')}
-              className={`p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${
-                selectedPartylist === 'independent' 
-                  ? 'border-gray-600 bg-gray-600 text-white shadow-lg' 
-                  : 'border-gray-200 bg-white hover:border-gray-600 hover:shadow-md'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className={`font-semibold ${selectedPartylist === 'independent' ? 'text-white' : 'text-gray-800'}`}>
-                    Independent
-                  </h4>
-                  <p className={`text-sm ${selectedPartylist === 'independent' ? 'text-gray-100' : 'text-gray-600'}`}>
-                    No partylist affiliation
-                  </p>
-                </div>
-                <div className={`text-2xl font-bold ${selectedPartylist === 'independent' ? 'text-white' : 'text-gray-600'}`}>
-                  {candidateStats.byPartylist['independent']?.count || 0}
-                </div>
-              </div>
-            </div>
+      {(ssgPartylists.length > 0 || (candidateStats.byPartylist['independent']?.count > 0)) && (
+  <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 mb-6">
+    <h3 className="text-lg font-semibold text-[#001f65] mb-4">Filter by Partylist</h3>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {/* All Candidates Card */}
+      <div 
+        onClick={() => setSelectedPartylist('')}
+        className={`p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${
+          selectedPartylist === '' 
+            ? 'border-[#001f65] bg-[#001f65] text-white shadow-lg' 
+            : 'border-gray-200 bg-white hover:border-[#001f65] hover:shadow-md'
+        }`}
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className={`font-semibold ${selectedPartylist === '' ? 'text-white' : 'text-gray-800'}`}>
+              All Candidates
+            </h4>
+            <p className={`text-sm ${selectedPartylist === '' ? 'text-blue-100' : 'text-gray-600'}`}>
+              View all candidates
+            </p>
+          </div>
+          <div className={`text-2xl font-bold ${selectedPartylist === '' ? 'text-white' : 'text-[#001f65]'}`}>
+            {candidateStats.total}
+          </div>
+        </div>
+      </div>
 
-            {/* Partylist Cards with accurate candidate counts */}
-            {ssgPartylists.map(partylist => {
-              const candidateCount = candidateStats.byPartylist[partylist._id]?.count || 0
-              
-              return (
-                <div 
-                  key={partylist._id}
-                  onClick={() => setSelectedPartylist(partylist._id)}
-                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${
-                    selectedPartylist === partylist._id 
-                      ? 'border-blue-500 bg-blue-500 text-white shadow-lg' 
-                      : 'border-gray-200 bg-white hover:border-blue-500 hover:shadow-md'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className={`font-semibold ${selectedPartylist === partylist._id ? 'text-white' : 'text-gray-800'}`}>
-                        {partylist.partylistName}
-                      </h4>
-                      <p className={`text-sm ${selectedPartylist === partylist._id ? 'text-blue-100' : 'text-gray-600'}`}>
-                        {partylist.description || 'Political partylist'}
-                      </p>
-                    </div>
-                    <div className={`text-2xl font-bold ${selectedPartylist === partylist._id ? 'text-white' : 'text-blue-500'}`}>
-                      {candidateCount}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
+      {/* Independent Candidates Card - Only show if there are independent candidates */}
+      {candidateStats.byPartylist['independent']?.count > 0 && (
+        <div 
+          onClick={() => setSelectedPartylist('independent')}
+          className={`p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${
+            selectedPartylist === 'independent' 
+              ? 'border-gray-600 bg-gray-600 text-white shadow-lg' 
+              : 'border-gray-200 bg-white hover:border-gray-600 hover:shadow-md'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className={`font-semibold ${selectedPartylist === 'independent' ? 'text-white' : 'text-gray-800'}`}>
+                Independent
+              </h4>
+              <p className={`text-sm ${selectedPartylist === 'independent' ? 'text-gray-100' : 'text-gray-600'}`}>
+                No partylist affiliation
+              </p>
+            </div>
+            <div className={`text-2xl font-bold ${selectedPartylist === 'independent' ? 'text-white' : 'text-gray-600'}`}>
+              {candidateStats.byPartylist['independent']?.count || 0}
+            </div>
           </div>
         </div>
       )}
+
+      {/* Partylist Cards with accurate candidate counts */}
+      {ssgPartylists.map(partylist => {
+        const candidateCount = candidateStats.byPartylist[partylist._id]?.count || 0
+        
+        return (
+          <div 
+            key={partylist._id}
+            onClick={() => setSelectedPartylist(partylist._id)}
+            className={`p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${
+              selectedPartylist === partylist._id 
+                ? 'border-blue-500 bg-blue-500 text-white shadow-lg' 
+                : 'border-gray-200 bg-white hover:border-blue-500 hover:shadow-md'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className={`font-semibold ${selectedPartylist === partylist._id ? 'text-white' : 'text-gray-800'}`}>
+                  {partylist.partylistName}
+                </h4>
+                <p className={`text-sm ${selectedPartylist === partylist._id ? 'text-blue-100' : 'text-gray-600'}`}>
+                  {partylist.description || 'Political partylist'}
+                </p>
+              </div>
+              <div className={`text-2xl font-bold ${selectedPartylist === partylist._id ? 'text-white' : 'text-blue-500'}`}>
+                {candidateCount}
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  </div>
+)}
 
       {/* Enhanced Candidates Table */}
       <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 overflow-hidden">
@@ -1489,7 +1560,7 @@ export default function SSGCandidatesPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Profile
+                  Campaign Picture
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Candidate
@@ -1507,7 +1578,7 @@ export default function SSGCandidatesPage() {
                   Number
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Files
+                  Credentials
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
@@ -1564,22 +1635,23 @@ export default function SSGCandidatesPage() {
                   
                   return (
                     <tr key={candidateKey} className="hover:bg-gray-50">
-                      {/* Profile Picture Column */}
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex-shrink-0 h-12 w-12">
-                          {candidate.campaignPicture ? (
-                            <img
-                              className="h-12 w-12 rounded-full object-cover border-2 border-gray-200"
-                              src={`data:image/jpeg;base64,${candidate.campaignPicture}`}
-                              alt={candidate.fullName}
-                            />
-                          ) : (
-                            <div className="h-12 w-12 rounded-full bg-[#b0c8fe]/30 flex items-center justify-center border-2 border-gray-200">
-                              <UserCheck className="h-6 w-6 text-[#001f65]" />
-                            </div>
-                          )}
-                        </div>
-                      </td>
+  <div className="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center overflow-hidden">
+    {candidate.campaignPicture ? (
+      <img
+        src={candidate.campaignPicture.startsWith('data:') ? 
+          candidate.campaignPicture : 
+          `data:image/jpeg;base64,${candidate.campaignPicture}`}
+        alt={`${candidate.fullName} Campaign Picture`}
+        className="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+        onClick={() => handleImageView(candidate, 'campaign')}
+        title="Click to view campaign picture"
+      />
+    ) : (
+      <Image className="w-5 h-5 text-gray-400" />
+    )}
+  </div>
+</td>
 
                       {/* Candidate Info Column */}
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -1631,25 +1703,21 @@ export default function SSGCandidatesPage() {
                         {candidate.candidateNumber}
                       </td>
 
-                      {/* Files Column - NEW */}
+                      {/* Credentials Column - Enhanced like Platform */}
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center space-x-2">
-                          {candidate.hasCredentials && (
-                            <button
-                              onClick={() => handleCredentialsDownload(candidate)}
-                              className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50 transition-colors"
-                              title="Download credentials"
-                            >
-                              <FileText className="w-4 h-4" />
-                            </button>
-                          )}
-                          {candidate.hasCampaignPicture && (
-                            <span className="text-green-600 p-1" title="Has campaign picture">
-                              <Image className="w-4 h-4" />
-                            </span>
-                          )}
-                          {!candidate.hasCredentials && !candidate.hasCampaignPicture && (
-                            <span className="text-gray-400 text-xs">No files</span>
+                        <div className="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center overflow-hidden">
+                          {candidate.credentials ? (
+                            <img
+                              src={candidate.credentials.startsWith('data:') ? 
+                                candidate.credentials : 
+                                `data:image/jpeg;base64,${candidate.credentials}`}
+                              alt={`${candidate.fullName} Credentials`}
+                              className="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => handleImageView(candidate, 'credentials')}
+                              title="Click to view credentials"
+                            />
+                          ) : (
+                            <FileText className="w-5 h-5 text-gray-400" />
                           )}
                         </div>
                       </td>

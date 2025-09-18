@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Search, UserPlus, Edit, Trash2, Loader2 } from "lucide-react"
 import Swal from 'sweetalert2'
 import { usersAPI } from '@/lib/api/users'
@@ -13,6 +13,7 @@ export default function UsersPage() {
   const [editingUser, setEditingUser] = useState(null)
   const [showEditModal, setShowEditModal] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
+  const debounceTimeout = useRef(null)
 
   // Form state
   const [formData, setFormData] = useState({
@@ -27,7 +28,7 @@ export default function UsersPage() {
       icon: type,
       title: title,
       text: text,
-      confirmButtonColor: "#3B82F6",
+      confirmButtonColor: "#001f65",
     })
   }
 
@@ -47,22 +48,31 @@ export default function UsersPage() {
     fetchUsers()
   }, [])
 
+  // Debounced search logic for consistent UX with voters page
+  useEffect(() => {
+    if (debounceTimeout.current) clearTimeout(debounceTimeout.current)
+    debounceTimeout.current = setTimeout(() => {
+      // No backend search, filter on frontend
+      // If you implement backend search, call fetchUsers with searchTerm here
+    }, 400)
+    return () => {
+      if (debounceTimeout.current) clearTimeout(debounceTimeout.current)
+    }
+  }, [searchTerm])
+
   const fetchUsers = async () => {
     try {
       setLoading(true)
       const data = await usersAPI.getAll()
-      // Handle both array and object responses based on your API structure
       if (Array.isArray(data)) {
         setUsers(data)
       } else if (data.users && Array.isArray(data.users)) {
         setUsers(data.users)
       } else {
-        console.error("Unexpected data format:", data)
         setUsers([])
       }
       setError("")
     } catch (error) {
-      console.error("Fetch users error:", error)
       const errorMessage = error.response?.data?.message || error.message || "Failed to fetch users"
       setError(errorMessage)
       showAlert("error", "Error!", `Failed to fetch users: ${errorMessage}`)
@@ -98,7 +108,6 @@ export default function UsersPage() {
       resetForm()
       showAlert("success", "Success!", "User added successfully")
     } catch (error) {
-      console.error("Add user error:", error)
       const errorMessage = error.response?.data?.message || error.message || "Failed to add user"
       showAlert("error", "Error!", errorMessage)
     }
@@ -111,7 +120,6 @@ export default function UsersPage() {
       if (!updateData.password) {
         delete updateData.password // Don't update password if empty
       }
-
       const result = await usersAPI.update(editingUser._id, updateData)
       const updatedUser = result
       setUsers(users.map((user) => (user._id === editingUser._id ? updatedUser : user)))
@@ -120,7 +128,6 @@ export default function UsersPage() {
       resetForm()
       showAlert("success", "Success!", "User updated successfully")
     } catch (error) {
-      console.error("Update user error:", error)
       const errorMessage = error.response?.data?.message || error.message || "Failed to update user"
       showAlert("error", "Error!", errorMessage)
     }
@@ -131,7 +138,7 @@ export default function UsersPage() {
     setFormData({
       username: user.username,
       userType: user.userType,
-      password: "", // Don't pre-fill password
+      password: "",
       isActive: user.isActive,
     })
     setShowEditModal(true)
@@ -139,15 +146,12 @@ export default function UsersPage() {
 
   const handleDelete = async (userId) => {
     const confirmed = await showConfirm("Are you sure?", "You won't be able to revert this!", "Yes, delete it!")
-    
     if (!confirmed) return
-
     try {
       await usersAPI.delete(userId)
       setUsers(users.filter((user) => user._id !== userId))
       showAlert("success", "Deleted!", "User has been deleted successfully")
     } catch (error) {
-      console.error("Delete user error:", error)
       const errorMessage = error.response?.data?.message || error.message || "Failed to delete user"
       showAlert("error", "Error!", errorMessage)
     }
@@ -176,285 +180,333 @@ export default function UsersPage() {
 
   if (loading) {
     return (
-      <div className="text-center py-8">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto" />
-        <p className="mt-2 text-gray-600">Loading users...</p>
+      <div className="min-h-screen bg-transparent p-4 sm:p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-center p-8">
+            <Loader2 className="h-8 w-8 animate-spin text-[#001f65]" />
+            <span className="ml-2 text-[#001f65]">Loading users...</span>
+          </div>
+        </div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="text-center py-8">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 max-w-md mx-auto">
-          <p className="text-red-600 mb-4">{error}</p>
-          <button
-            onClick={fetchUsers}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-          >
-            Try Again
-          </button>
+      <div className="min-h-screen bg-transparent p-4 sm:p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="bg-red-50/90 backdrop-blur-sm border border-red-200 rounded-2xl p-4 flex items-start">
+            <div>
+              <p className="text-red-600 text-sm font-medium">Error Loading Data</p>
+              <p className="text-red-500 text-sm mt-1">{error}</p>
+              <button
+                onClick={fetchUsers}
+                className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+              >
+                Try Again
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b flex justify-between items-center">
-          <div className="flex-1 max-w-md">
+    <div className="min-h-screen bg-transparent p-4 sm:p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-4 sm:space-y-0">
+            <div>
+              <h1 className="text-2xl font-bold text-[#001f65] mb-2">User Management</h1>
+              <p className="text-[#001f65]/80">Manage system users and their roles</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Table */}
+        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 overflow-hidden">
+          <div className="p-6 border-b border-gray-200/50 flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
             <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <input
                 type="text"
                 placeholder="Search users by username or type..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
+                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent w-full lg:w-80"
               />
-              <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
             </div>
+            <button
+              onClick={() => {
+                resetForm()
+                setShowAddModal(true)
+              }}
+              className="w-full sm:w-auto px-4 py-2 bg-[#001f65] hover:bg-[#003399] text-white rounded-lg flex items-center gap-2 transition-colors"
+            >
+              <UserPlus className="w-4 h-4" />
+              Add New User
+            </button>
           </div>
-          <button
-            onClick={() => {
-              resetForm()
-              setShowAddModal(true)
-            }}
-            className="ml-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-          >
-            <UserPlus className="w-4 h-4" />
-            Add New User
-          </button>
-        </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full table-auto">
-            <thead>
-              <tr className="bg-gray-50">
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Username
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  User Type
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Created
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredUsers.map((user) => (
-                <tr key={user._id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{user.username}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getUserTypeColor(user.userType)}`}>
-                      {(user.userType || "").replace("_", " ").toUpperCase()}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        user.isActive ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
-                      }`}
-                    >
-                      {user.isActive ? "Active" : "Inactive"}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(user.createdAt).toLocaleDateString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleEdit(user)}
-                        className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-900 px-2 py-1 rounded hover:bg-indigo-50 transition-colors"
-                      >
-                        <Edit className="w-4 h-4" />
-                        <span>Edit</span>
-                      </button>
-                      <button
-                        onClick={() => handleDelete(user._id)}
-                        className="inline-flex items-center gap-1 text-red-600 hover:text-red-900 px-2 py-1 rounded hover:bg-red-50 transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        <span>Delete</span>
-                      </button>
-                    </div>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200/50">
+              <thead className="bg-[#b0c8fe]/10">
+                <tr>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                    Username
+                  </th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                    User Type
+                  </th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                    Created
+                  </th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {filteredUsers.length === 0 && !loading && (
-            <div className="text-center py-8">
-              <p className="text-gray-500">No users found matching your search criteria.</p>
-            </div>
-          )}
+              </thead>
+              <tbody className="bg-white/50 divide-y divide-gray-200/50">
+                {filteredUsers.map((user) => (
+                  <tr key={user._id} className="hover:bg-[#b0c8fe]/10">
+                    <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-[#001f65]">{user.username}</td>
+                    <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getUserTypeColor(user.userType)}`}>
+                        {(user.userType || "").replace("_", " ").toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm">
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${user.isActive ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                          }`}
+                      >
+                        {user.isActive ? "Active" : "Inactive"}
+                      </span>
+                    </td>
+                    <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm">
+                      {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : ""}
+                    </td>
+                    <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleEdit(user)}
+                          className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-sm flex items-center gap-1 transition-colors"
+                        >
+                          <Edit className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          onClick={() => handleDelete(user._id)}
+                          className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm flex items-center gap-1 transition-colors"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredUsers.length === 0 && !loading && (
+                  <tr>
+                    <td colSpan="5" className="px-3 sm:px-6 py-12 text-center text-[#001f65]/60">
+                      No users found matching your search criteria.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
 
-      {/* Add User Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Add New User</h3>
-            <form onSubmit={handleAddUser} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Username</label>
-                <input
-                  type="text"
-                  name="username"
-                  value={formData.username}
-                  onChange={handleInputChange}
-                  required
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Enter username"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">User Type</label>
-                <select
-                  name="userType"
-                  value={formData.userType}
-                  onChange={handleInputChange}
-                  required
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">Select user type</option>
-                  <option value="admin">Admin</option>
-                  <option value="election_committee">Election Committee</option>
-                  <option value="sao">SAO</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Password</label>
-                <input
-                  type="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  required
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Enter password"
-                />
-              </div>
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  name="isActive"
-                  checked={formData.isActive}
-                  onChange={handleInputChange}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label className="ml-2 block text-sm text-gray-900">Active User</label>
-              </div>
-              <div className="flex justify-end space-x-3 pt-4">
+        {/* Add User Modal */}
+        {showAddModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-white/20">
+              <div className="flex justify-between items-center p-6 border-b border-gray-200/50">
+                <h3 className="text-lg font-semibold text-[#001f65]">Add New User</h3>
                 <button
-                  type="button"
                   onClick={() => {
                     setShowAddModal(false)
                     resetForm()
                   }}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                  className="text-gray-400 hover:text-gray-600"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
-                >
-                  Add User
+                  <span className="sr-only">Close</span>&times;
                 </button>
               </div>
-            </form>
+              <div className="p-6">
+                <form onSubmit={handleAddUser} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-[#001f65] mb-1">Username</label>
+                    <input
+                      type="text"
+                      name="username"
+                      value={formData.username}
+                      onChange={handleInputChange}
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                      placeholder="Enter username"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#001f65] mb-1">User Type</label>
+                    <select
+                      name="userType"
+                      value={formData.userType}
+                      onChange={handleInputChange}
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                    >
+                      <option value="">Select user type</option>
+                      <option value="admin">Admin</option>
+                      <option value="election_committee">Election Committee</option>
+                      <option value="sao">SAO</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#001f65] mb-1">Password</label>
+                    <input
+                      type="password"
+                      name="password"
+                      value={formData.password}
+                      onChange={handleInputChange}
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                      placeholder="Enter password"
+                    />
+                  </div>
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      name="isActive"
+                      checked={formData.isActive}
+                      onChange={handleInputChange}
+                      className="h-4 w-4 text-[#001f65] focus:ring-[#001f65] border-gray-300 rounded"
+                    />
+                    <label className="ml-2 block text-sm text-[#001f65]">Active User</label>
+                  </div>
+                  <div className="flex justify-end space-x-3 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddModal(false)
+                        resetForm()
+                      }}
+                      className="w-full sm:w-auto px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="w-full sm:w-auto px-4 py-2 bg-[#001f65] text-white rounded-lg hover:bg-[#003399] focus:outline-none focus:ring-2 focus:ring-[#001f65] transition-colors"
+                    >
+                      Add User
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Edit User Modal */}
-      {showEditModal && editingUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Edit User</h3>
-            <form onSubmit={handleEditUser} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Username</label>
-                <input
-                  type="text"
-                  name="username"
-                  value={formData.username}
-                  onChange={handleInputChange}
-                  required
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">User Type</label>
-                <select
-                  name="userType"
-                  value={formData.userType}
-                  onChange={handleInputChange}
-                  required
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="admin">Admin</option>
-                  <option value="election_committee">Election Committee</option>
-                  <option value="sao">SAO</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  New Password (leave blank to keep current)
-                </label>
-                <input
-                  type="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Enter new password"
-                />
-              </div>
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  name="isActive"
-                  checked={formData.isActive}
-                  onChange={handleInputChange}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label className="ml-2 block text-sm text-gray-900">Active User</label>
-              </div>
-              <div className="flex justify-end space-x-3 pt-4">
+        {/* Edit User Modal */}
+        {showEditModal && editingUser && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-white/20">
+              <div className="flex justify-between items-center p-6 border-b border-gray-200/50">
+                <h3 className="text-lg font-semibold text-[#001f65]">Edit User</h3>
                 <button
-                  type="button"
                   onClick={() => {
                     setShowEditModal(false)
                     setEditingUser(null)
                     resetForm()
                   }}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                  className="text-gray-400 hover:text-gray-600"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors"
-                >
-                  Update User
+                  <span className="sr-only">Close</span>&times;
                 </button>
               </div>
-            </form>
+              <div className="p-6">
+                <form onSubmit={handleEditUser} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-[#001f65] mb-1">Username</label>
+                    <input
+                      type="text"
+                      name="username"
+                      value={formData.username}
+                      onChange={handleInputChange}
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#001f65] mb-1">User Type</label>
+                    <select
+                      name="userType"
+                      value={formData.userType}
+                      onChange={handleInputChange}
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                    >
+                      <option value="admin">Admin</option>
+                      <option value="election_committee">Election Committee</option>
+                      <option value="sao">SAO</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#001f65] mb-1">
+                      New Password (leave blank to keep current)
+                    </label>
+                    <input
+                      type="password"
+                      name="password"
+                      value={formData.password}
+                      onChange={handleInputChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                      placeholder="Enter new password"
+                    />
+                  </div>
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      name="isActive"
+                      checked={formData.isActive}
+                      onChange={handleInputChange}
+                      className="h-4 w-4 text-[#001f65] focus:ring-[#001f65] border-gray-300 rounded"
+                    />
+                    <label className="ml-2 block text-sm text-[#001f65]">Active User</label>
+                  </div>
+                  <div className="flex justify-end space-x-3 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowEditModal(false)
+                        setEditingUser(null)
+                        resetForm()
+                      }}
+                      className="w-full sm:w-auto px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="w-full sm:w-auto px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-600 transition-colors"
+                    >
+                      Update User
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

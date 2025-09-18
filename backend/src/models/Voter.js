@@ -48,6 +48,7 @@ const voterSchema = new mongoose.Schema(
       type: String,
       // required: true,
       unique: true,
+      sparse: true,
       trim: true,
       lowercase: true,
       match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Invalid email format'],

@@ -17,7 +17,7 @@ router.use(authMiddleware)
 router.get("/stats/summary", authorizeRoles("admin", "election_committee", "sao"), voterController.getStatistics)
 router.get("/stats/by-department", authorizeRoles("admin", "election_committee", "sao"), voterController.getStatisticsByDepartment)
 
-// Export routes
+// Export routes - FIXED: Add proper export endpoints
 router.get("/export/all", authorizeRoles("admin", "election_committee"), voterController.exportVoters)
 router.get("/export/registered", authorizeRoles("admin", "election_committee"), voterController.exportRegisteredVoters)
 

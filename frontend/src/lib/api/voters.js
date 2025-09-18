@@ -1,4 +1,3 @@
-
 import api from '../api'
 
 export const votersAPI = {
@@ -57,10 +56,35 @@ export const votersAPI = {
     }
   },
   
-  // Create voter
+  // Create voter - UPDATED: Remove required fields validation
   create: async (voterData) => {
     try {
-      const response = await api.post('/voters', voterData)
+      // Clean the data - only send fields that have values
+      const cleanedData = {
+        schoolId: voterData.schoolId,
+        firstName: voterData.firstName,
+        lastName: voterData.lastName,
+        departmentId: voterData.departmentId
+      }
+      
+      // Add optional fields only if they have values
+      if (voterData.middleName && voterData.middleName.trim()) {
+        cleanedData.middleName = voterData.middleName.trim()
+      }
+      
+      if (voterData.yearLevel) {
+        cleanedData.yearLevel = voterData.yearLevel
+      }
+      
+      if (voterData.email && voterData.email.trim()) {
+        cleanedData.email = voterData.email.trim()
+      }
+      
+      if (voterData.birthdate) {
+        cleanedData.birthdate = voterData.birthdate
+      }
+      
+      const response = await api.post('/voters', cleanedData)
       return response.data
     } catch (error) {
       console.error('Error creating voter:', error)
@@ -68,10 +92,46 @@ export const votersAPI = {
     }
   },
   
-  // Bulk create voters
+  // Bulk create voters - FIXED: Proper data structure
   bulkCreate: async (votersData) => {
     try {
-      const response = await api.post('/voters/bulk', votersData)
+      // Ensure we're sending the correct structure
+      const requestData = {
+        voters: Array.isArray(votersData) ? votersData : votersData.voters
+      }
+      
+      // Clean each voter's data
+      requestData.voters = requestData.voters.map(voter => {
+        const cleanedVoter = {
+          schoolId: voter.schoolId,
+          firstName: voter.firstName,
+          lastName: voter.lastName,
+          departmentId: voter.departmentId
+        }
+        
+        // Add optional fields only if they have values
+        if (voter.middleName && voter.middleName.trim()) {
+          cleanedVoter.middleName = voter.middleName.trim()
+        }
+        
+        if (voter.yearLevel) {
+          cleanedVoter.yearLevel = voter.yearLevel
+        }
+        
+        if (voter.email && voter.email.trim()) {
+          cleanedVoter.email = voter.email.trim()
+        }
+        
+        if (voter.birthdate) {
+          cleanedVoter.birthdate = voter.birthdate
+        }
+        
+        return cleanedVoter
+      })
+      
+      console.log('Sending bulk create request:', requestData)
+      
+      const response = await api.post('/voters/bulk', requestData)
       return response.data
     } catch (error) {
       console.error('Error bulk creating voters:', error)
@@ -79,10 +139,35 @@ export const votersAPI = {
     }
   },
   
-  // Update voter
+  // Update voter - UPDATED: Remove required fields validation
   update: async (id, voterData) => {
     try {
-      const response = await api.put(`/voters/${id}`, voterData)
+      // Clean the data - only send fields that have values
+      const cleanedData = {}
+      
+      if (voterData.schoolId) cleanedData.schoolId = voterData.schoolId
+      if (voterData.firstName) cleanedData.firstName = voterData.firstName
+      if (voterData.lastName) cleanedData.lastName = voterData.lastName
+      if (voterData.departmentId) cleanedData.departmentId = voterData.departmentId
+      
+      // Handle optional fields
+      if (voterData.middleName !== undefined) {
+        cleanedData.middleName = voterData.middleName?.trim() || null
+      }
+      
+      if (voterData.yearLevel) {
+        cleanedData.yearLevel = voterData.yearLevel
+      }
+      
+      if (voterData.email !== undefined) {
+        cleanedData.email = voterData.email?.trim() || null
+      }
+      
+      if (voterData.birthdate) {
+        cleanedData.birthdate = voterData.birthdate
+      }
+      
+      const response = await api.put(`/voters/${id}`, cleanedData)
       return response.data
     } catch (error) {
       console.error(`Error updating voter ${id}:`, error)
@@ -96,7 +181,6 @@ export const votersAPI = {
       const response = await api.put(`/voters/${id}/year-level`, { yearLevel })
       return response.data
     } catch (error) {
-      // Handle specific authorization errors
       if (error.response?.status === 403) {
         throw new Error('Only election committee members can update year levels')
       }
@@ -111,7 +195,6 @@ export const votersAPI = {
       const response = await api.put(`/voters/${id}/toggle-officer`)
       return response.data
     } catch (error) {
-      // Handle specific authorization errors
       if (error.response?.status === 403) {
         throw new Error('Only admin or election committee members can update officer status')
       }
@@ -208,28 +291,62 @@ export const votersAPI = {
     }
   },
 
-  // Export voters
+  // Export voters - FIXED: Proper blob handling for PDF/DOCX
   exportVoters: async (params = {}) => {
     try {
-      const response = await api.get('/voters/export/all', { 
-        params,
+      const queryParams = new URLSearchParams()
+      
+      if (params.format) queryParams.append('format', params.format)
+      if (params.department) queryParams.append('department', params.department)
+      if (params.yearLevel) queryParams.append('yearLevel', params.yearLevel)
+      if (params.search) queryParams.append('search', params.search)
+      
+      const response = await api.get(`/voters/export/all?${queryParams.toString()}`, {
         responseType: params.format === 'json' ? 'json' : 'blob'
       })
-      return response
+      
+      // If it's a blob (PDF/DOCX), return the blob
+      if (params.format === 'pdf' || params.format === 'docx') {
+        return {
+          data: response.data,
+          headers: response.headers,
+          status: response.status
+        }
+      }
+      
+      // If it's JSON, return the data
+      return response.data
     } catch (error) {
       console.error('Error exporting voters:', error)
       throw error
     }
   },
 
-  // Export registered voters
+  // Export registered voters - FIXED: Proper blob handling for PDF/DOCX
   exportRegisteredVoters: async (params = {}) => {
     try {
-      const response = await api.get('/voters/export/registered', { 
-        params,
+      const queryParams = new URLSearchParams()
+      
+      if (params.format) queryParams.append('format', params.format)
+      if (params.department) queryParams.append('department', params.department)
+      if (params.yearLevel) queryParams.append('yearLevel', params.yearLevel)
+      if (params.search) queryParams.append('search', params.search)
+      
+      const response = await api.get(`/voters/export/registered?${queryParams.toString()}`, {
         responseType: params.format === 'json' ? 'json' : 'blob'
       })
-      return response
+      
+      // If it's a blob (PDF/DOCX), return the blob
+      if (params.format === 'pdf' || params.format === 'docx') {
+        return {
+          data: response.data,
+          headers: response.headers,
+          status: response.status
+        }
+      }
+      
+      // If it's JSON, return the data
+      return response.data
     } catch (error) {
       console.error('Error exporting registered voters:', error)
       throw error
@@ -258,10 +375,11 @@ export const votersAPI = {
     }
   },
 
-  // Validate voter data before submission
+  // Validate voter data before submission - UPDATED: Remove required validation for optional fields
   validateVoterData: (voterData) => {
     const errors = []
     
+    // Only validate truly required fields
     if (!voterData.schoolId) {
       errors.push('School ID is required')
     } else if (isNaN(Number(voterData.schoolId))) {
@@ -280,13 +398,12 @@ export const votersAPI = {
       errors.push('Department is required')
     }
     
-    if (!voterData.yearLevel) {
-      errors.push('Year level is required')
-    } else if (![1, 2, 3, 4].includes(Number(voterData.yearLevel))) {
+    // Optional field validations - only validate if provided
+    if (voterData.yearLevel && ![1, 2, 3, 4].includes(Number(voterData.yearLevel))) {
       errors.push('Year level must be between 1 and 4')
     }
     
-    if (voterData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(voterData.email)) {
+    if (voterData.email && voterData.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(voterData.email)) {
       errors.push('Invalid email format')
     }
     
@@ -296,7 +413,7 @@ export const votersAPI = {
     }
   },
 
-  // Validate bulk voter data
+  // Validate bulk voter data - UPDATED: Use new validation rules
   validateBulkVoterData: (votersData) => {
     if (!Array.isArray(votersData)) {
       return {
@@ -329,6 +446,34 @@ export const votersAPI = {
       isValid: !hasErrors && globalErrors.length === 0,
       errors: globalErrors,
       validationResults
+    }
+  },
+
+  // Helper function to download exported file
+  downloadExportedFile: (response, filename, format = 'pdf') => {
+    try {
+      let mimeType = 'application/pdf'
+      let extension = 'pdf'
+      
+      if (format === 'docx') {
+        mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        extension = 'docx'
+      }
+      
+      const blob = new Blob([response.data], { type: mimeType })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${filename}.${extension}`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      
+      return true
+    } catch (error) {
+      console.error('Error downloading file:', error)
+      return false
     }
   }
 }

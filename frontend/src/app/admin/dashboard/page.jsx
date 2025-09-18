@@ -172,7 +172,7 @@ export default function AdminDashboard() {
       title: "Support Messages",
       value: dashboardData?.totalMessages || dashboardData?.supportRequests || dashboardData?.totalSupportRequests || 0,
       color: "rose",
-      path: "/admin/support",
+      path: "/admin/messages",
       icon: <MessageCircle className="w-8 h-8 sm:w-10 md:w-12" />
     },
     {
