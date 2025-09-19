@@ -150,7 +150,7 @@ candidateSchema.methods.getDisplayInfo = function() {
 // UPDATED: Format candidate for display (removed platform, added hasCredentials)
 candidateSchema.methods.formatForDisplay = function() {
   return {
-    id: this._id,
+    _id: this._id,
     candidateNumber: this.candidateNumber,
     name: this.getDisplayName(),
     schoolId: this.populated('voterId') ? this.voterId.schoolId : null,
@@ -162,7 +162,8 @@ candidateSchema.methods.formatForDisplay = function() {
     yearLevel: this.populated('voterId') ? this.voterId.yearLevel : null,
     electionType: this.electionType,
     isActive: this.isActive,
-    hasCampaignPicture: this.hasCampaignPicture()
+    hasCampaignPicture: !!this.campaignPicture && this.campaignPicture.length > 0,
+    hasCredentials: !!this.credentials && this.credentials.length > 0,
   }
 }
 

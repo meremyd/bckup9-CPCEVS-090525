@@ -369,7 +369,7 @@ export default function SSGCandidatesPage() {
       // Process candidates data with enhanced normalization
       const processedCandidates = candidatesData.map((candidate, index) => {
         const processedCandidate = {
-          _id: candidate._id || `candidate-${index}`,
+          _id: candidate._id ,
           candidateNumber: candidate.candidateNumber || 'N/A',
           isActive: candidate.isActive !== false,
           
@@ -818,59 +818,69 @@ export default function SSGCandidatesPage() {
   }
 
   const handleFormSubmit = async (e) => {
-    e.preventDefault()
-    
-    // Enhanced validation
-    const validationErrors = validateForm()
-    if (validationErrors.length > 0) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Validation Error',
-        text: validationErrors[0], // Show first error
-        confirmButtonColor: '#001f65'
-      })
-      return
-    }
+  e.preventDefault();
 
-    setFormLoading(true)
-
-    try {
-      const submitData = {
-        ...formData,
-        ssgElectionId: ssgElectionId
-      }
-
-      // Convert data URLs to base64 for API submission
-      if (submitData.campaignPicture && submitData.campaignPicture.startsWith('data:')) {
-        submitData.campaignPicture = submitData.campaignPicture.split(',')[1]
-      }
-      
-      if (submitData.credentials && submitData.credentials.startsWith('data:')) {
-        submitData.credentials = submitData.credentials.split(',')[1]
-      }
-
-      // Remove empty partylistId to make candidate independent
-      if (!submitData.partylistId) {
-        delete submitData.partylistId
-      }
-
-      if (editingCandidate) {
-        await candidatesAPI.ssg.update(editingCandidate._id, submitData)
-        showSuccessAlert('Candidate updated successfully!')
-      } else {
-        await candidatesAPI.ssg.create(submitData)
-        showSuccessAlert('Candidate added successfully!')
-      }
-
-      await fetchData() // Refresh data
-      setShowAddForm(false)
-    } catch (error) {
-      console.error('Error saving candidate:', error)
-      showErrorAlert(error)
-    } finally {
-      setFormLoading(false)
-    }
+  // Enhanced validation
+  const validationErrors = validateForm();
+  if (validationErrors.length > 0) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Validation Error',
+      text: validationErrors[0], // Show first error
+      confirmButtonColor: '#001f65'
+    });
+    return;
   }
+
+  setFormLoading(true);
+
+  try {
+    // Remove campaignPicture from main submission
+    const submitData = {
+      ...formData,
+      ssgElectionId: ssgElectionId
+    };
+    delete submitData.campaignPicture;
+
+    // Convert credentials (if present) to base64 for API submission
+    if (submitData.credentials && submitData.credentials.startsWith('data:')) {
+      submitData.credentials = submitData.credentials.split(',')[1];
+    }
+
+    // Remove empty partylistId to make candidate independent
+    if (!submitData.partylistId) {
+      delete submitData.partylistId;
+    }
+
+    let candidateId;
+
+    if (editingCandidate) {
+      // Update candidate
+      await candidatesAPI.ssg.update(editingCandidate._id, submitData);
+      candidateId = editingCandidate._id;
+      showSuccessAlert('Candidate updated successfully!');
+    } else {
+      // Create candidate
+      const response = await candidatesAPI.ssg.create(submitData);
+      // Adjust this according to your API response structure
+      candidateId = response?.data?.data?._id || response?.data?._id || response?._id;
+      showSuccessAlert('Candidate added successfully!');
+    }
+
+    // Upload campaign picture if present and is a data URL
+    if (formData.campaignPicture && formData.campaignPicture.startsWith('data:')) {
+      await candidatesAPI.uploadCampaignPicture(candidateId, formData.campaignPicture);
+    }
+
+    await fetchData(); // Refresh data
+    setShowAddForm(false);
+  } catch (error) {
+    console.error('Error saving candidate:', error);
+    showErrorAlert(error);
+  } finally {
+    setFormLoading(false);
+  }
+};
 
   // Enhanced filtering with proper ID matching
   const filteredCandidates = ssgCandidates.filter(candidate => {
@@ -980,6 +990,42 @@ export default function SSGCandidatesPage() {
     return options
   }
 
+  const handleCampaignPicturePreview = async (candidate) => {
+  try {
+    const blob = await candidatesAPI.getCampaignPicture(candidate._id);
+    console.log('Blob:', blob);
+    console.log('Blob type:', blob.type);
+    console.log('Blob size:', blob.size);
+
+    // Try to display the blob in a new tab to test
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank'); // This will open the image in a new tab
+
+    Swal.fire({
+      title: `${candidate.fullName} - Campaign Picture`,
+      imageUrl: url,
+      imageAlt: `${candidate.fullName} Campaign Picture`,
+      showCloseButton: true,
+      showConfirmButton: false,
+      width: 'auto',
+      customClass: {
+        popup: 'max-w-4xl',
+        image: 'max-h-96 w-auto object-contain'
+      },
+      didClose: () => {
+        URL.revokeObjectURL(url); // Clean up
+      }
+    });
+  } catch (error) {
+    Swal.fire({
+      icon: 'info',
+      title: 'No Image Available',
+      text: `No campaign picture has been uploaded for ${candidate.fullName}.`,
+      confirmButtonColor: '#001f65'
+    });
+  }
+};
+
   // Handle image preview and view - Updated for both campaign picture and credentials
   const handleImageView = (candidate, imageType) => {
   const imageData = imageType === 'campaign' ? candidate.campaignPicture : candidate.credentials
@@ -993,7 +1039,6 @@ export default function SSGCandidatesPage() {
       imageUrl = imageData
     } else {
       // Raw base64 data - convert to proper data URL
-      // The data starting with "LzlqL..." is base64 encoded "/9j/" which is JPEG signature
       imageUrl = `data:image/jpeg;base64,${imageData}`
     }
     
@@ -1181,7 +1226,7 @@ export default function SSGCandidatesPage() {
                               </p>
                             ) : (
                               <p className="text-blue-700 text-xs mt-1">
-                                ℹ️ Not registered (can still be a candidate)
+                                ℹ️ Not registered 
                               </p>
                             )}
                           </div>
@@ -1646,10 +1691,16 @@ export default function SSGCandidatesPage() {
         className="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
         onClick={() => handleImageView(candidate, 'campaign')}
         title="Click to view campaign picture"
+        onError={(e) => {
+          // Hide broken image and show placeholder
+          e.target.style.display = 'none'
+          e.target.nextElementSibling.style.display = 'flex'
+        }}
       />
-    ) : (
-      <Image className="w-5 h-5 text-gray-400" />
-    )}
+    ) : null}
+    <Image 
+      className={`w-5 h-5 text-gray-400 ${candidate.campaignPicture ? 'hidden' : 'flex'}`} 
+    />
   </div>
 </td>
 

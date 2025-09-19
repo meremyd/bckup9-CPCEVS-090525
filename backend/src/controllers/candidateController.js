@@ -1347,6 +1347,10 @@ static async checkCandidateEligibility(req, res, next) {
         req
       )
 
+      console.log("Raw campaignPicture input:", typeof campaignPicture, campaignPicture.substring(0, 100));
+console.log("Buffer length:", pictureBuffer.length);
+console.log("First bytes:", pictureBuffer.slice(0, 10));
+
       res.json({
         success: true,
         data: {
