@@ -15,7 +15,8 @@ import {
   XCircle,
   Edit,
   Loader2,
-  Building2
+  Building2,
+  Vote
 } from "lucide-react"
 
 export default function SSGStatusPage() {
@@ -29,12 +30,56 @@ export default function SSGStatusPage() {
     electionYear: new Date().getFullYear(),
     title: '',
     status: 'upcoming',
-    electionDate: ''
+    electionDate: '',
+    ballotOpenTime: '',
+    ballotCloseTime: ''
   })
 
   const router = useRouter()
   const searchParams = useSearchParams()
   const ssgElectionId = searchParams.get('ssgElectionId')
+
+  // Helper function to format time for display (24-hour to 12-hour)
+  const formatTimeDisplay = (time24) => {
+    if (!time24) return 'Not set'
+    
+    try {
+      const [hours, minutes] = time24.split(':').map(Number)
+      const period = hours >= 12 ? 'PM' : 'AM'
+      const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
+      
+      return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`
+    } catch (error) {
+      return 'Invalid time'
+    }
+  }
+
+  // Helper function to validate time format and relationship
+  const validateBallotTimes = (openTime, closeTime) => {
+    if (!openTime || !closeTime) return { isValid: true }
+
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
+    
+    if (!timeRegex.test(openTime)) {
+      return { isValid: false, error: 'Ballot open time must be in HH:MM format (e.g., 08:00)' }
+    }
+    
+    if (!timeRegex.test(closeTime)) {
+      return { isValid: false, error: 'Ballot close time must be in HH:MM format (e.g., 17:00)' }
+    }
+
+    const [openHours, openMinutes] = openTime.split(':').map(Number)
+    const [closeHours, closeMinutes] = closeTime.split(':').map(Number)
+    
+    const openTimeInMinutes = openHours * 60 + openMinutes
+    const closeTimeInMinutes = closeHours * 60 + closeMinutes
+    
+    if (closeTimeInMinutes <= openTimeInMinutes) {
+      return { isValid: false, error: 'Ballot close time must be after ballot open time' }
+    }
+
+    return { isValid: true }
+  }
 
   useEffect(() => {
     const token = localStorage.getItem("token")
@@ -57,15 +102,11 @@ export default function SSGStatusPage() {
       return
     }
 
-    console.log('ssgElectionId from URL:', ssgElectionId)
-
     if (ssgElectionId) {
-      // Try to get from localStorage first
       const storedElection = localStorage.getItem('selectedSSGElection')
       if (storedElection) {
         try {
           const parsed = JSON.parse(storedElection)
-          console.log('Stored election:', parsed)
           if (parsed._id === ssgElectionId || parsed.id === ssgElectionId) {
             setElection(parsed)
             setFormData({
@@ -74,7 +115,9 @@ export default function SSGStatusPage() {
               title: parsed.title || '',
               status: parsed.status || 'upcoming',
               electionDate: parsed.electionDate ? 
-                new Date(parsed.electionDate).toISOString().slice(0, 16) : ''
+                new Date(parsed.electionDate).toISOString().slice(0, 10) : '',
+              ballotOpenTime: parsed.ballotOpenTime || '',
+              ballotCloseTime: parsed.ballotCloseTime || ''
             })
             return
           }
@@ -96,7 +139,6 @@ export default function SSGStatusPage() {
       
       const response = await ssgElectionsAPI.getById(ssgElectionId)
       
-      // Handle different response structures
       let electionData
       if (response.success && response.data) {
         electionData = response.data
@@ -110,14 +152,15 @@ export default function SSGStatusPage() {
       
       setElection(electionData)
       
-      // Initialize form data with fetched election data
       setFormData({
         ssgElectionId: electionData.ssgElectionId || '',
         electionYear: electionData.electionYear || new Date().getFullYear(),
         title: electionData.title || '',
         status: electionData.status || 'upcoming',
         electionDate: electionData.electionDate ? 
-          new Date(electionData.electionDate).toISOString().slice(0, 16) : ''
+          new Date(electionData.electionDate).toISOString().slice(0, 10) : '',
+        ballotOpenTime: electionData.ballotOpenTime || '',
+        ballotCloseTime: electionData.ballotCloseTime || ''
       })
       
     } catch (error) {
@@ -134,7 +177,6 @@ export default function SSGStatusPage() {
       
       setError(errorMessage)
       
-      // Show error with SweetAlert
       Swal.fire({
         icon: 'error',
         title: 'Error Loading Election',
@@ -145,22 +187,17 @@ export default function SSGStatusPage() {
   }
 
   const updateElectionData = (updatedData) => {
-    // Update the local state
     setElection(updatedData)
     
-    // Update localStorage if it exists
     const storedElection = localStorage.getItem('selectedSSGElection')
     if (storedElection) {
       localStorage.setItem('selectedSSGElection', JSON.stringify(updatedData))
     }
     
-    // Broadcast the update to other components/tabs that might be listening
-    // This helps with real-time updates across the application
     window.dispatchEvent(new CustomEvent('electionUpdated', { 
       detail: { electionId: ssgElectionId, updatedData } 
     }))
     
-    // Update any cached data that might exist
     if (window.ssgElectionCache) {
       window.ssgElectionCache[ssgElectionId] = updatedData
     }
@@ -172,7 +209,7 @@ export default function SSGStatusPage() {
       setError('')
       setSuccess('')
 
-      // Validate form data
+      // Validation
       if (!formData.ssgElectionId.trim()) {
         throw new Error('SSG Election ID is required')
       }
@@ -183,9 +220,25 @@ export default function SSGStatusPage() {
         throw new Error('Election date is required')
       }
 
-      const response = await ssgElectionsAPI.update(ssgElectionId, formData)
+      // Validate ballot times
+      const timeValidation = validateBallotTimes(formData.ballotOpenTime, formData.ballotCloseTime)
+      if (!timeValidation.isValid) {
+        throw new Error(timeValidation.error)
+      }
+
+      // Prepare update data
+      const updatePayload = {
+        ssgElectionId: formData.ssgElectionId,
+        electionYear: formData.electionYear,
+        title: formData.title,
+        status: formData.status,
+        electionDate: formData.electionDate,
+        ballotOpenTime: formData.ballotOpenTime || null,
+        ballotCloseTime: formData.ballotCloseTime || null
+      }
+
+      const response = await ssgElectionsAPI.update(ssgElectionId, updatePayload)
       
-      // Handle different response structures and get the updated election data
       let updatedElectionData
       if (response.success && response.data) {
         updatedElectionData = response.data
@@ -194,7 +247,6 @@ export default function SSGStatusPage() {
       } else if (response._id || response.ssgElectionId) {
         updatedElectionData = response
       } else {
-        // If the response doesn't contain the updated data, fetch it again
         const freshData = await ssgElectionsAPI.getById(ssgElectionId)
         if (freshData.success && freshData.data) {
           updatedElectionData = freshData.data
@@ -205,25 +257,24 @@ export default function SSGStatusPage() {
         }
       }
       
-      // Use the new update function to ensure all references are updated
       if (updatedElectionData) {
         updateElectionData(updatedElectionData)
         
-        // Also update formData to reflect the saved changes
         setFormData({
           ssgElectionId: updatedElectionData.ssgElectionId || '',
           electionYear: updatedElectionData.electionYear || new Date().getFullYear(),
           title: updatedElectionData.title || '',
           status: updatedElectionData.status || 'upcoming',
           electionDate: updatedElectionData.electionDate ? 
-            new Date(updatedElectionData.electionDate).toISOString().slice(0, 16) : ''
+            new Date(updatedElectionData.electionDate).toISOString().slice(0, 10) : '',
+          ballotOpenTime: updatedElectionData.ballotOpenTime || '',
+          ballotCloseTime: updatedElectionData.ballotCloseTime || ''
         })
       }
       
       setIsEditing(false)
       setSuccess('Election updated successfully!')
       
-      // Show success with SweetAlert
       Swal.fire({
         icon: 'success',
         title: 'Success!',
@@ -234,7 +285,6 @@ export default function SSGStatusPage() {
         position: 'top-end'
       })
       
-      // Clear success message after 3 seconds
       setTimeout(() => setSuccess(''), 3000)
       
     } catch (error) {
@@ -249,7 +299,6 @@ export default function SSGStatusPage() {
       
       setError(errorMessage)
       
-      // Show error with SweetAlert
       Swal.fire({
         icon: 'error',
         title: 'Update Failed',
@@ -262,7 +311,6 @@ export default function SSGStatusPage() {
   }
 
   const handleCancel = () => {
-    // Show confirmation dialog
     Swal.fire({
       title: 'Cancel Editing?',
       text: 'Any unsaved changes will be lost.',
@@ -274,7 +322,6 @@ export default function SSGStatusPage() {
       cancelButtonText: 'Continue editing'
     }).then((result) => {
       if (result.isConfirmed) {
-        // Reset form data to original election data
         if (election) {
           setFormData({
             ssgElectionId: election.ssgElectionId || '',
@@ -282,7 +329,9 @@ export default function SSGStatusPage() {
             title: election.title || '',
             status: election.status || 'upcoming',
             electionDate: election.electionDate ? 
-              new Date(election.electionDate).toISOString().slice(0, 16) : ''
+              new Date(election.electionDate).toISOString().slice(0, 10) : '',
+            ballotOpenTime: election.ballotOpenTime || '',
+            ballotCloseTime: election.ballotCloseTime || ''
           })
         }
         setIsEditing(false)
@@ -321,6 +370,21 @@ export default function SSGStatusPage() {
     }
   }
 
+  const getBallotStatusColor = (ballotStatus) => {
+    switch (ballotStatus?.toLowerCase()) {
+      case 'open':
+        return 'bg-green-500/20 text-green-700 border-green-300'
+      case 'scheduled':
+        return 'bg-yellow-500/20 text-yellow-700 border-yellow-300'
+      case 'closed':
+        return 'bg-red-500/20 text-red-700 border-red-300'
+      case 'not_scheduled':
+        return 'bg-gray-500/20 text-gray-700 border-gray-300'
+      default:
+        return 'bg-gray-500/20 text-gray-700 border-gray-300'
+    }
+  }
+
   const formatDate = (dateString) => {
     if (!dateString) return 'Not set'
     
@@ -328,12 +392,22 @@ export default function SSGStatusPage() {
       return new Date(dateString).toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+        day: 'numeric'
       })
     } catch (error) {
       return 'Invalid date'
+    }
+  }
+
+  const formatBallotDateTime = (date, time) => {
+    if (!date || !time) return 'Not set'
+    
+    try {
+      const dateStr = formatDate(date)
+      const timeStr = formatTimeDisplay(time)
+      return `${dateStr} at ${timeStr}`
+    } catch (error) {
+      return 'Invalid date/time'
     }
   }
 
@@ -369,7 +443,6 @@ export default function SSGStatusPage() {
       subtitle="Status Configuration"
       activeItem="status"
     >
-      {/* Status Cards and Form */}
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Status Overview Card */}
         <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
@@ -390,14 +463,12 @@ export default function SSGStatusPage() {
 
           {election && (
             <>
-             {/* Election Title Display */}
               <div className="bg-[#b0c8fe]/10 rounded-lg p-4 mb-6">
                 <h3 className="text-lg font-semibold text-[#001f65] mb-2">Election Title</h3>
                 <p className="text-[#001f65]/80">{election.title || 'No title set'}</p>
               </div>
               
-              {/* Quick Info Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                 <div className="bg-[#b0c8fe]/20 rounded-lg p-4">
                   <div className="flex items-center text-[#001f65] mb-2">
                     <Building2 className="w-5 h-5 mr-2" />
@@ -416,18 +487,53 @@ export default function SSGStatusPage() {
 
                 <div className="bg-[#b0c8fe]/20 rounded-lg p-4">
                   <div className="flex items-center text-[#001f65] mb-2">
-                    <Clock className="w-5 h-5 mr-2" />
+                    <Calendar className="w-5 h-5 mr-2" />
                     <span className="font-medium">Election Date</span>
                   </div>
                   <p className="text-sm text-[#001f65]/80">
                     {formatDate(election.electionDate)}
                   </p>
                 </div>
+
+                <div className="bg-[#b0c8fe]/20 rounded-lg p-4">
+                  <div className="flex items-center text-[#001f65] mb-2">
+                    <Clock className="w-5 h-5 mr-2" />
+                    <span className="font-medium">Ballot Opens</span>
+                  </div>
+                  <p className="text-sm text-[#001f65]/80">
+                    {election.ballotOpenTime ? 
+                      formatBallotDateTime(election.electionDate, election.ballotOpenTime) : 
+                      'Not scheduled'
+                    }
+                  </p>
+                </div>
+
+                <div className="bg-[#b0c8fe]/20 rounded-lg p-4">
+                  <div className="flex items-center text-[#001f65] mb-2">
+                    <Clock className="w-5 h-5 mr-2" />
+                    <span className="font-medium">Ballot Closes</span>
+                  </div>
+                  <p className="text-sm text-[#001f65]/80">
+                    {election.ballotCloseTime ? 
+                      formatBallotDateTime(election.electionDate, election.ballotCloseTime) : 
+                      'Not scheduled'
+                    }
+                  </p>
+                </div>
+
+                <div className="bg-[#b0c8fe]/20 rounded-lg p-4">
+                  <div className="flex items-center text-[#001f65] mb-2">
+                    <Vote className="w-5 h-5 mr-2" />
+                    <span className="font-medium">Ballot Status</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getBallotStatusColor(election.ballotStatus)}`}>
+                      {election.ballotStatus?.replace('_', ' ').toUpperCase() || 'NOT SCHEDULED'}
+                    </span>
+                  </div>
+                </div>
               </div>
 
-             
-
-              {/* Action Button */}
               <div className="flex justify-end">
                 {!isEditing ? (
                   <button
@@ -464,7 +570,7 @@ export default function SSGStatusPage() {
           )}
         </div>
 
-        {/* Alerts - Only show if not using SweetAlert for the same purpose */}
+        {/* Alerts */}
         {error && !isEditing && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center">
             <AlertCircle className="w-5 h-5 text-red-500 mr-3 flex-shrink-0" />
@@ -553,13 +659,52 @@ export default function SSGStatusPage() {
                   Election Date *
                 </label>
                 <input
-                  type="datetime-local"
+                  type="date"
                   required
                   value={formData.electionDate}
                   onChange={(e) => setFormData(prev => ({ ...prev, electionDate: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
                 />
               </div>
+
+              {/* FIXED: Using time input instead of datetime-local */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Ballot Open Time
+                </label>
+                <input
+                  type="time"
+                  value={formData.ballotOpenTime}
+                  onChange={(e) => setFormData(prev => ({ ...prev, ballotOpenTime: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  What time voting opens on the election date (24-hour format, e.g., 08:00)
+                </p>
+              </div>
+
+              {/* FIXED: Using time input instead of datetime-local */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Ballot Close Time
+                </label>
+                <input
+                  type="time"
+                  value={formData.ballotCloseTime}
+                  onChange={(e) => setFormData(prev => ({ ...prev, ballotCloseTime: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  What time voting ends on the election date (24-hour format, e.g., 17:00)
+                </p>
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center">
+                  <AlertCircle className="w-5 h-5 text-red-500 mr-2 flex-shrink-0" />
+                  <p className="text-red-700 text-sm">{error}</p>
+                </div>
+              )}
             </div>
           </div>
         )}

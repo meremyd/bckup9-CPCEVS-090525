@@ -47,10 +47,55 @@ export default function SSGPage() {
     electionYear: new Date().getFullYear(),
     title: '',
     status: 'upcoming',
-    electionDate: ''
+    electionDate: '',
+    ballotOpenTime: '',
+    ballotCloseTime: ''
   })
+
   const [error, setError] = useState('')
   const router = useRouter()
+
+  // Helper function to format time for display (24-hour to 12-hour)
+  const formatTimeDisplay = (time24) => {
+    if (!time24) return 'Not set'
+    
+    try {
+      const [hours, minutes] = time24.split(':').map(Number)
+      const period = hours >= 12 ? 'PM' : 'AM'
+      const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
+      
+      return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`
+    } catch (error) {
+      return 'Invalid time'
+    }
+  }
+
+  // Helper function to validate time format and relationship
+  const validateBallotTimes = (openTime, closeTime) => {
+    if (!openTime || !closeTime) return { isValid: true }
+
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
+    
+    if (!timeRegex.test(openTime)) {
+      return { isValid: false, error: 'Ballot open time must be in HH:MM format (e.g., 08:00)' }
+    }
+    
+    if (!timeRegex.test(closeTime)) {
+      return { isValid: false, error: 'Ballot close time must be in HH:MM format (e.g., 17:00)' }
+    }
+
+    const [openHours, openMinutes] = openTime.split(':').map(Number)
+    const [closeHours, closeMinutes] = closeTime.split(':').map(Number)
+    
+    const openTimeInMinutes = openHours * 60 + openMinutes
+    const closeTimeInMinutes = closeHours * 60 + closeMinutes
+    
+    if (closeTimeInMinutes <= openTimeInMinutes) {
+      return { isValid: false, error: 'Ballot close time must be after ballot open time' }
+    }
+
+    return { isValid: true }
+  }
 
   useEffect(() => {
     const token = localStorage.getItem("token")
@@ -98,7 +143,6 @@ export default function SSGPage() {
     }
   }
 
-  // Enhanced fetchCardCounts function using proper SSG API endpoints
   const fetchCardCounts = async () => {
     if (!selectedElection) {
       console.log('No selected election, skipping count fetch')
@@ -122,22 +166,18 @@ export default function SSGPage() {
         ballots: 0
       }
 
-      // Helper function to safely extract count from response
       const extractCount = (response, fallbackKeys = ['length', 'total', 'count']) => {
         console.log('Extracting count from:', response)
         
-        // If response is an array, return its length
         if (Array.isArray(response)) {
           return response.length
         }
         
-        // If response has data property
         if (response?.data) {
           if (Array.isArray(response.data)) {
             return response.data.length
           }
           
-          // Check for count in data object
           for (const key of fallbackKeys) {
             if (response.data[key] !== undefined) {
               return Number(response.data[key]) || 0
@@ -145,7 +185,6 @@ export default function SSGPage() {
           }
         }
         
-        // Check for count in summary
         if (response?.summary) {
           for (const key of fallbackKeys) {
             if (response.summary[key] !== undefined) {
@@ -154,7 +193,6 @@ export default function SSGPage() {
           }
         }
         
-        // Check for count in root response
         for (const key of fallbackKeys) {
           if (response?.[key] !== undefined) {
             return Number(response[key]) || 0
@@ -164,39 +202,32 @@ export default function SSGPage() {
         return 0
       }
 
-      // Fetch all counts in parallel for better performance
       const fetchPromises = [
-        // Fetch candidates
         ssgElectionsAPI.getCandidates(ssgElectionId).catch(error => {
           console.error('Failed to fetch candidates:', error)
           return { data: [], summary: { totalCandidates: 0 } }
         }),
         
-        // Fetch positions
         ssgElectionsAPI.getPositions(ssgElectionId).catch(error => {
           console.error('Failed to fetch positions:', error)
           return { data: [], summary: { totalPositions: 0 } }
         }),
         
-        // Fetch partylists
         ssgElectionsAPI.getPartylists(ssgElectionId).catch(error => {
           console.error('Failed to fetch partylists:', error)
           return { data: [], summary: { totalPartylists: 0 } }
         }),
         
-        // Fetch voter participants
         ssgElectionsAPI.getVoterParticipants(ssgElectionId, { limit: 1 }).catch(error => {
           console.error('Failed to fetch participants:', error)
           return { data: [], summary: { totalRegisteredVoters: 0 } }
         }),
         
-        // Fetch voter turnout
         ssgElectionsAPI.getVoterTurnout(ssgElectionId).catch(error => {
           console.error('Failed to fetch turnout:', error)
           return { data: { overall: { turnoutPercentage: 0 } } }
         }),
         
-        // Fetch ballots
         ssgElectionsAPI.getBallots(ssgElectionId, { limit: 1 }).catch(error => {
           console.error('Failed to fetch ballots:', error)
           return { data: [], statistics: { totalBallots: 0 } }
@@ -213,40 +244,26 @@ export default function SSGPage() {
         ballotsResponse
       ] = await Promise.all(fetchPromises)
 
-      console.log('API Responses:', {
-        candidates: candidatesResponse,
-        positions: positionsResponse,
-        partylists: partylistsResponse,
-        participants: participantsResponse,
-        turnout: turnoutResponse,
-        ballots: ballotsResponse
-      })
-
-      // Extract candidates count
       counts.candidates = extractCount(candidatesResponse, ['totalCandidates', 'total', 'length', 'count'])
       if (candidatesResponse?.data?.candidates) {
         counts.candidates = candidatesResponse.data.candidates.length
       }
 
-      // Extract positions count
       counts.positions = extractCount(positionsResponse, ['totalPositions', 'total', 'length', 'count'])
       if (positionsResponse?.data?.positions) {
         counts.positions = positionsResponse.data.positions.length
       }
 
-      // Extract partylists count
       counts.partylists = extractCount(partylistsResponse, ['totalPartylists', 'total', 'length', 'count'])
       if (partylistsResponse?.data?.partylists) {
         counts.partylists = partylistsResponse.data.partylists.length
       }
 
-      // Extract participants count
       counts.participants = extractCount(participantsResponse, ['totalRegisteredVoters', 'totalItems', 'total', 'count'])
       if (participantsResponse?.data?.summary?.totalRegisteredVoters) {
         counts.participants = participantsResponse.data.summary.totalRegisteredVoters
       }
 
-      // Extract turnout percentage
       if (turnoutResponse?.data?.overall?.turnoutPercentage) {
         counts.turnout = Math.round(Number(turnoutResponse.data.overall.turnoutPercentage))
       } else if (turnoutResponse?.data?.turnoutPercentage) {
@@ -255,7 +272,6 @@ export default function SSGPage() {
         counts.turnout = 0
       }
 
-      // Extract ballots count
       counts.ballots = extractCount(ballotsResponse, ['totalBallots', 'totalItems', 'total', 'count'])
       if (ballotsResponse?.data?.statistics?.totalBallots) {
         counts.ballots = ballotsResponse.data.statistics.totalBallots
@@ -281,23 +297,41 @@ export default function SSGPage() {
   }
 
   const handleElectionClick = (election) => {
-    console.log('Election clicked:', election)
-    setSelectedElection(election)
-    localStorage.setItem('selectedSSGElection', JSON.stringify(election))
+  console.log('Election clicked:', election)
+  setSelectedElection(election)
+  
+  // Store essential data for SSGLayout to use
+  try {
+    const essentialElectionData = {
+      _id: election._id,
+      id: election.id,
+      ssgElectionId: election.ssgElectionId,
+      electionYear: election.electionYear,
+      title: election.title,
+      status: election.status,
+      electionDate: election.electionDate,
+      ballotOpenTime: election.ballotOpenTime,
+      ballotCloseTime: election.ballotCloseTime
+    }
+    localStorage.setItem('selectedSSGElection', JSON.stringify(essentialElectionData))
+  } catch (error) {
+    console.warn('Failed to store in localStorage, but app will continue working:', error)
   }
+}
+
 
   const handleBackToElections = () => {
-    setSelectedElection(null)
-    localStorage.removeItem('selectedSSGElection')
-    setCardCounts({
-      candidates: 0,
-      positions: 0,
-      partylists: 0,
-      participants: 0,
-      turnout: 0,
-      ballots: 0
-    })
-  }
+  setSelectedElection(null)
+  // No localStorage cleanup needed
+  setCardCounts({
+    candidates: 0,
+    positions: 0,
+    partylists: 0,
+    participants: 0,
+    turnout: 0,
+    ballots: 0
+  })
+}
 
   const handleAddElection = () => {
     setShowAddForm(true)
@@ -306,7 +340,9 @@ export default function SSGPage() {
       electionYear: new Date().getFullYear(),
       title: '',
       status: 'upcoming',
-      electionDate: ''
+      electionDate: '',
+      ballotOpenTime: '',
+      ballotCloseTime: ''
     })
     setError('')
   }
@@ -315,6 +351,14 @@ export default function SSGPage() {
     e.preventDefault()
     setFormLoading(true)
     setError('')
+
+    // Validate ballot times
+    const timeValidation = validateBallotTimes(formData.ballotOpenTime, formData.ballotCloseTime)
+    if (!timeValidation.isValid) {
+      setError(timeValidation.error)
+      setFormLoading(false)
+      return
+    }
 
     try {
       await ssgElectionsAPI.create(formData)
@@ -325,7 +369,9 @@ export default function SSGPage() {
         electionYear: new Date().getFullYear(),
         title: '',
         status: 'upcoming',
-        electionDate: ''
+        electionDate: '',
+        ballotOpenTime: '',
+        ballotCloseTime: ''
       })
 
       Swal.fire({
@@ -445,7 +491,6 @@ export default function SSGPage() {
     )
   }
 
-  // Updated election management cards with correct structure
   const electionManagementCards = [
     { 
       title: "Candidates",
@@ -539,9 +584,23 @@ export default function SSGPage() {
               </span>
             </div>
             <p className="text-white/60 text-sm">Election ID: {selectedElection.ssgElectionId}</p>
+            {/* Display ballot times if available */}
+            {(selectedElection.ballotOpenTime || selectedElection.ballotCloseTime) && (
+              <div className="mt-2 space-y-1">
+                {selectedElection.ballotOpenTime && (
+                  <p className="text-white/60 text-xs">
+                    Ballot opens: {formatTimeDisplay(selectedElection.ballotOpenTime)}
+                  </p>
+                )}
+                {selectedElection.ballotCloseTime && (
+                  <p className="text-white/60 text-xs">
+                    Ballot closes: {formatTimeDisplay(selectedElection.ballotCloseTime)}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Show loading state for counts */}
           {countsLoading && (
             <div className="text-center mb-4">
               <Loader2 className="animate-spin h-6 w-6 mx-auto text-white/60" />
@@ -561,14 +620,12 @@ export default function SSGPage() {
                       className={`bg-white/90 backdrop-blur-sm rounded-xl shadow-lg cursor-pointer transform hover:scale-105 transition-all duration-300 hover:shadow-2xl ${card.hoverColor} border ${card.borderColor} h-56 lg:h-64 flex flex-col justify-center items-center hover:bg-white/95`}
                     >
                       <div className="p-6 text-center h-full flex flex-col justify-center items-center w-full">
-                        {/* Icon */}
                         <div className={`p-4 rounded-full ${card.color} mb-6 shadow-lg border border-[#b0c8fe]/20`}>
                           <div className={card.textColor}>
                             <IconComponent className="w-8 h-8 sm:w-10 md:w-12" />
                           </div>
                         </div>
                         
-                        {/* Content */}
                         <div className="flex-1 flex flex-col justify-center items-center">
                           <p className="text-base sm:text-lg font-medium text-[#001f65]/80 mb-3 text-center">
                             {card.title}
@@ -582,7 +639,6 @@ export default function SSGPage() {
                           </p>
                         </div>
 
-                        {/* Action Indicator */}
                         <div className="flex items-center justify-center text-sm text-[#001f65]/60">
                           <ChevronRight className="w-4 h-4 mr-1" />
                           <span className="hidden sm:inline">Click to manage</span>
@@ -595,20 +651,6 @@ export default function SSGPage() {
               </div>
             </div>
           </div>
-
-          {/* Debug info - remove this in production */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="mt-8 bg-black/20 backdrop-blur-sm rounded-lg p-4 max-w-2xl mx-auto">
-              <h4 className="text-white font-bold mb-2">Debug Info:</h4>
-              <pre className="text-white/80 text-xs overflow-auto">
-                {JSON.stringify({ 
-                  selectedElection: selectedElection?._id || selectedElection?.id,
-                  cardCounts,
-                  countsLoading 
-                }, null, 2)}
-              </pre>
-            </div>
-          )}
         </div>
       </SSGLayout>
     )
@@ -687,12 +729,44 @@ export default function SSGPage() {
                     Election Date *
                   </label>
                   <input
-                    type="datetime-local"
+                    type="date"
                     required
                     value={formData.electionDate}
                     onChange={(e) => setFormData(prev => ({ ...prev, electionDate: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
+                </div>
+
+                {/* FIXED: Using time input instead of datetime-local */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Ballot Open Time
+                  </label>
+                  <input
+                    type="time"
+                    value={formData.ballotOpenTime}
+                    onChange={(e) => setFormData(prev => ({ ...prev, ballotOpenTime: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    When voters can start casting ballots on the election date (optional)
+                  </p>
+                </div>
+
+                {/* FIXED: Using time input instead of datetime-local */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Ballot Close Time
+                  </label>
+                  <input
+                    type="time"
+                    value={formData.ballotCloseTime}
+                    onChange={(e) => setFormData(prev => ({ ...prev, ballotCloseTime: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    When voting ends on the election date (optional)
+                  </p>
                 </div>
 
                 <div className="flex gap-3 pt-4">
@@ -829,28 +903,62 @@ export default function SSGPage() {
                           <p className="text-blue-200 text-xs mt-1">
                             ID: {election.ssgElectionId}
                           </p>
+                          {/* Display ballot times in cards */}
+                          {(election.ballotOpenTime || election.ballotCloseTime) && (
+                            <div className="mt-2 space-y-1">
+                              {election.ballotOpenTime && (
+                                <p className="text-blue-200 text-xs">
+                                  Opens: {formatTimeDisplay(election.ballotOpenTime)}
+                                </p>
+                              )}
+                              {election.ballotCloseTime && (
+                                <p className="text-blue-200 text-xs">
+                                  Closes: {formatTimeDisplay(election.ballotCloseTime)}
+                                </p>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         {/* Action Icons */}
-                        <div className="flex justify-center gap-4 mt-auto">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              router.push(`/ecommittee/ssg/status?ssgElectionId=${election._id || election.id}`)
-                            }}
-                            className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
-                            title="Manage Election Status"
-                          >
-                            <Settings className="w-5 h-5 text-white" />
-                          </button>
-                          <button
-                            onClick={(e) => handleDeleteElection(election._id || election.id, e)}
-                            className="w-10 h-10 bg-red-500/30 rounded-full flex items-center justify-center hover:bg-red-500/50 transition-colors"
-                            title="Delete Election"
-                          >
-                            <Trash2 className="w-5 h-5 text-white" />
-                          </button>
-                        </div>
+                          <div className="flex justify-center gap-4 mt-auto">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                // Store the election data before navigating
+                                const essentialElectionData = {
+                                  _id: election._id,
+                                  id: election.id,
+                                  ssgElectionId: election.ssgElectionId,
+                                  electionYear: election.electionYear,
+                                  title: election.title,
+                                  status: election.status,
+                                  electionDate: election.electionDate,
+                                  ballotOpenTime: election.ballotOpenTime,
+                                  ballotCloseTime: election.ballotCloseTime
+                                }
+                                try {
+                                  localStorage.setItem('selectedSSGElection', JSON.stringify(essentialElectionData))
+                                } catch (error) {
+                                  console.warn('Failed to store in localStorage:', error)
+                                }
+                                // Now navigate to status page
+                                router.push(`/ecommittee/ssg/status?ssgElectionId=${election._id || election.id}`)
+                              }}
+                              className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
+                              title="Manage Election Status"
+                            >
+                              <Settings className="w-5 h-5 text-white" />
+                            </button>
+                            <button
+                              onClick={(e) => handleDeleteElection(election._id || election.id, e)}
+                              className="w-10 h-10 bg-red-500/30 rounded-full flex items-center justify-center hover:bg-red-500/50 transition-colors"
+                              title="Delete Election"
+                            >
+                              <Trash2 className="w-5 h-5 text-white" />
+                            </button>
+                          </div>
+
                       </div>
                     </div>
                   ))}

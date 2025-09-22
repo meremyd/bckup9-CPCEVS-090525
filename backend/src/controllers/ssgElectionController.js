@@ -206,225 +206,333 @@ class SSGElectionController {
 
   // Create new SSG election
   static async createSSGElection(req, res, next) {
-    try {
-      const {
-        ssgElectionId,
-        electionYear,
-        title,
-        status = "upcoming",
-        electionDate
-      } = req.body
+  try {
+    const {
+      ssgElectionId,
+      electionYear,
+      title,
+      status = "upcoming",
+      electionDate,
+      ballotOpenTime,
+      ballotCloseTime
+    } = req.body
 
-      // Validation
-      const requiredFields = { ssgElectionId, electionYear, title, electionDate }
-      const missingFields = Object.entries(requiredFields).filter(([key, value]) => !value).map(([key]) => key)
-      
-      if (missingFields.length > 0) {
-        await AuditLog.logUserAction(
-          "CREATE_SSG_ELECTION",
-          req.user,
-          `Failed to create SSG election - Missing required fields: ${missingFields.join(', ')}`,
-          req
-        )
-        const error = new Error(`Required fields are missing: ${missingFields.join(', ')}`)
-        error.statusCode = 400
-        return next(error)
-      }
-
-      // Validate election year
-      const currentYear = new Date().getFullYear()
-      if (electionYear < currentYear || electionYear > currentYear + 5) {
-        await AuditLog.logUserAction(
-          "CREATE_SSG_ELECTION",
-          req.user,
-          `Failed to create SSG election - Invalid election year: ${electionYear}`,
-          req
-        )
-        const error = new Error("Election year must be within current year to 5 years in the future")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      // Validate election date
-      const electionDateObj = new Date(electionDate)
-      if (electionDateObj < new Date()) {
-        await AuditLog.logUserAction(
-          "CREATE_SSG_ELECTION",
-          req.user,
-          `Failed to create SSG election - Election date in the past: ${electionDate}`,
-          req
-        )
-        const error = new Error("Election date cannot be in the past")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      // Check if election ID already exists
-      const existingElection = await SSGElection.findOne({ ssgElectionId })
-      if (existingElection) {
-        await AuditLog.logUserAction(
-          "CREATE_SSG_ELECTION",
-          req.user,
-          `Failed to create SSG election - Election ID already exists: ${ssgElectionId}`,
-          req
-        )
-        const error = new Error("Election ID already exists")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const election = new SSGElection({
-        ssgElectionId,
-        electionYear,
-        title,
-        status,
-        electionDate: electionDateObj,
-        createdBy: req.user?.userId,
-      })
-
-      await election.save()
-      await election.populate("createdBy", "username")
-
+    // Validation
+    const requiredFields = { ssgElectionId, electionYear, title, electionDate }
+    const missingFields = Object.entries(requiredFields).filter(([key, value]) => !value).map(([key]) => key)
+    
+    if (missingFields.length > 0) {
       await AuditLog.logUserAction(
         "CREATE_SSG_ELECTION",
         req.user,
-        `SSG election created - ${title} (${ssgElectionId}) for year ${electionYear}`,
+        `Failed to create SSG election - Missing required fields: ${missingFields.join(', ')}`,
         req
       )
-
-      res.status(201).json({
-        success: true,
-        message: "SSG election created successfully",
-        data: election
-      })
-    } catch (error) {
-      await AuditLog.logUserAction(
-        "CREATE_SSG_ELECTION",
-        req.user,
-        `Failed to create SSG election: ${error.message}`,
-        req
-      )
-      
-      if (error.code === 11000) {
-        error.message = "Election ID already exists"
-        error.statusCode = 400
-      }
-      next(error)
+      const error = new Error(`Required fields are missing: ${missingFields.join(', ')}`)
+      error.statusCode = 400
+      return next(error)
     }
+
+    // Validate election year
+    const currentYear = new Date().getFullYear()
+    if (electionYear < currentYear || electionYear > currentYear + 5) {
+      await AuditLog.logUserAction(
+        "CREATE_SSG_ELECTION",
+        req.user,
+        `Failed to create SSG election - Invalid election year: ${electionYear}`,
+        req
+      )
+      const error = new Error("Election year must be within current year to 5 years in the future")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    // Validate election date
+    const electionDateObj = new Date(electionDate)
+    if (electionDateObj < new Date()) {
+      await AuditLog.logUserAction(
+        "CREATE_SSG_ELECTION",
+        req.user,
+        `Failed to create SSG election - Election date in the past: ${electionDate}`,
+        req
+      )
+      const error = new Error("Election date cannot be in the past")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    // Validate ballot times if provided (now expects HH:MM format)
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
+
+    if (ballotOpenTime && !timeRegex.test(ballotOpenTime)) {
+      await AuditLog.logUserAction(
+        "CREATE_SSG_ELECTION",
+        req.user,
+        `Failed to create SSG election - Invalid ballot open time format: ${ballotOpenTime}`,
+        req
+      )
+      const error = new Error("Ballot open time must be in HH:MM format (24-hour)")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    if (ballotCloseTime && !timeRegex.test(ballotCloseTime)) {
+      await AuditLog.logUserAction(
+        "CREATE_SSG_ELECTION",
+        req.user,
+        `Failed to create SSG election - Invalid ballot close time format: ${ballotCloseTime}`,
+        req
+      )
+      const error = new Error("Ballot close time must be in HH:MM format (24-hour)")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    // Validate ballot time relationship (if both provided)
+    if (ballotOpenTime && ballotCloseTime) {
+      const [openHours, openMinutes] = ballotOpenTime.split(':').map(Number)
+      const [closeHours, closeMinutes] = ballotCloseTime.split(':').map(Number)
+      
+      const openTimeInMinutes = openHours * 60 + openMinutes
+      const closeTimeInMinutes = closeHours * 60 + closeMinutes
+      
+      if (closeTimeInMinutes <= openTimeInMinutes) {
+        await AuditLog.logUserAction(
+          "CREATE_SSG_ELECTION",
+          req.user,
+          `Failed to create SSG election - Ballot close time must be after open time`,
+          req
+        )
+        const error = new Error("Ballot close time must be after ballot open time")
+        error.statusCode = 400
+        return next(error)
+      }
+    }
+
+    // Check if election ID already exists
+    const existingElection = await SSGElection.findOne({ ssgElectionId })
+    if (existingElection) {
+      await AuditLog.logUserAction(
+        "CREATE_SSG_ELECTION",
+        req.user,
+        `Failed to create SSG election - Election ID already exists: ${ssgElectionId}`,
+        req
+      )
+      const error = new Error("Election ID already exists")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = new SSGElection({
+      ssgElectionId,
+      electionYear,
+      title,
+      status,
+      electionDate: electionDateObj,
+      ballotOpenTime: ballotOpenTime || null,
+      ballotCloseTime: ballotCloseTime || null,
+      createdBy: req.user?.userId,
+    })
+
+    await election.save()
+    await election.populate("createdBy", "username")
+
+    await AuditLog.logUserAction(
+      "CREATE_SSG_ELECTION",
+      req.user,
+      `SSG election created - ${title} (${ssgElectionId}) for year ${electionYear}${ballotOpenTime && ballotCloseTime ? ` with ballot times: ${ballotOpenTime} to ${ballotCloseTime}` : ''}`,
+      req
+    )
+
+    res.status(201).json({
+      success: true,
+      message: "SSG election created successfully",
+      data: election
+    })
+  } catch (error) {
+    await AuditLog.logUserAction(
+      "CREATE_SSG_ELECTION",
+      req.user,
+      `Failed to create SSG election: ${error.message}`,
+      req
+    )
+    
+    if (error.code === 11000) {
+      error.message = "Election ID already exists"
+      error.statusCode = 400
+    }
+    next(error)
   }
+}
+
 
   // Update SSG election
   static async updateSSGElection(req, res, next) {
-    try {
-      const { id } = req.params
-      const updateData = { ...req.body }
+  try {
+    const { id } = req.params
+    const updateData = { ...req.body }
 
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        await AuditLog.logUserAction(
-          "UPDATE_SSG_ELECTION",
-          req.user,
-          `Failed to update SSG election - Invalid election ID: ${id}`,
-          req
-        )
-        const error = new Error("Invalid election ID format")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      // Don't allow changing certain fields
-      delete updateData.ssgElectionId
-      delete updateData.createdBy
-      delete updateData.totalVotes
-      delete updateData.voterTurnout
-
-      // Validate status if provided
-      if (updateData.status) {
-        const validStatuses = ["upcoming", "active", "completed", "cancelled"]
-        if (!validStatuses.includes(updateData.status)) {
-          await AuditLog.logUserAction(
-            "UPDATE_SSG_ELECTION",
-            req.user,
-            `Failed to update SSG election - Invalid status: ${updateData.status}`,
-            req
-          )
-          const error = new Error(`Invalid status. Must be one of: ${validStatuses.join(', ')}`)
-          error.statusCode = 400
-          return next(error)
-        }
-      }
-
-      // Validate election date if provided
-      if (updateData.electionDate) {
-        const electionDateObj = new Date(updateData.electionDate)
-        if (electionDateObj < new Date() && updateData.status !== 'completed') {
-          await AuditLog.logUserAction(
-            "UPDATE_SSG_ELECTION",
-            req.user,
-            `Failed to update SSG election - Election date in the past: ${updateData.electionDate}`,
-            req
-          )
-          const error = new Error("Election date cannot be in the past unless status is 'completed'")
-          error.statusCode = 400
-          return next(error)
-        }
-        updateData.electionDate = electionDateObj
-      }
-
-      // Check if election exists
-      const existingElection = await SSGElection.findById(id)
-      if (!existingElection) {
-        await AuditLog.logUserAction(
-          "UPDATE_SSG_ELECTION",
-          req.user,
-          `Failed to update SSG election - Election not found: ${id}`,
-          req
-        )
-        const error = new Error("SSG election not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      // Prevent updates to elections with submitted ballots
-      const submittedBallots = await Ballot.countDocuments({ ssgElectionId: id, isSubmitted: true })
-      if (submittedBallots > 0 && updateData.electionDate) {
-        await AuditLog.logUserAction(
-          "UPDATE_SSG_ELECTION",
-          req.user,
-          `Failed to update SSG election - Cannot modify election with ${submittedBallots} submitted ballots: ${existingElection.title}`,
-          req
-        )
-        const error = new Error("Cannot modify election date after votes have been submitted")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const election = await SSGElection.findByIdAndUpdate(id, updateData, {
-        new: true,
-        runValidators: true,
-      }).populate("createdBy", "username")
-
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       await AuditLog.logUserAction(
         "UPDATE_SSG_ELECTION",
         req.user,
-        `SSG election updated - ${election.title} (${election.ssgElectionId}) - Changes: ${Object.keys(updateData).join(', ')}`,
+        `Failed to update SSG election - Invalid election ID: ${id}`,
         req
       )
-
-      res.json({
-        success: true,
-        message: "SSG election updated successfully",
-        data: election
-      })
-    } catch (error) {
-      await AuditLog.logUserAction(
-        "UPDATE_SSG_ELECTION",
-        req.user,
-        `Failed to update SSG election ${req.params.id}: ${error.message}`,
-        req
-      )
-      next(error)
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
     }
+
+    // Don't allow changing certain fields
+    delete updateData.ssgElectionId
+    delete updateData.createdBy
+    delete updateData.totalVotes
+    delete updateData.voterTurnout
+
+    // Validate status if provided
+    if (updateData.status) {
+      const validStatuses = ["upcoming", "active", "completed", "cancelled"]
+      if (!validStatuses.includes(updateData.status)) {
+        await AuditLog.logUserAction(
+          "UPDATE_SSG_ELECTION",
+          req.user,
+          `Failed to update SSG election - Invalid status: ${updateData.status}`,
+          req
+        )
+        const error = new Error(`Invalid status. Must be one of: ${validStatuses.join(', ')}`)
+        error.statusCode = 400
+        return next(error)
+      }
+    }
+
+    // Validate election date if provided
+    if (updateData.electionDate) {
+      const electionDateObj = new Date(updateData.electionDate)
+      if (electionDateObj < new Date() && updateData.status !== 'completed') {
+        await AuditLog.logUserAction(
+          "UPDATE_SSG_ELECTION",
+          req.user,
+          `Failed to update SSG election - Election date in the past: ${updateData.electionDate}`,
+          req
+        )
+        const error = new Error("Election date cannot be in the past unless status is 'completed'")
+        error.statusCode = 400
+        return next(error)
+      }
+      updateData.electionDate = electionDateObj
+    }
+
+    // Validate ballot times if provided (now expects HH:MM format)
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
+
+    if (updateData.ballotOpenTime !== undefined) {
+      if (updateData.ballotOpenTime && !timeRegex.test(updateData.ballotOpenTime)) {
+        await AuditLog.logUserAction(
+          "UPDATE_SSG_ELECTION",
+          req.user,
+          `Failed to update SSG election - Invalid ballot open time format: ${updateData.ballotOpenTime}`,
+          req
+        )
+        const error = new Error("Ballot open time must be in HH:MM format (24-hour)")
+        error.statusCode = 400
+        return next(error)
+      }
+    }
+
+    if (updateData.ballotCloseTime !== undefined) {
+      if (updateData.ballotCloseTime && !timeRegex.test(updateData.ballotCloseTime)) {
+        await AuditLog.logUserAction(
+          "UPDATE_SSG_ELECTION",
+          req.user,
+          `Failed to update SSG election - Invalid ballot close time format: ${updateData.ballotCloseTime}`,
+          req
+        )
+        const error = new Error("Ballot close time must be in HH:MM format (24-hour)")
+        error.statusCode = 400
+        return next(error)
+      }
+    }
+
+    // Check if election exists
+    const existingElection = await SSGElection.findById(id)
+    if (!existingElection) {
+      await AuditLog.logUserAction(
+        "UPDATE_SSG_ELECTION",
+        req.user,
+        `Failed to update SSG election - Election not found: ${id}`,
+        req
+      )
+      const error = new Error("SSG election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Validate ballot time relationship if both are provided or being updated
+    const finalBallotOpenTime = updateData.ballotOpenTime !== undefined ? updateData.ballotOpenTime : existingElection.ballotOpenTime
+    const finalBallotCloseTime = updateData.ballotCloseTime !== undefined ? updateData.ballotCloseTime : existingElection.ballotCloseTime
+
+    if (finalBallotOpenTime && finalBallotCloseTime) {
+      const [openHours, openMinutes] = finalBallotOpenTime.split(':').map(Number)
+      const [closeHours, closeMinutes] = finalBallotCloseTime.split(':').map(Number)
+      
+      const openTimeInMinutes = openHours * 60 + openMinutes
+      const closeTimeInMinutes = closeHours * 60 + closeMinutes
+      
+      if (closeTimeInMinutes <= openTimeInMinutes) {
+        await AuditLog.logUserAction(
+          "UPDATE_SSG_ELECTION",
+          req.user,
+          `Failed to update SSG election - Ballot close time must be after open time`,
+          req
+        )
+        const error = new Error("Ballot close time must be after ballot open time")
+        error.statusCode = 400
+        return next(error)
+      }
+    }
+
+    // Prevent updates to elections with submitted ballots
+    const submittedBallots = await Ballot.countDocuments({ ssgElectionId: id, isSubmitted: true })
+    if (submittedBallots > 0 && (updateData.electionDate || updateData.ballotOpenTime !== undefined || updateData.ballotCloseTime !== undefined)) {
+      await AuditLog.logUserAction(
+        "UPDATE_SSG_ELECTION",
+        req.user,
+        `Failed to update SSG election - Cannot modify election with ${submittedBallots} submitted ballots: ${existingElection.title}`,
+        req
+      )
+      const error = new Error("Cannot modify election date or ballot times after votes have been submitted")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await SSGElection.findByIdAndUpdate(id, updateData, {
+      new: true,
+      runValidators: true,
+    }).populate("createdBy", "username")
+
+    await AuditLog.logUserAction(
+      "UPDATE_SSG_ELECTION",
+      req.user,
+      `SSG election updated - ${election.title} (${election.ssgElectionId}) - Changes: ${Object.keys(updateData).join(', ')}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      message: "SSG election updated successfully",
+      data: election
+    })
+  } catch (error) {
+    await AuditLog.logUserAction(
+      "UPDATE_SSG_ELECTION",
+      req.user,
+      `Failed to update SSG election ${req.params.id}: ${error.message}`,
+      req
+    )
+    next(error)
   }
+}
 
   // Delete SSG election
   static async deleteSSGElection(req, res, next) {
@@ -2204,6 +2312,10 @@ static async getSSGElectionOverview(req, res, next) {
         electionYear: election.electionYear,
         status: election.status,
         electionDate: election.electionDate,
+        ballotOpenTime: election.ballotOpenTime,
+        ballotCloseTime: election.ballotCloseTime,
+        ballotStatus: election.ballotStatus,
+        ballotsAreOpen: election.ballotsAreOpen,
         createdBy: election.createdBy,
         electionType: "ssg"
       },

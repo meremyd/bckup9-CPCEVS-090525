@@ -38,57 +38,56 @@ export default function SSGLayout({
 
   const router = useRouter()
 
- 
-useEffect(() => {
-  const token = localStorage.getItem("token")
-  const userData = localStorage.getItem("user")
+  useEffect(() => {
+    const token = localStorage.getItem("token")
+    const userData = localStorage.getItem("user")
 
-  if (!token || !userData) {
-    router.push("/adminlogin")
-    return
-  }
-
-  try {
-    const parsedUser = JSON.parse(userData)
-    setUser(parsedUser)
-
-    if (parsedUser.userType !== "election_committee") {
+    if (!token || !userData) {
       router.push("/adminlogin")
       return
     }
 
-    console.log('SSGLayout - ssgElectionId:', ssgElectionId)
+    try {
+      const parsedUser = JSON.parse(userData)
+      setUser(parsedUser)
 
-    // Try to get election from localStorage first for better UX
-    if (ssgElectionId) {
-      const storedElection = localStorage.getItem('selectedSSGElection')
-      console.log('SSGLayout - stored election:', storedElection)
-      
-      if (storedElection) {
-        try {
-          const parsed = JSON.parse(storedElection)
-          console.log('SSGLayout - parsed stored election:', parsed)
-          if (parsed._id === ssgElectionId || parsed.id === ssgElectionId) {
-            setElection(parsed)
-            setLoading(false)
-            return
-          }
-        } catch (e) {
-          console.warn('SSGLayout - error parsing stored election:', e)
-          localStorage.removeItem('selectedSSGElection')
-        }
+      if (parsedUser.userType !== "election_committee") {
+        router.push("/adminlogin")
+        return
       }
-      
-      fetchElection()
-    } else {
-      setLoading(false)
+
+      console.log('SSGLayout - ssgElectionId:', ssgElectionId)
+
+      // Try to get election from localStorage first for better UX
+      if (ssgElectionId) {
+        const storedElection = localStorage.getItem('selectedSSGElection')
+        console.log('SSGLayout - stored election:', storedElection)
+        
+        if (storedElection) {
+          try {
+            const parsed = JSON.parse(storedElection)
+            console.log('SSGLayout - parsed stored election:', parsed)
+            if (parsed._id === ssgElectionId || parsed.id === ssgElectionId) {
+              setElection(parsed)
+              setLoading(false)
+              return
+            }
+          } catch (e) {
+            console.warn('SSGLayout - error parsing stored election:', e)
+            localStorage.removeItem('selectedSSGElection')
+          }
+        }
+        
+        fetchElection()
+      } else {
+        setLoading(false)
+      }
+    } catch (parseError) {
+      console.error("Error parsing user data:", parseError)
+      router.push("/adminlogin")
+      return
     }
-  } catch (parseError) {
-    console.error("Error parsing user data:", parseError)
-    router.push("/adminlogin")
-    return
-  }
-}, [router, ssgElectionId])
+  }, [router, ssgElectionId])
 
   const fetchElection = async () => {
     try {
@@ -111,8 +110,34 @@ useEffect(() => {
       
       setElection(electionData)
       
-      // Store in localStorage for persistence
-      localStorage.setItem('selectedSSGElection', JSON.stringify(electionData))
+      // Store only essential election data to avoid localStorage quota issues
+      const essentialElectionData = {
+        _id: electionData._id,
+        id: electionData.id,
+        ssgElectionId: electionData.ssgElectionId,
+        electionYear: electionData.electionYear,
+        title: electionData.title,
+        status: electionData.status,
+        electionDate: electionData.electionDate,
+        ballotOpenTime: electionData.ballotOpenTime,
+        ballotCloseTime: electionData.ballotCloseTime,
+        ballotStatus: electionData.ballotStatus
+      }
+
+      // Try to store essential data, but don't fail if localStorage is full
+      try {
+        localStorage.setItem('selectedSSGElection', JSON.stringify(essentialElectionData))
+        console.log('Successfully stored essential election data')
+      } catch (storageError) {
+        console.warn('Failed to store election in localStorage (quota exceeded), but continuing:', storageError)
+        // Clear old data and try again
+        try {
+          localStorage.removeItem('selectedSSGElection')
+          localStorage.setItem('selectedSSGElection', JSON.stringify(essentialElectionData))
+        } catch (retryError) {
+          console.warn('Still failed after clearing, app will work without localStorage')
+        }
+      }
       
     } catch (error) {
       console.error("Error fetching election:", error)
