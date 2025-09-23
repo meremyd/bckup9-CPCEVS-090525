@@ -1396,10 +1396,24 @@ static async validateSSGPositionDeletion(req, res) {
   }
 
   static async createDepartmentalPosition(req, res) {
+    let trimmedPositionName = ''; // Declare outside try block for error handling
+    
     try {
-      const { deptElectionId, positionName, positionOrder, maxVotes, maxCandidates, description } = req.body
+      const { 
+        deptElectionId, 
+        positionName, 
+        positionOrder, 
+        maxVotes, 
+        maxCandidates, 
+        description 
+      } = req.body
 
-      // Validation
+      console.log('=== CREATE DEPARTMENTAL POSITION START ===')
+      console.log('Raw request body:', JSON.stringify(req.body, null, 2))
+      console.log('Dept Election ID (raw):', deptElectionId)
+      console.log('Position Name:', positionName)
+
+      // Basic validation
       if (!deptElectionId || !positionName) {
         return res.status(400).json({
           success: false,
@@ -1407,8 +1421,25 @@ static async validateSSGPositionDeletion(req, res) {
         })
       }
 
-      // Trim and validate position name
-      const trimmedPositionName = positionName.trim()
+      if (!mongoose.Types.ObjectId.isValid(deptElectionId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid Departmental Election ID format"
+        })
+      }
+
+      // Convert deptElectionId to ObjectId if it's a string
+      let electionObjectId
+      try {
+        electionObjectId = new mongoose.Types.ObjectId(deptElectionId)
+      } catch (err) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid Departmental Election ID format"
+        })
+      }
+
+      trimmedPositionName = positionName.trim()
       if (!trimmedPositionName) {
         return res.status(400).json({
           success: false,
@@ -1416,8 +1447,49 @@ static async validateSSGPositionDeletion(req, res) {
         })
       }
 
+      // Parse and validate numbers
+      let parsedPositionOrder = 1
+      let parsedMaxVotes = 1
+      let parsedMaxCandidates = 10
+
+      if (positionOrder !== undefined && positionOrder !== null) {
+        parsedPositionOrder = parseInt(positionOrder, 10)
+        if (isNaN(parsedPositionOrder) || parsedPositionOrder < 1) {
+          return res.status(400).json({
+            success: false,
+            message: "Position order must be a positive integer"
+          })
+        }
+      }
+
+      if (maxVotes !== undefined && maxVotes !== null) {
+        parsedMaxVotes = parseInt(maxVotes, 10)
+        if (isNaN(parsedMaxVotes) || parsedMaxVotes < 1) {
+          return res.status(400).json({
+            success: false,
+            message: "Max votes must be a positive integer"
+          })
+        }
+      }
+
+      if (maxCandidates !== undefined && maxCandidates !== null) {
+        parsedMaxCandidates = parseInt(maxCandidates, 10)
+        if (isNaN(parsedMaxCandidates) || parsedMaxCandidates < 1) {
+          return res.status(400).json({
+            success: false,
+            message: "Max candidates must be a positive integer"
+          })
+        }
+      }
+
+      console.log('Parsed numbers:', {
+        positionOrder: parsedPositionOrder,
+        maxVotes: parsedMaxVotes,
+        maxCandidates: parsedMaxCandidates
+      })
+
       // Check if departmental election exists
-      const deptElection = await DepartmentalElection.findById(deptElectionId)
+      const deptElection = await DepartmentalElection.findById(electionObjectId)
         .populate('departmentId', 'departmentCode degreeProgram')
       if (!deptElection) {
         return res.status(404).json({
@@ -1426,42 +1498,66 @@ static async validateSSGPositionDeletion(req, res) {
         })
       }
 
-      // Check for duplicate position name using helper method
-      const existingPosition = await PositionController.checkDuplicatePositionName(
-  trimmedPositionName, 
-  null,           
-  deptElectionId 
-)
+      console.log('Departmental Election found:', deptElection.title)
 
-      if (existingPosition) {
+      // DIRECT DUPLICATE CHECK - Same logic as SSG position
+      console.log('=== CHECKING FOR DUPLICATE POSITION NAME ===')
+      console.log('Checking position name:', trimmedPositionName)
+      console.log('In Departmental election:', electionObjectId.toString())
+
+      // Check position name ONLY within the specific departmental election
+      const existingPositionName = await Position.findOne({
+        deptElectionId: electionObjectId,
+        ssgElectionId: null,
+        positionName: { $regex: new RegExp(`^${trimmedPositionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+      })
+
+      if (existingPositionName) {
+        console.log('DUPLICATE POSITION NAME FOUND in same departmental election:', {
+          id: existingPositionName._id.toString(),
+          name: existingPositionName.positionName,
+          deptElectionId: existingPositionName.deptElectionId.toString()
+        })
+
         return res.status(400).json({
           success: false,
-          message: "Position name already exists in this departmental election"
+          message: `Position name "${trimmedPositionName}" already exists in this departmental election`
         })
       }
 
-      // Get next position order if not provided
-      let finalPositionOrder = positionOrder
-      if (!finalPositionOrder) {
+      console.log('No duplicate position name found within this departmental election')
+
+      // Auto-assign position order if not provided or is default value
+      let finalPositionOrder = parsedPositionOrder
+      if (positionOrder === undefined || positionOrder === null || parsedPositionOrder === 1) {
         const lastPosition = await Position.findOne({ 
-          deptElectionId,
+          deptElectionId: electionObjectId,
           ssgElectionId: null
-        })
-          .sort({ positionOrder: -1 })
-        finalPositionOrder = lastPosition ? lastPosition.positionOrder + 1 : 1
+        }).sort({ positionOrder: -1 }).select('positionOrder')
+
+        if (lastPosition) {
+          finalPositionOrder = lastPosition.positionOrder + 1
+        } else {
+          finalPositionOrder = 1
+        }
+        console.log('Auto-assigned position order:', finalPositionOrder)
       }
 
-      const newPosition = new Position({
-        deptElectionId,
+      const positionData = {
+        deptElectionId: electionObjectId,
         ssgElectionId: null,
         positionName: trimmedPositionName,
         positionOrder: finalPositionOrder,
-        maxVotes: maxVotes || 1,
-        maxCandidates: maxCandidates || 10,
+        maxVotes: parsedMaxVotes,
+        maxCandidates: parsedMaxCandidates,
         description: description?.trim() || null
-      })
+      }
 
+      console.log('Creating position with data:', positionData)
+
+      const newPosition = new Position(positionData)
       await newPosition.save()
+
       await newPosition.populate({
         path: 'deptElectionId',
         select: 'title electionYear status departmentId',
@@ -1478,25 +1574,62 @@ static async validateSSGPositionDeletion(req, res) {
         req
       )
 
-      res.status(201).json({
+      console.log('=== POSITION CREATED SUCCESSFULLY ===')
+
+      return res.status(201).json({
         success: true,
         message: "Departmental position created successfully",
         data: newPosition
       })
-    } catch (error) {
-      console.error("Error creating departmental position:", error)
-      res.status(500).json({
+
+    } catch (saveError) {
+      console.error('SAVE ERROR:', saveError)
+
+      // Handle duplicate key errors from database constraints
+      if (saveError.code === 11000) {
+        const keyPattern = saveError.keyPattern || {}
+        const keyValue = saveError.keyValue || {}
+        
+        // Check the specific index that was violated
+        if (keyPattern.deptElectionId === 1 && keyPattern.positionName === 1) {
+          return res.status(400).json({
+            success: false,
+            message: `Position name "${keyValue.positionName}" already exists in this departmental election`
+          })
+        } else if (keyValue.positionName) {
+          return res.status(400).json({
+            success: false,
+            message: `Position name "${keyValue.positionName}" already exists in this departmental election`
+          })
+        } else {
+          return res.status(400).json({
+            success: false,
+            message: "Duplicate entry detected. Please check your input values."
+          })
+        }
+      }
+
+      console.error("Error creating departmental position:", saveError)
+      return res.status(500).json({
         success: false,
         message: "Failed to create departmental position",
-        error: error.message
+        error: saveError.message
       })
     }
   }
 
+
   static async updateDepartmentalPosition(req, res) {
     try {
       const { id } = req.params
-      const { positionName, positionOrder, maxVotes, maxCandidates, description, isActive } = req.body
+      const { 
+        positionName, 
+        positionOrder, 
+        maxVotes, 
+        maxCandidates, 
+        description, 
+        isActive 
+      } = req.body
 
       if (!mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({
@@ -1528,20 +1661,33 @@ static async validateSSGPositionDeletion(req, res) {
           })
         }
 
-        const existingPosition = await PositionController.checkDuplicatePositionName(
-  trimmedPositionName, 
-  null,                   
-  position.deptElectionId, 
-  position._id             
-)
+        // DIRECT DUPLICATE CHECK - Same logic as SSG position
+        console.log('=== CHECKING FOR DUPLICATE ON UPDATE ===')
+        console.log('New position name:', trimmedPositionName)
+        console.log('Current position ID:', id)
+        console.log('Departmental Election ID:', position.deptElectionId.toString())
 
+        // Check for duplicate name ONLY in same departmental election (excluding current position)
+        const existingPositionName = await Position.findOne({
+          deptElectionId: position.deptElectionId,
+          ssgElectionId: null,
+          positionName: { $regex: new RegExp(`^${trimmedPositionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+          _id: { $ne: id }
+        })
 
-        if (existingPosition) {
+        if (existingPositionName) {
+          console.log('DUPLICATE POSITION NAME FOUND during update:', {
+            id: existingPositionName._id.toString(),
+            name: existingPositionName.positionName
+          })
+
           return res.status(400).json({
             success: false,
             message: "Position name already exists in this departmental election"
           })
         }
+
+        console.log('No duplicate position name found for update')
       }
 
       // Update fields
@@ -1575,6 +1721,25 @@ static async validateSSGPositionDeletion(req, res) {
         data: position
       })
     } catch (error) {
+      // Handle duplicate key errors
+      if (error.code === 11000) {
+        const keyPattern = error.keyPattern || {}
+        const keyValue = error.keyValue || {}
+        
+        if ((keyPattern.deptElectionId && keyPattern.positionName) || keyValue.positionName) {
+          error.message = `Position name "${keyValue.positionName || 'unknown'}" already exists in this departmental election`
+          error.statusCode = 400
+        } else {
+          error.message = "Duplicate entry detected during update"
+          error.statusCode = 400
+        }
+        
+        return res.status(400).json({
+          success: false,
+          message: error.message
+        })
+      }
+
       console.error("Error updating departmental position:", error)
       res.status(500).json({
         success: false,
@@ -1652,8 +1817,9 @@ static async validateSSGPositionDeletion(req, res) {
         })
       }
 
+      // Check if departmental election exists
       const deptElection = await DepartmentalElection.findById(deptElectionId)
-        .populate('departmentId', 'departmentCode degreeProgram')
+        .populate('departmentId', 'departmentCode degreeProgram college')
       if (!deptElection) {
         return res.status(404).json({
           success: false,
@@ -1663,7 +1829,7 @@ static async validateSSGPositionDeletion(req, res) {
 
       // Get positions ONLY for the specific departmental election
       const deptPositions = await Position.find({ 
-        deptElectionId,
+        deptElectionId: deptElectionId,
         ssgElectionId: null 
       })
       .populate({
@@ -1705,6 +1871,7 @@ static async validateSSGPositionDeletion(req, res) {
       // Calculate summary statistics
       const totalCandidates = positionsWithCandidateCounts
         .reduce((sum, position) => sum + position.candidateCount, 0)
+
       await AuditLog.logUserAction(
         "SYSTEM_ACCESS",
         req.user,

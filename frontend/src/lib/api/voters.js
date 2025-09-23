@@ -475,5 +475,70 @@ export const votersAPI = {
       console.error('Error downloading file:', error)
       return false
     }
+  },
+
+  getActive: async (params = {}) => {
+    try {
+      const response = await api.get('/voters/active', { params })
+      return response.data
+    } catch (error) {
+      console.error('Error fetching active voters:', error)
+      throw error
+    }
+  },
+
+  // NEW: Get active registered voters only
+  getActiveRegistered: async (params = {}) => {
+    try {
+      const response = await api.get('/voters/active/registered', { params })
+      return response.data
+    } catch (error) {
+      console.error('Error fetching active registered voters:', error)
+      throw error
+    }
+  },
+
+  // NEW: Get active officers only
+  getActiveOfficers: async (params = {}) => {
+    try {
+      const response = await api.get('/voters/active/officers', { params })
+      return response.data
+    } catch (error) {
+      console.error('Error fetching active officers:', error)
+      throw error
+    }
+  },
+
+  // NEW: Get departmental officers (active only)
+  getDepartmentalOfficers: async (departmentId, params = {}) => {
+    try {
+      const response = await api.get(`/voters/department/${departmentId}/officers`, { params })
+      return response.data
+    } catch (error) {
+      console.error(`Error fetching departmental officers for department ${departmentId}:`, error)
+      throw error
+    }
+  },
+
+  // NEW: Get active voters by department code
+  getActiveByDepartmentCode: async (departmentCode, params = {}) => {
+    try {
+      const response = await api.get(`/voters/department-code/${departmentCode}/active`, { params })
+      return response.data
+    } catch (error) {
+      console.error(`Error fetching active voters for department ${departmentCode}:`, error)
+      throw error
+    }
+  },
+
+  // NEW: Get active officers by department code
+  getActiveOfficersByDepartmentCode: async (departmentCode, params = {}) => {
+    try {
+      const response = await api.get(`/voters/department-code/${departmentCode}/officers/active`, { params })
+      return response.data
+    } catch (error) {
+      console.error(`Error fetching active officers for department ${departmentCode}:`, error)
+      throw error
+    }
   }
 }

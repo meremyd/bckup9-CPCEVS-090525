@@ -287,6 +287,16 @@ export const departmentalElectionsAPI = {
     }
   },
 
+  getOfficersCount: async (id) => {
+  const response = await api.get(`/departmentalElections/${id}/officers-count`)
+  return response.data
+},
+
+checkVoterEligibility: async (id) => {
+  const response = await api.get(`/departmentalElections/${id}/voter-eligibility`)
+  return response.data
+},
+
   // Format election for voter display with ballot considerations
   formatElectionForVoter: (election, eligibility = null) => {
     return {
@@ -301,4 +311,5 @@ export const departmentalElectionsAPI = {
       votingInfo: departmentalElectionsAPI.getVotingTimeInfo(election)
     }
   }
+  
 }

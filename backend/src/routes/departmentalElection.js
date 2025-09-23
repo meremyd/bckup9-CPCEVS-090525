@@ -22,6 +22,8 @@ router.get("/:id/statistics", authorizeStaffAndVoters("admin", "election_committ
 router.post("/", authorizeRoles("admin", "election_committee"),DepartmentalElectionController.createDepartmentalElection)
 router.put("/:id", authorizeRoles("admin", "election_committee"),DepartmentalElectionController.updateDepartmentalElection)
 router.patch("/:id/status", authorizeRoles("admin", "election_committee"),DepartmentalElectionController.toggleDepartmentalElectionStatus)
+router.get("/:id/officers-count", authorizeStaffAndVoters("admin", "election_committee", "sao"),DepartmentalElectionController.getDepartmentalElectionOfficersCount)
+router.get("/:id/voter-eligibility", voterOnly,DepartmentalElectionController.checkVoterEligibilityForDepartmentalElection)
 router.delete("/:id", authorizeRoles("admin"),DepartmentalElectionController.deleteDepartmentalElection)
 
 module.exports = router

@@ -348,81 +348,119 @@ class DepartmentalElectionController {
   }
 
   // Get departmental election results
-  static async getDepartmentalElectionResults(req, res, next) {
-    try {
-      const { id } = req.params
+   static async getDepartmentalElectionResults(req, res, next) {
+  try {
+    const { id } = req.params
 
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        const error = new Error("Invalid election ID format")
-        error.statusCode = 400
-        return next(error)
-      }
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
 
-      const election = await DepartmentalElection.findById(id)
-        .populate("departmentId", "departmentCode degreeProgram college")
-      if (!election) {
-        const error = new Error("Departmental election not found")
+    const election = await DepartmentalElection.findById(id)
+      .populate("departmentId", "departmentCode degreeProgram college")
+    if (!election) {
+      const error = new Error("Departmental election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    let canViewResults = false
+    let accessReason = ''
+
+    // Check user role and permissions
+    if (req.user?.role === 'voter') {
+      const voter = await Voter.findById(req.user.voterId).populate('departmentId')
+      
+      if (!voter) {
+        const error = new Error("Voter not found")
         error.statusCode = 404
         return next(error)
       }
 
-      // Check if user is eligible to view results
-      let canViewFullResults = true
-      if (req.user?.role === 'voter') {
-        const voter = await Voter.findById(req.user.voterId).populate('departmentId')
-        // All voters can view results, but only voters from the same department get full details
-        canViewFullResults = voter && voter.departmentId._id.equals(election.departmentId._id)
+      // Check if voter is from the same department
+      const isFromSameDepartment = voter.departmentId._id.equals(election.departmentId._id)
+      
+      if (!voter.isRegistered || !voter.isPasswordActive) {
+        canViewResults = false
+        accessReason = "You must be a registered voter with an active password"
+      } else if (!isFromSameDepartment) {
+        canViewResults = false
+        accessReason = `This election is for ${election.departmentId.departmentCode} department. You belong to ${voter.departmentId.departmentCode} department.`
+      } else {
+        // Same department and registered - can view results
+        canViewResults = true
+        accessReason = voter.isClassOfficer ? 
+          "You can view results as a class officer from this department" :
+          "You can view results as a student from this department"
       }
 
-      // Get election results using Vote model static method
-      const results = await Vote.getElectionResults(id, 'departmental')
-
-      // Get participation statistics
-      const participationStats = await ElectionParticipation.getElectionStats(id, 'departmental')
-
-      // Get winner for each position
-      const winners = results.reduce((acc, result) => {
-        const positionId = result._id.positionId.toString()
-        if (!acc[positionId] || result.voteCount > acc[positionId].voteCount) {
-          acc[positionId] = {
-            candidateId: result._id.candidateId,
-            candidate: result.candidate[0],
-            position: result.position[0],
-            voteCount: result.voteCount
-          }
-        }
-        return acc
-      }, {})
-
-      // Log results access
+      await AuditLog.logVoterAction(
+        "SYSTEM_ACCESS",
+        voter,
+        `Accessed departmental election results - ${election.title}: ${accessReason}`,
+        req
+      )
+    } else {
+      // Staff members (admin, election_committee, sao) can always view results
+      canViewResults = true
+      accessReason = "Staff access granted"
+      
       await AuditLog.logUserAction(
         "SYSTEM_ACCESS",
         req.user,
         `Accessed departmental election results - ${election.title} (${election.deptElectionId})`,
         req
       )
-
-      res.json({
-        election: {
-          id: election._id,
-          title: election.title,
-          deptElectionId: election.deptElectionId,
-          department: election.departmentId,
-          status: election.status,
-          electionDate: election.electionDate
-        },
-        results: canViewFullResults ? results : [],
-        winners: canViewFullResults ? Object.values(winners) : [],
-        participationStats: canViewFullResults ? participationStats : { totalVoted: results.length || 0 },
-        eligibility: {
-          canViewFullResults,
-          isFromDepartment: canViewFullResults
-        }
-      })
-    } catch (error) {
-      next(error)
     }
+
+    if (!canViewResults) {
+      const error = new Error(accessReason)
+      error.statusCode = 403
+      return next(error)
+    }
+
+    // Get election results
+    const results = await Vote.getElectionResults(id, 'departmental')
+    const participationStats = await ElectionParticipation.getElectionStats(id, 'departmental')
+
+    // Get winners for each position
+    const winners = results.reduce((acc, result) => {
+      const positionId = result._id.positionId.toString()
+      if (!acc[positionId] || result.voteCount > acc[positionId].voteCount) {
+        acc[positionId] = {
+          candidateId: result._id.candidateId,
+          candidate: result.candidate[0],
+          position: result.position[0],
+          voteCount: result.voteCount
+        }
+      }
+      return acc
+    }, {})
+
+    res.json({
+      election: {
+        id: election._id,
+        title: election.title,
+        deptElectionId: election.deptElectionId,
+        department: election.departmentId,
+        status: election.status,
+        electionDate: election.electionDate
+      },
+      results,
+      winners: Object.values(winners),
+      participationStats,
+      accessInfo: {
+        canViewResults,
+        accessReason,
+        userRole: req.user?.role
+      }
+    })
+  } catch (error) {
+    next(error)
   }
+}
 
   // Create new departmental election
   static async createDepartmentalElection(req, res, next) {
@@ -677,161 +715,196 @@ class DepartmentalElectionController {
 
   // Get departmental election statistics
   static async getDepartmentalElectionStatistics(req, res, next) {
-    try {
-      const { id } = req.params
+  try {
+    const { id } = req.params
 
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        const error = new Error("Invalid election ID format")
-        error.statusCode = 400
-        return next(error)
-      }
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
 
-      const election = await DepartmentalElection.findById(id).populate("departmentId")
-      if (!election) {
-        const error = new Error("Departmental election not found")
+    const election = await DepartmentalElection.findById(id).populate("departmentId")
+    if (!election) {
+      const error = new Error("Departmental election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    let canViewStatistics = false
+    let accessReason = ''
+    let voterEligibility = null
+
+    // Check access permissions
+    if (req.user?.role === 'voter') {
+      const voter = await Voter.findById(req.user.voterId).populate('departmentId')
+      if (!voter) {
+        const error = new Error("Voter not found")
         error.statusCode = 404
         return next(error)
       }
 
-      // Check if voter is from the same department (for voting eligibility display)
-      let voterEligibility = null
-      if (req.user?.role === 'voter') {
-        const voter = await Voter.findById(req.user.voterId).populate('departmentId')
-        if (voter) {
-          const isFromDepartment = voter.departmentId._id.equals(election.departmentId._id)
-          voterEligibility = {
-            isFromDepartment,
-            isRegistered: voter.isRegistered,
-            isClassOfficer: voter.isClassOfficer,
-            canVote: voter.isRegistered && voter.isPasswordActive && voter.isClassOfficer && isFromDepartment,
-            canViewStatistics: isFromDepartment,
-            message: isFromDepartment ? 
-              (voter.isRegistered && voter.isPasswordActive && voter.isClassOfficer ? 
-                "You are eligible to vote in this departmental election" :
-                "Only registered class officers can vote in departmental elections") :
-              "This election is for students from a different department"
-          }
-        }
+      const isFromSameDepartment = voter.departmentId._id.equals(election.departmentId._id)
+      
+      voterEligibility = {
+        isFromSameDepartment,
+        isRegistered: voter.isRegistered,
+        isClassOfficer: voter.isClassOfficer,
+        isPasswordActive: voter.isPasswordActive,
+        voterDepartment: voter.departmentId.departmentCode,
+        electionDepartment: election.departmentId.departmentCode
       }
 
-      // Basic counts
-      const totalPositions = await Position.countDocuments({ deptElectionId: id })
-      const totalCandidates = await Candidate.countDocuments({ deptElectionId: id })
-
-      // Get participation statistics
-      const participationStats = await ElectionParticipation.getElectionStats(id, 'departmental')
-
-      // Get candidates by position with vote counts
-      const candidatesByPosition = await Candidate.aggregate([
-        { $match: { deptElectionId: new mongoose.Types.ObjectId(id) } },
-        {
-          $lookup: {
-            from: "positions",
-            localField: "positionId",
-            foreignField: "_id",
-            as: "position"
-          }
-        },
-        { $unwind: "$position" },
-        {
-          $lookup: {
-            from: "voters",
-            localField: "voterId",
-            foreignField: "_id",
-            as: "voter"
-          }
-        },
-        { $unwind: "$voter" },
-        {
-          $lookup: {
-            from: "votes",
-            localField: "_id",
-            foreignField: "candidateId",
-            as: "votes"
-          }
-        },
-        {
-          $group: {
-            _id: {
-              positionId: "$positionId",
-              positionName: "$position.positionName",
-              positionOrder: "$position.positionOrder"
-            },
-            candidates: {
-              $push: {
-                candidateId: "$_id",
-                candidateNumber: "$candidateNumber",
-                name: {
-                  $concat: [
-                    "$voter.firstName",
-                    " ",
-                    { $ifNull: ["$voter.middleName", ""] },
-                    " ",
-                    "$voter.lastName"
-                  ]
-                },
-                voteCount: { $size: "$votes" }
-              }
-            },
-            totalCandidates: { $sum: 1 },
-            totalVotes: { $sum: { $size: "$votes" } }
-          }
-        },
-        { $sort: { "_id.positionOrder": 1 } }
-      ])
-
-      // Voting timeline (votes over time)
-      const votingTimeline = await Ballot.aggregate([
-        { $match: { deptElectionId: new mongoose.Types.ObjectId(id), isSubmitted: true } },
-        {
-          $group: {
-            _id: {
-              $dateToString: {
-                format: "%Y-%m-%d %H:00",
-                date: "$submittedAt"
-              }
-            },
-            count: { $sum: 1 }
-          }
-        },
-        { $sort: { "_id": 1 } }
-      ])
-
-      // Election overview
-      const overview = {
-        totalPositions,
-        totalCandidates,
-        ...participationStats,
-        status: election.status,
-        electionDate: election.electionDate,
-        department: election.departmentId
+      if (!voter.isRegistered || !voter.isPasswordActive) {
+        canViewStatistics = false
+        accessReason = "You must be a registered voter with an active password"
+      } else if (!isFromSameDepartment) {
+        canViewStatistics = false
+        accessReason = `Statistics are only available to students from ${election.departmentId.departmentCode} department`
+      } else {
+        canViewStatistics = true
+        accessReason = voter.isClassOfficer ? 
+          "You can view statistics as a class officer from this department" :
+          "You can view statistics as a student from this department"
       }
 
-      // Log statistics access
+      await AuditLog.logVoterAction(
+        "SYSTEM_ACCESS",
+        voter,
+        `Accessed departmental election statistics - ${election.title}: ${accessReason}`,
+        req
+      )
+    } else {
+      // Staff members can always view statistics
+      canViewStatistics = true
+      accessReason = "Staff access granted"
+      
       await AuditLog.logUserAction(
         "SYSTEM_ACCESS",
         req.user,
-        `Accessed departmental election statistics - ${election.title} (${election.deptElectionId}) for ${election.departmentId.departmentCode}`,
+        `Accessed departmental election statistics - ${election.title} (${election.deptElectionId})`,
         req
       )
-
-      res.json({
-        overview,
-        candidatesByPosition,
-        votingTimeline,
-        voterEligibility,
-        election: {
-          id: election._id,
-          title: election.title,
-          deptElectionId: election.deptElectionId,
-          department: election.departmentId,
-          status: election.status
-        }
-      })
-    } catch (error) {
-      next(error)
     }
+
+    if (!canViewStatistics) {
+      const error = new Error(accessReason)
+      error.statusCode = 403
+      return next(error)
+    }
+
+    // Get statistics data
+    const totalPositions = await Position.countDocuments({ deptElectionId: id })
+    const totalCandidates = await Candidate.countDocuments({ deptElectionId: id })
+    const participationStats = await ElectionParticipation.getElectionStats(id, 'departmental')
+
+    // Get candidates by position with vote counts
+    const candidatesByPosition = await Candidate.aggregate([
+      { $match: { deptElectionId: new mongoose.Types.ObjectId(id) } },
+      {
+        $lookup: {
+          from: "positions",
+          localField: "positionId",
+          foreignField: "_id",
+          as: "position"
+        }
+      },
+      { $unwind: "$position" },
+      {
+        $lookup: {
+          from: "voters",
+          localField: "voterId",
+          foreignField: "_id",
+          as: "voter"
+        }
+      },
+      { $unwind: "$voter" },
+      {
+        $lookup: {
+          from: "votes",
+          localField: "_id",
+          foreignField: "candidateId",
+          as: "votes"
+        }
+      },
+      {
+        $group: {
+          _id: {
+            positionId: "$positionId",
+            positionName: "$position.positionName",
+            positionOrder: "$position.positionOrder"
+          },
+          candidates: {
+            $push: {
+              candidateId: "$_id",
+              candidateNumber: "$candidateNumber",
+              name: {
+                $concat: [
+                  "$voter.firstName",
+                  " ",
+                  { $ifNull: ["$voter.middleName", ""] },
+                  " ",
+                  "$voter.lastName"
+                ]
+              },
+              voteCount: { $size: "$votes" }
+            }
+          },
+          totalCandidates: { $sum: 1 },
+          totalVotes: { $sum: { $size: "$votes" } }
+        }
+      },
+      { $sort: { "_id.positionOrder": 1 } }
+    ])
+
+    // Voting timeline
+    const votingTimeline = await Ballot.aggregate([
+      { $match: { deptElectionId: new mongoose.Types.ObjectId(id), isSubmitted: true } },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: "%Y-%m-%d %H:00",
+              date: "$submittedAt"
+            }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { "_id": 1 } }
+    ])
+
+    const overview = {
+      totalPositions,
+      totalCandidates,
+      ...participationStats,
+      status: election.status,
+      electionDate: election.electionDate,
+      department: election.departmentId
+    }
+
+    res.json({
+      overview,
+      candidatesByPosition,
+      votingTimeline,
+      voterEligibility,
+      election: {
+        id: election._id,
+        title: election.title,
+        deptElectionId: election.deptElectionId,
+        department: election.departmentId,
+        status: election.status
+      },
+      accessInfo: {
+        canViewStatistics,
+        accessReason,
+        userRole: req.user?.role
+      }
+    })
+  } catch (error) {
+    next(error)
   }
+}
 
   // Get departmental dashboard summary
   static async getDepartmentalDashboardSummary(req, res, next) {
@@ -1031,108 +1104,257 @@ class DepartmentalElectionController {
 
   // Get candidates for voter view (with voting eligibility check) - departmental elections
   static async getCandidatesForVoter(req, res, next) {
-    try {
-      const { electionId } = req.params
-      const voterId = req.user.voterId
+  try {
+    const { electionId } = req.params
+    const voterId = req.user.voterId
 
-      if (!mongoose.Types.ObjectId.isValid(electionId)) {
-        const error = new Error("Invalid election ID format")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      // Get voter info
-      const voter = await Voter.findById(voterId).populate('departmentId')
-      if (!voter) {
-        const error = new Error("Voter not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      // Verify election exists and check voting eligibility
-      const election = await DepartmentalElection.findById(electionId).populate('departmentId')
-      if (!election) {
-        const error = new Error("Departmental Election not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      // Check eligibility for departmental election
-      const isFromDepartment = voter.departmentId._id.equals(election.departmentId._id)
-      const canVote = voter.isRegistered && voter.isPasswordActive && voter.isClassOfficer && isFromDepartment
-      const canViewDetails = isFromDepartment // All students from department can view details
-
-      // Get candidates if voter can view details
-      let candidates = []
-      let candidatesByPosition = []
-      
-      if (canViewDetails) {
-        candidates = await Candidate.find({ 
-          deptElectionId: electionId,
-          isActive: true 
-        })
-        .populate('voterId', 'schoolId firstName middleName lastName departmentId yearLevel')
-        .populate('voterId.departmentId', 'departmentCode degreeProgram college')
-        .populate('positionId', 'positionName positionOrder maxCandidates')
-        .populate('partylistId', 'partylistName partylistColor partylistDescription')
-        .sort({ 'positionId.positionOrder': 1, candidateNumber: 1 })
-
-        // Group candidates by position
-        candidatesByPosition = candidates.reduce((acc, candidate) => {
-          const positionId = candidate.positionId._id.toString()
-          if (!acc[positionId]) {
-            acc[positionId] = {
-              position: candidate.positionId,
-              candidates: []
-            }
-          }
-          acc[positionId].candidates.push(candidate)
-          return acc
-        }, {})
-      }
-
-      await AuditLog.logVoterAction(
-        "SYSTEM_ACCESS",
-        voter,
-        `Viewed candidates for Departmental election: ${election.title}`,
-        req
-      )
-
-      res.json({
-        election: {
-          _id: election._id,
-          title: election.title,
-          deptElectionId: election.deptElectionId,
-          department: election.departmentId,
-          status: election.status,
-          electionDate: election.electionDate,
-          type: 'DEPARTMENTAL'
-        },
-        candidates: canViewDetails ? candidates : [],
-        candidatesByPosition: canViewDetails ? Object.values(candidatesByPosition) : [],
-        totalCandidates: canViewDetails ? candidates.length : 0,
-        voterEligibility: {
-          canVote,
-          canViewDetails,
-          isRegistered: voter.isRegistered,
-          isClassOfficer: voter.isClassOfficer,
-          isFromDepartment,
-          departmentMatch: isFromDepartment,
-          message: canVote ? 
-            "You are eligible to vote in this departmental election" : 
-            !isFromDepartment ?
-              "This election is for students from a different department" :
-              !voter.isRegistered ?
-                "You must be a registered voter to participate" :
-                !voter.isClassOfficer ?
-                  "Only class officers can vote in departmental elections" :
-                  "You are not eligible to vote in this election"
-        }
-      })
-    } catch (error) {
-      next(error)
+    if (!mongoose.Types.ObjectId.isValid(electionId)) {
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
     }
+
+    // Get voter info
+    const voter = await Voter.findById(voterId).populate('departmentId')
+    if (!voter) {
+      const error = new Error("Voter not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Verify election exists
+    const election = await DepartmentalElection.findById(electionId).populate('departmentId')
+    if (!election) {
+      const error = new Error("Departmental Election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Check eligibility
+    const isFromSameDepartment = voter.departmentId._id.equals(election.departmentId._id)
+    
+    const voterEligibility = {
+      canVote: false,
+      canViewCandidates: false,
+      isFromSameDepartment,
+      isRegistered: voter.isRegistered,
+      isClassOfficer: voter.isClassOfficer,
+      isPasswordActive: voter.isPasswordActive,
+      voterDepartment: voter.departmentId.departmentCode,
+      electionDepartment: election.departmentId.departmentCode,
+      message: ''
+    }
+
+    // Determine access levels
+    if (!voter.isRegistered || !voter.isPasswordActive) {
+      voterEligibility.message = "You must be a registered voter with an active password"
+    } else if (!isFromSameDepartment) {
+      voterEligibility.message = `This election is for ${election.departmentId.departmentCode} department. You belong to ${voter.departmentId.departmentCode} department.`
+    } else {
+      // Same department and registered
+      voterEligibility.canViewCandidates = true
+      
+      if (voter.isClassOfficer) {
+        voterEligibility.canVote = true
+        voterEligibility.message = "You are eligible to vote in this departmental election as a class officer"
+      } else {
+        voterEligibility.message = "You can view candidates, but only class officers can vote in departmental elections"
+      }
+    }
+
+    // Get candidates if voter can view them
+    let candidates = []
+    let candidatesByPosition = []
+    
+    if (voterEligibility.canViewCandidates) {
+      candidates = await Candidate.find({ 
+        deptElectionId: electionId,
+        isActive: true 
+      })
+      .populate('voterId', 'schoolId firstName middleName lastName departmentId yearLevel')
+      .populate('voterId.departmentId', 'departmentCode degreeProgram college')
+      .populate('positionId', 'positionName positionOrder maxCandidates')
+      .sort({ 'positionId.positionOrder': 1, candidateNumber: 1 })
+
+      // Group candidates by position
+      candidatesByPosition = candidates.reduce((acc, candidate) => {
+        const positionId = candidate.positionId._id.toString()
+        if (!acc[positionId]) {
+          acc[positionId] = {
+            position: candidate.positionId,
+            candidates: []
+          }
+        }
+        acc[positionId].candidates.push(candidate)
+        return acc
+      }, {})
+    }
+
+    await AuditLog.logVoterAction(
+      "SYSTEM_ACCESS",
+      voter,
+      `Viewed candidates for Departmental election: ${election.title} - ${voterEligibility.message}`,
+      req
+    )
+
+    res.json({
+      election: {
+        _id: election._id,
+        title: election.title,
+        deptElectionId: election.deptElectionId,
+        department: election.departmentId,
+        status: election.status,
+        electionDate: election.electionDate,
+        type: 'DEPARTMENTAL'
+      },
+      candidates: voterEligibility.canViewCandidates ? candidates : [],
+      candidatesByPosition: voterEligibility.canViewCandidates ? Object.values(candidatesByPosition) : [],
+      totalCandidates: voterEligibility.canViewCandidates ? candidates.length : 0,
+      voterEligibility
+    })
+  } catch (error) {
+    next(error)
   }
+}
+
+  static async getDepartmentalElectionOfficersCount(req, res, next) {
+  try {
+    const { id } = req.params
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await DepartmentalElection.findById(id).populate("departmentId")
+    if (!election) {
+      const error = new Error("Departmental election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Count officers specifically from the election's department
+    const officersCount = await Voter.countDocuments({
+      departmentId: election.departmentId._id,
+      isActive: true,
+      isRegistered: true,
+      isClassOfficer: true,
+      isPasswordActive: true
+    })
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Officers count accessed for departmental election - ${election.title} (${election.deptElectionId}) for ${election.departmentId.departmentCode}: ${officersCount} officers`,
+      req
+    )
+
+    res.json({
+      election: {
+        id: election._id,
+        title: election.title,
+        deptElectionId: election.deptElectionId,
+        department: election.departmentId
+      },
+      officersCount
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+static async checkVoterEligibilityForDepartmentalElection(req, res, next) {
+  try {
+    const { id } = req.params
+    const voterId = req.user.voterId
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    if (!voterId) {
+      const error = new Error("Voter authentication required")
+      error.statusCode = 401
+      return next(error)
+    }
+
+    // Get voter info
+    const voter = await Voter.findById(voterId).populate('departmentId')
+    if (!voter) {
+      const error = new Error("Voter not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Get election info
+    const election = await DepartmentalElection.findById(id).populate('departmentId')
+    if (!election) {
+      const error = new Error("Departmental election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Check department matching
+    const isFromSameDepartment = voter.departmentId._id.equals(election.departmentId._id)
+    
+    // Determine eligibility
+    const eligibility = {
+      canVote: false,
+      canViewResults: false,
+      canViewStatistics: false,
+      isFromSameDepartment,
+      isRegistered: voter.isRegistered,
+      isClassOfficer: voter.isClassOfficer,
+      isPasswordActive: voter.isPasswordActive,
+      voterDepartment: voter.departmentId.departmentCode,
+      electionDepartment: election.departmentId.departmentCode,
+      message: ''
+    }
+
+    if (!voter.isRegistered || !voter.isPasswordActive) {
+      eligibility.message = "You must be a registered voter with an active password to participate in elections"
+    } else if (!isFromSameDepartment) {
+      eligibility.message = `This election is for ${election.departmentId.departmentCode} department. You belong to ${voter.departmentId.departmentCode} department.`
+      // Cannot vote but also cannot view results/stats if from different department
+    } else {
+      // Same department
+      eligibility.canViewResults = true
+      eligibility.canViewStatistics = true
+      
+      if (voter.isClassOfficer) {
+        eligibility.canVote = true
+        eligibility.message = "You are eligible to vote in this departmental election as a class officer"
+      } else {
+        eligibility.message = "You can view results and statistics, but only class officers can vote in departmental elections"
+      }
+    }
+
+    await AuditLog.logVoterAction(
+      "SYSTEM_ACCESS",
+      voter,
+      `Checked eligibility for departmental election: ${election.title} - ${eligibility.message}`,
+      req
+    )
+
+    res.json({
+      election: {
+        id: election._id,
+        title: election.title,
+        deptElectionId: election.deptElectionId,
+        department: election.departmentId,
+        status: election.status
+      },
+      eligibility
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+
 }
 
 module.exports = DepartmentalElectionController

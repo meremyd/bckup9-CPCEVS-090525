@@ -40,7 +40,9 @@ export default function DepartmentalPage() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [elections, setElections] = useState([])
+  const [filteredElections, setFilteredElections] = useState([])
   const [departments, setDepartments] = useState([])
+  const [selectedDepartment, setSelectedDepartment] = useState(null)
   const [selectedElection, setSelectedElection] = useState(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [formLoading, setFormLoading] = useState(false)
@@ -104,10 +106,13 @@ export default function DepartmentalPage() {
     try {
       const response = await departmentalElectionsAPI.getAll()
       console.log('Departmental Elections API response:', response)
-      setElections(response.elections || response.data || response)
+      const electionsData = response.elections || response.data || response
+      setElections(electionsData)
+      setFilteredElections(electionsData)
     } catch (error) {
       console.error("Error fetching elections:", error)
       setElections([])
+      setFilteredElections([])
     }
   }
 
@@ -186,12 +191,12 @@ export default function DepartmentalPage() {
         counts.candidates = 0
       }
 
-      // Fetch officers
-      console.log('Fetching officers...')
+      // Fetch officers using the new API method
+      console.log('Fetching officers count...')
       try {
-        const officersResponse = await votersAPI.getOfficers({ departmentId: selectedElection.departmentId?._id || selectedElection.departmentId, limit: 1 })
+        const officersResponse = await departmentalElectionsAPI.getOfficersCount(deptElectionId)
         console.log('Officers response:', officersResponse)
-        counts.officers = getCount(officersResponse, ['total', 'count'])
+        counts.officers = officersResponse.officersCount || 0
         console.log('Officers count:', counts.officers)
       } catch (officersError) {
         console.error('Failed to fetch officers:', officersError)
@@ -266,8 +271,19 @@ export default function DepartmentalPage() {
 
   const handleDepartmentClick = (department) => {
     console.log('Department clicked:', department)
-    // Navigate to department-specific elections view
-    router.push(`/ecommittee/departmental/department/${department._id || department.id}`)
+    setSelectedDepartment(department)
+    
+    // Filter elections by department
+    const deptElections = elections.filter(election => 
+      (election.departmentId?._id === department._id) || 
+      (election.departmentId === department._id)
+    )
+    setFilteredElections(deptElections)
+  }
+
+  const handleShowAllElections = () => {
+    setSelectedDepartment(null)
+    setFilteredElections(elections)
   }
 
   const handleAddElection = () => {
@@ -278,7 +294,7 @@ export default function DepartmentalPage() {
       title: '',
       status: 'upcoming',
       electionDate: '',
-      departmentId: ''
+      departmentId: selectedDepartment?._id || ''
     })
     setError('')
   }
@@ -569,20 +585,6 @@ export default function DepartmentalPage() {
               </div>
             </div>
           </div>
-
-          {/* Debug info - remove this in production */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="mt-8 bg-black/20 backdrop-blur-sm rounded-lg p-4 max-w-2xl mx-auto">
-              <h4 className="text-white font-bold mb-2">Debug Info:</h4>
-              <pre className="text-white/80 text-xs overflow-auto">
-                {JSON.stringify({ 
-                  selectedElection: selectedElection?._id || selectedElection?.id,
-                  cardCounts,
-                  countsLoading 
-                }, null, 2)}
-              </pre>
-            </div>
-          )}
         </div>
       </DepartmentalLayout>
     )
@@ -755,29 +757,46 @@ export default function DepartmentalPage() {
           {/* Departments Cards Section */}
           <div className="mb-12">
             <div className="text-center mb-6">
-              <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Departmentmental Elections</h2>
+              <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Departmental Elections</h2>
               <p className="text-white/80">Browse elections by department</p>
+              {selectedDepartment && (
+                <div className="mt-4">
+                  <button
+                    onClick={handleShowAllElections}
+                    className="inline-flex items-center px-4 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 transition-colors"
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Show All Elections
+                  </button>
+                  <p className="text-blue-100 text-sm mt-2">
+                    Showing elections for: <span className="font-semibold">{selectedDepartment.departmentCode} - {selectedDepartment.degreeProgram}</span>
+                  </p>
+                </div>
+              )}
             </div>
 
+            {/* Centered Department Cards Container */}
             <div className="flex justify-center">
-              <div className="w-full max-w-7xl">
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+              <div className="w-full max-w-4xl">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 justify-items-center">
                   {departments.map((department) => (
                     <div
                       key={department._id || department.id}
                       onClick={() => handleDepartmentClick(department)}
-                      className="bg-white/20 backdrop-blur-sm rounded-xl shadow-lg p-4 hover:bg-white/30 transition-all duration-200 cursor-pointer group relative overflow-hidden aspect-square flex flex-col justify-center items-center text-center"
+                      className={`w-full max-w-[200px] bg-white/20 backdrop-blur-sm rounded-xl shadow-lg p-4 hover:bg-white/30 transition-all duration-200 cursor-pointer group relative overflow-hidden aspect-[4/3] flex flex-col justify-center items-center text-center ${
+                        selectedDepartment?._id === department._id ? 'ring-2 ring-white/50 bg-white/30' : ''
+                      }`}
                     >
                       <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
                       
-                      <div className="relative z-10">
-                        <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center mb-3 mx-auto">
+                      <div className="relative z-10 flex flex-col items-center">
+                        <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center mb-3">
                           <Building2 className="w-6 h-6 text-white" />
                         </div>
                         <h3 className="text-sm font-bold text-white mb-1 leading-tight">
                           {department.departmentCode}
                         </h3>
-                        <p className="text-xs text-blue-100 line-clamp-2">
+                        <p className="text-xs text-blue-100 leading-tight line-clamp-3 px-2">
                           {department.degreeProgram}
                         </p>
                       </div>
@@ -790,13 +809,11 @@ export default function DepartmentalPage() {
 
           {/* Elections Section */}
           <div className="flex flex-col justify-center">
-            
-
             {/* Elections Grid */}
             <div className="flex justify-center">
               <div className="w-full max-w-6xl">
-                {elections.length === 0 ? (
-                  // Only show add election card when no elections
+                {filteredElections.length === 0 && !selectedDepartment ? (
+                  // Only show add election card when no elections and no department selected
                   <div className="flex justify-center">
                     <div
                       onClick={handleAddElection}
@@ -807,6 +824,24 @@ export default function DepartmentalPage() {
                       </div>
                       <h3 className="text-xl font-bold text-white mb-2">Add Election</h3>
                       <p className="text-blue-100 text-sm">Create a new departmental election</p>
+                    </div>
+                  </div>
+                ) : filteredElections.length === 0 && selectedDepartment ? (
+                  // Show message and add button when no elections for selected department
+                  <div className="text-center">
+                    <div className="mb-6">
+                      <h3 className="text-xl font-bold text-white mb-2">No Elections Found</h3>
+                      <p className="text-blue-100">No elections found for {selectedDepartment.departmentCode} - {selectedDepartment.degreeProgram}</p>
+                    </div>
+                    <div
+                      onClick={handleAddElection}
+                      className="inline-block bg-white/10 backdrop-blur-sm rounded-2xl border-2 border-dashed border-white/30 p-8 hover:bg-white/20 hover:border-white/50 transition-all duration-200 cursor-pointer group"
+                    >
+                      <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-4 mx-auto group-hover:scale-110 transition-transform duration-200">
+                        <Plus className="w-8 h-8 text-white" />
+                      </div>
+                      <h3 className="text-lg font-bold text-white mb-2">Add Election</h3>
+                      <p className="text-blue-100 text-sm">Create election for {selectedDepartment.departmentCode}</p>
                     </div>
                   </div>
                 ) : (
@@ -820,11 +855,16 @@ export default function DepartmentalPage() {
                         <Plus className="w-8 h-8 text-white" />
                       </div>
                       <h3 className="text-xl font-bold text-white mb-2">Add Election</h3>
-                      <p className="text-blue-100 text-sm">Create a new departmental election</p>
+                      <p className="text-blue-100 text-sm">
+                        {selectedDepartment ? 
+                          `Create election for ${selectedDepartment.departmentCode}` : 
+                          'Create a new departmental election'
+                        }
+                      </p>
                     </div>
 
                     {/* Election Cards */}
-                    {elections.map((election) => (
+                    {filteredElections.map((election) => (
                       <div
                         key={election._id || election.id}
                         onClick={() => handleElectionClick(election)}

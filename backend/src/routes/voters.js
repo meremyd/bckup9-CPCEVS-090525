@@ -43,7 +43,14 @@ router.put("/:id/deactivate", authorizeRoles("admin"), voterController.deactivat
 router.put("/:id/toggle-officer", authorizeRoles("election_committee"), voterController.toggleOfficerStatus)
 router.put("/:id/year-level", authMiddleware, authorizeRoles("admin", "election_committee"), voterController.updateYearLevel)
 
+router.get("/active", authorizeRoles("admin", "election_committee", "sao"), voterController.getActiveVoters)
+router.get("/active/registered", authorizeRoles("admin", "election_committee", "sao"), voterController.getActiveRegisteredVoters)
+router.get("/active/officers", authorizeRoles("admin", "election_committee", "sao"), voterController.getActiveOfficers)
+router.get("/department/:departmentId/officers", authorizeRoles("admin", "election_committee", "sao"), voterController.getDepartmentalOfficers)
+router.get("/department-code/:departmentCode/active", authorizeRoles("admin", "election_committee", "sao"), voterController.getActiveVotersByDepartmentCode)
+router.get("/department-code/:departmentCode/officers/active", authorizeRoles("admin", "election_committee", "sao"), voterController.getActiveOfficersByDepartmentCode)
 // Get all voters (should be last to avoid route conflicts)
 router.get("/", authorizeRoles("admin", "election_committee", "sao"), voterController.getAllVoters)
+
 
 module.exports = router

@@ -492,18 +492,18 @@ useEffect(() => {
   }
 
   const getDepartmentCardColor = (index) => {
-    const colors = [
-      "bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200",
-      "bg-green-100 text-green-800 border-green-200 hover:bg-green-200",
-      "bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-200",
-      "bg-orange-100 text-orange-800 border-orange-200 hover:bg-orange-200",
-      "bg-pink-100 text-pink-800 border-pink-200 hover:bg-pink-200",
-      "bg-indigo-100 text-indigo-800 border-indigo-200 hover:bg-indigo-200",
-      "bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-200",
-      "bg-teal-100 text-teal-800 border-teal-200 hover:bg-teal-200"
-    ]
-    return colors[index % colors.length]
-  }
+  const colors = [
+    "bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200", 
+    "bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-200",
+    "bg-green-100 text-green-800 border-green-200 hover:bg-green-200",
+    "bg-orange-100 text-orange-800 border-orange-200 hover:bg-orange-200",
+    "bg-pink-100 text-pink-800 border-pink-200 hover:bg-pink-200",
+    "bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-200",
+    "bg-indigo-100 text-indigo-800 border-indigo-200 hover:bg-indigo-200",
+    "bg-teal-100 text-teal-800 border-teal-200 hover:bg-teal-200"
+  ]
+  return colors[index % colors.length]
+}
 
   const closeModals = () => {
     setShowAddModal(false)
@@ -597,35 +597,42 @@ useEffect(() => {
 
         {/* Department Cards */}
         {departmentsWithVoters.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {departmentsWithVoters.map(([departmentId, stats], index) => (
-              <div
-                key={departmentId}
-                onClick={() => handleDepartmentCardClick(departmentId)}
-                className={`p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 hover:shadow-md ${
-                  selectedDepartment === departmentId
-                    ? getDepartmentCardColor(index) + " ring-2 ring-offset-2 ring-[#001f65]"
-                    : getDepartmentCardColor(index) + " hover:scale-105"
-                }`}
-              >
-                <div className="text-center">
-                  <div className="flex items-center justify-center mb-2">
-                    <Users className="w-5 h-5 mr-1" />
-                    <h3 className="text-lg font-bold">{stats.departmentCode}</h3>
-                  </div>
-                  <p className="text-2xl font-bold">{stats.count}</p>
-                  <p className="text-xs opacity-75 mt-1 line-clamp-2">
-                    {stats.departmentName}
-                  </p>
-                  {stats.college && (
-                    <p className="text-xs opacity-60 mt-1">{stats.college}</p>
-                  )}
-                </div>
-              </div>
-            ))}
+  <div className="flex justify-center">
+    <div className={`grid gap-4 ${
+      departmentsWithVoters.length === 1 ? 'grid-cols-1 max-w-sm' :
+      departmentsWithVoters.length === 2 ? 'grid-cols-1 sm:grid-cols-2 max-w-2xl' :
+      departmentsWithVoters.length === 3 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 max-w-4xl' :
+      departmentsWithVoters.length === 4 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 max-w-5xl' :
+      'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-w-7xl'
+    }`}>
+      {departmentsWithVoters.map(([departmentId, stats], index) => (
+        <div
+          key={departmentId}
+          onClick={() => handleDepartmentCardClick(departmentId)}
+          className={`p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 hover:shadow-md min-w-[200px] ${
+            selectedDepartment === departmentId
+              ? getDepartmentCardColor(index) + " ring-2 ring-offset-2 ring-[#001f65] scale-105"
+              : getDepartmentCardColor(index) + " hover:scale-105"
+          }`}
+        >
+          <div className="text-center">
+            <div className="flex items-center justify-center mb-3">
+              <Users className="w-6 h-6 mr-2" />
+              <h3 className="text-xl font-bold">{stats.departmentCode}</h3>
+            </div>
+            <p className="text-3xl font-bold mb-2">{stats.count}</p>
+            <p className="text-sm opacity-75 mb-2 line-clamp-2 min-h-[2.5rem] flex items-center justify-center">
+              {stats.departmentName}
+            </p>
+            {stats.college && (
+              <p className="text-xs opacity-60 border-t pt-2 mt-2">{stats.college}</p>
+            )}
           </div>
-        )}
-
+        </div>
+      ))}
+    </div>
+  </div>
+)}
         {/* Main Table */}
         <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 overflow-hidden">
           {/* Table Header with Search, Export, and Add Buttons */}

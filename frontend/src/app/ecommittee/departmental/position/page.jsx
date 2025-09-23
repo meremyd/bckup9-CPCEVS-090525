@@ -19,7 +19,7 @@ import {
 export default function DepartmentalPositionsPage() {
   const [positions, setPositions] = useState([])
   const [deptElectionData, setDeptElectionData] = useState(null)
-  const [loading, setLoading] = useState(true) // Start with loading true
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
 
@@ -51,7 +51,6 @@ export default function DepartmentalPositionsPage() {
     if (deptElectionId) {
       fetchData()
     } else {
-      // Redirect if no election ID
       router.push('/ecommittee/departmental')
     }
   }, [deptElectionId, router])
@@ -90,7 +89,6 @@ export default function DepartmentalPositionsPage() {
       
       console.log('Positions API response:', response)
       
-      // Handle different response structures
       let positionsData = []
       if (response.data?.positions) {
         positionsData = response.data.positions
@@ -105,7 +103,6 @@ export default function DepartmentalPositionsPage() {
       console.log('Processed positions data:', positionsData)
       setPositions(positionsData)
       
-      // Set election data if included in response
       if (response.data?.election || response.election) {
         setDeptElectionData(response.data?.election || response.election)
       }
@@ -113,7 +110,7 @@ export default function DepartmentalPositionsPage() {
     } catch (error) {
       console.error("Error fetching positions:", error)
       handleAPIError(error, 'Failed to load positions')
-      setPositions([]) // Set empty array on error
+      setPositions([])
     }
   }
 
@@ -123,7 +120,6 @@ export default function DepartmentalPositionsPage() {
         console.log('Fetching election data separately...')
         const electionResponse = await departmentalElectionsAPI.getById(deptElectionId)
         
-        // Handle different response structures
         let electionData = null
         if (electionResponse.data) {
           electionData = electionResponse.data
@@ -138,31 +134,67 @@ export default function DepartmentalPositionsPage() {
       }
     } catch (electionError) {
       console.warn('Could not fetch election details:', electionError)
-      // Don't throw error here as positions might still work
     }
   }
 
   const handleAPIError = (error, defaultMessage) => {
+    console.error('Full error object:', error)
+    console.error('Error response:', error.response)
+    console.error('Error request:', error.request)
+    console.error('Error message:', error.message)
+    
     let errorMessage = defaultMessage
+    let detailedMessage = ''
 
-    if (error.response?.status === 429) {
-      errorMessage = "Too many requests. Please try again in a moment."
-    } else if (error.response?.status >= 500) {
-      errorMessage = "Server error. Please try again later."
-    } else if (error.code === 'NETWORK_ERROR' || !navigator.onLine) {
-      errorMessage = "Network error. Please check your connection."
-    } else if (error.response?.data?.message) {
-      errorMessage = error.response.data.message
-    } else if (error.message) {
-      errorMessage = error.message
+    if (error.response) {
+      // Server responded with error status
+      console.error('Response status:', error.response.status)
+      console.error('Response data:', error.response.data)
+      
+      if (error.response.status === 429) {
+        errorMessage = "Too many requests. Please try again in a moment."
+      } else if (error.response.status >= 500) {
+        errorMessage = "Server error. Please try again later."
+      } else if (error.response.status === 401) {
+        errorMessage = "Authentication failed. Please login again."
+      } else if (error.response.status === 403) {
+        errorMessage = "Access denied. You don't have permission to perform this action."
+      } else if (error.response.data?.message) {
+        errorMessage = error.response.data.message
+      }
+      
+      detailedMessage = `Status: ${error.response.status}, Data: ${JSON.stringify(error.response.data)}`
+    } else if (error.request) {
+      // Network error - request was made but no response
+      console.error('Network error - no response received')
+      errorMessage = "Network error. Please check your connection and server status."
+      detailedMessage = "No response received from server"
+    } else {
+      // Something else happened
+      errorMessage = error.message || defaultMessage
+      detailedMessage = error.message
     }
 
     setError(errorMessage)
     
+    // Show detailed error in development/console
+    console.error('Processed error message:', errorMessage)
+    console.error('Detailed message:', detailedMessage)
+    
     Swal.fire({
       icon: 'error',
-      title: 'Error',
-      text: errorMessage,
+      title: 'Error Details',
+      html: `
+        <div class="text-left">
+          <p class="font-medium mb-2">${errorMessage}</p>
+          <details class="mt-2">
+            <summary class="cursor-pointer text-sm text-gray-600">Technical Details</summary>
+            <div class="mt-2 p-2 bg-gray-100 rounded text-xs">
+              ${detailedMessage}
+            </div>
+          </details>
+        </div>
+      `,
       confirmButtonColor: '#001f65'
     })
   }
@@ -222,7 +254,7 @@ export default function DepartmentalPositionsPage() {
         const positionName = document.getElementById('positionName')?.value?.trim();
         const positionOrder = parseInt(document.getElementById('positionOrder')?.value || '1');
         const maxVotes = parseInt(document.getElementById('maxVotes')?.value || '1');
-        const maxCandidates = parseInt(document.getElementById('maxCandidates')?.value || '2');
+        const maxCandidates = parseInt(document.getElementById('maxCandidates')?.value || '10');
         const description = document.getElementById('description')?.value?.trim();
 
         if (!positionName) {
@@ -265,8 +297,26 @@ export default function DepartmentalPositionsPage() {
       try {
         setLoading(true);
         
-        console.log('Creating position with data:', formValues);
+        console.log('=== CREATING DEPARTMENTAL POSITION ===');
+        console.log('Form values:', formValues);
+        console.log('API endpoint: /positions/departmental');
+        console.log('Request data:', JSON.stringify(formValues, null, 2));
         
+        // Check authentication
+        const token = localStorage.getItem("token");
+        const userData = localStorage.getItem("user");
+        console.log('Token exists:', !!token);
+        console.log('User data:', userData);
+        
+        // Validate required fields again
+        if (!formValues.deptElectionId) {
+          throw new Error('Departmental Election ID is missing');
+        }
+        if (!formValues.positionName) {
+          throw new Error('Position name is missing');
+        }
+        
+        console.log('Making API call...');
         const result = await positionsAPI.departmental.create(formValues);
         console.log('Position created successfully:', result);
         
@@ -282,7 +332,22 @@ export default function DepartmentalPositionsPage() {
         
         await fetchPositions();
       } catch (error) {
+        console.error('=== POSITION CREATION ERROR ===');
         console.error('Error creating position:', error);
+        
+        // Additional debugging info
+        console.error('Error type:', typeof error);
+        console.error('Error constructor:', error.constructor.name);
+        
+        if (error.isAxiosError) {
+          console.error('This is an Axios error');
+          console.error('Request config:', error.config);
+          console.error('Request URL:', error.config?.url);
+          console.error('Request method:', error.config?.method);
+          console.error('Request data:', error.config?.data);
+          console.error('Request headers:', error.config?.headers);
+        }
+        
         handleAPIError(error, 'Failed to create position');
       } finally {
         setLoading(false);
@@ -343,7 +408,7 @@ export default function DepartmentalPositionsPage() {
         const positionName = document.getElementById('positionName')?.value?.trim()
         const positionOrder = parseInt(document.getElementById('positionOrder')?.value || '1')
         const maxVotes = parseInt(document.getElementById('maxVotes')?.value || '1')
-        const maxCandidates = parseInt(document.getElementById('maxCandidates')?.value || '2')
+        const maxCandidates = parseInt(document.getElementById('maxCandidates')?.value || '10')
         const description = document.getElementById('description')?.value?.trim()
 
         if (!positionName) {
