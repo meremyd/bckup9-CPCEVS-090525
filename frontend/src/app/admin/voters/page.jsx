@@ -33,6 +33,7 @@ export default function VotersPage() {
     firstName: "",
     middleName: "",
     lastName: "",
+    sex: "",
     departmentId: ""
   })
 
@@ -42,6 +43,7 @@ export default function VotersPage() {
     firstName: "",
     middleName: "",
     lastName: "",
+    sex: "",
     departmentId: ""
   }])
 
@@ -222,6 +224,7 @@ useEffect(() => {
       firstName: "",
       middleName: "",
       lastName: "",
+      sex: "",
       departmentId: ""
     })
   }
@@ -232,6 +235,7 @@ useEffect(() => {
       firstName: "",
       middleName: "",
       lastName: "",
+      sex: "",
       departmentId: ""
     }])
   }
@@ -263,6 +267,7 @@ useEffect(() => {
       firstName: "",
       middleName: "",
       lastName: "",
+      sex: "",
       departmentId: ""
     }])
   }
@@ -400,6 +405,7 @@ useEffect(() => {
       firstName: voter.firstName || "",
       middleName: voter.middleName || "",
       lastName: voter.lastName || "",
+      sex: voter.sex || "",
       departmentId: (voter.departmentId?._id || voter.departmentId) || ""
     })
     setShowEditModal(true)
@@ -692,6 +698,9 @@ useEffect(() => {
                     Full Name
                   </th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                    Sex
+                  </th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
                     Department
                   </th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
@@ -730,6 +739,9 @@ useEffect(() => {
                       </td>
                       <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-[#001f65]">
                         {`${voter.firstName || ''} ${voter.middleName || ''} ${voter.lastName || ''}`.trim() || 'N/A'}
+                      </td>
+                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-[#001f65]">
+                        {voter.sex || '-'}
                       </td>
                       <td className="px-3 sm:px-6 py-4 text-sm text-[#001f65]">
                         <div className="font-medium">
@@ -927,6 +939,22 @@ useEffect(() => {
 
                   <div>
                     <label className="block text-sm font-medium text-[#001f65] mb-1">
+                      Sex
+                    </label>
+                    <select
+                      name="sex"
+                      value={formData.sex}
+                      onChange={handleInputChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                    >
+                      <option value="">Select sex</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-[#001f65] mb-1">
                       Department <span className="text-red-500">*</span>
                     </label>
                     <select
@@ -996,7 +1024,7 @@ useEffect(() => {
                           </button>
                         )}
                       </div>
-                      <div className="grid grid-cols-5 gap-3">
+                      <div className="grid grid-cols-6 gap-3">
                         <div>
                           <label className="block text-xs font-medium text-[#001f65] mb-1">
                             School ID <span className="text-red-500">*</span>
@@ -1045,6 +1073,20 @@ useEffect(() => {
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#001f65] focus:border-transparent text-sm"
                             placeholder="Last name"
                           />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-[#001f65] mb-1">
+                            Sex
+                          </label>
+                          <select
+                            value={form.sex}
+                            onChange={(e) => handleBulkInputChange(index, 'sex', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#001f65] focus:border-transparent text-sm"
+                          >
+                            <option value="">Select</option>
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                          </select>
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-[#001f65] mb-1">
@@ -1165,6 +1207,23 @@ useEffect(() => {
                       />
                     </div>
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-[#001f65] mb-1">
+                      Sex
+                    </label>
+                    <select
+                      name="sex"
+                      value={formData.sex}
+                      onChange={handleInputChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                    >
+                      <option value="">Select sex</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                    </select>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-[#001f65] mb-1">
                       Department <span className="text-red-500">*</span>

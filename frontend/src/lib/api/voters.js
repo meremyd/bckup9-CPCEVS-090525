@@ -71,6 +71,10 @@ export const votersAPI = {
       if (voterData.middleName && voterData.middleName.trim()) {
         cleanedData.middleName = voterData.middleName.trim()
       }
+
+      if (voterData.sex) {
+        cleanedData.sex = voterData.sex
+      }
       
       if (voterData.yearLevel) {
         cleanedData.yearLevel = voterData.yearLevel
@@ -113,6 +117,10 @@ export const votersAPI = {
         if (voter.middleName && voter.middleName.trim()) {
           cleanedVoter.middleName = voter.middleName.trim()
         }
+
+        if (voter.sex) {
+          cleanedVoter.sex = voter.sex
+        }
         
         if (voter.yearLevel) {
           cleanedVoter.yearLevel = voter.yearLevel
@@ -153,6 +161,10 @@ export const votersAPI = {
       // Handle optional fields
       if (voterData.middleName !== undefined) {
         cleanedData.middleName = voterData.middleName?.trim() || null
+      }
+
+      if (voterData.sex) {
+        cleanedData.sex = voterData.sex
       }
       
       if (voterData.yearLevel) {

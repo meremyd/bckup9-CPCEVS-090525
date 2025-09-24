@@ -495,7 +495,7 @@ if (candidateData.credentials &&
   // UPDATED: Create Departmental candidate - removed credentials, fixed campaign picture handling
   create: async (candidateData) => {
     try {
-      // Clean the candidate data - only include fields allowed for departmental candidates
+      // Clean the candidate data - include campaign picture like SSG
       const cleanedData = {
         voterId: candidateData.voterId,
         positionId: candidateData.positionId,
@@ -510,10 +510,17 @@ if (candidateData.credentials &&
         cleanedData.candidateNumber = candidateData.candidateNumber
       }
 
-      // Don't include campaign picture in main create call - handle separately
-      // Campaign picture will be uploaded after candidate creation
+      // FIXED: Include campaign picture like SSG candidates do
+      if (candidateData.campaignPicture && 
+          candidateData.campaignPicture.trim() !== '' && 
+          candidateData.campaignPicture.includes('base64')) {
+        cleanedData.campaignPicture = candidateData.campaignPicture
+      }
 
-      console.log('Creating departmental candidate with cleaned data:', cleanedData)
+      console.log('Creating departmental candidate with cleaned data:', {
+        ...cleanedData,
+        campaignPicture: cleanedData.campaignPicture ? '[IMAGE_DATA]' : undefined
+      })
       
       const response = await api.post('/candidates/departmental', cleanedData)
       
@@ -550,11 +557,11 @@ if (candidateData.credentials &&
         campaignPicture: candidateData.campaignPicture ? '[IMAGE_DATA]' : candidateData.campaignPicture
       })
       
-      // Remove fields not allowed for departmental candidates
+      // Remove fields not allowed for departmental candidates but KEEP campaign picture
       const updateData = { ...candidateData }
       delete updateData.partylistId // No partylists allowed
       delete updateData.credentials // No credentials allowed
-      delete updateData.campaignPicture // Handle separately
+      // FIXED: Don't delete campaign picture - it's allowed for departmental candidates
       
       const response = await api.put(`/candidates/departmental/${id}`, updateData)
       
@@ -581,6 +588,7 @@ if (candidateData.credentials &&
       throw error
     }
   },
+
 
   // Delete Departmental candidate
   delete: async (id) => {

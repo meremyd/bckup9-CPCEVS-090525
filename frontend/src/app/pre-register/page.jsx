@@ -54,6 +54,7 @@ export default function PreRegister() {
             firstName: data.firstName || "",
             middleName: data.middleName || "",
             lastName: data.lastName || "",
+            sex: data.sex || "",
           }))
           setVoterData(data)
           setVoterFound(true)

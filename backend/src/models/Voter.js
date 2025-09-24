@@ -23,6 +23,12 @@ const voterSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    sex: {
+      type: String,
+      enum: ["Male", "Female"],
+      default: null,
+      trim: true,
+    },
     birthdate: {
       type: Date,
       // required: true,

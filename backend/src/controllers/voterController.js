@@ -47,6 +47,7 @@ class VoterController {
         firstName: voter.firstName,
         middleName: voter.middleName,
         lastName: voter.lastName,
+        sex: voter.sex,
         yearLevel: voter.yearLevel,
         department: voter.departmentId,
         hasPassword: !!voter.password,
@@ -510,7 +511,7 @@ class VoterController {
   // Create new voter
   static async createVoter(req, res, next) {
     try {
-      const { schoolId, firstName, middleName, lastName, birthdate, departmentId, yearLevel, email } = req.body
+      const { schoolId, firstName, middleName, lastName, sex, birthdate, departmentId, yearLevel, email } = req.body
 
       // Validation - Only require essential fields
       if (!schoolId || !firstName || !lastName || !departmentId) {
@@ -581,6 +582,7 @@ class VoterController {
         firstName,
         middleName,
         lastName,
+        sex,
         departmentId,
         yearLevel: yearLevelNumber,
         isActive: true,
@@ -625,7 +627,7 @@ class VoterController {
    static async updateVoter(req, res, next) {
     try {
       const { id } = req.params
-      const { schoolId, firstName, middleName, lastName, birthdate, departmentId, yearLevel, email } = req.body
+      const { schoolId, firstName, middleName, lastName, sex, birthdate, departmentId, yearLevel, email } = req.body
 
       const voter = await Voter.findById(id).populate("departmentId")
       if (!voter) {
@@ -717,6 +719,7 @@ class VoterController {
       if (firstName) updateData.firstName = firstName
       if (middleName !== undefined) updateData.middleName = middleName
       if (lastName) updateData.lastName = lastName
+      if (sex) updateData.sex = sex
       if (birthdate) updateData.birthdate = new Date(birthdate)
       if (departmentId) updateData.departmentId = departmentId
       if (yearLevel) updateData.yearLevel = Number(yearLevel)
@@ -1149,9 +1152,9 @@ static async getActiveOfficers(req, res, next) {
 
       const filter = { 
         isClassOfficer: true,
-        isActive: true,
-        isRegistered: true,  // Officers should be registered
-        isPasswordActive: true  // Officers should have active passwords
+        isActive: true
+        // isRegistered: true,  // Officers should be registered
+        // isPasswordActive: true  // Officers should have active passwords
       }
       
       if (department) filter.departmentId = department
@@ -1776,143 +1779,136 @@ static async getActiveOfficersByDepartmentCode(req, res, next) {
       }
 
       if (format === 'pdf') {
-        const PDFDocument = require('pdfkit')
-        const doc = new PDFDocument({ margin: 50, size: 'A4' })
-        
-        res.setHeader('Content-Type', 'application/pdf')
-        res.setHeader('Content-Disposition', `attachment; filename="voters_export_${exportDate}.pdf"`)
-        
-        doc.pipe(res)
+          const PDFDocument = require('pdfkit')
+          const doc = new PDFDocument({ margin: 50, size: 'A4' })
+          
+          res.setHeader('Content-Type', 'application/pdf')
+          res.setHeader('Content-Disposition', `attachment; filename="voters_export_${exportDate}.pdf"`)
+          
+          doc.pipe(res)
 
-        // Header
-        doc.fontSize(18).font('Helvetica-Bold')
-        doc.text('VOTER DATABASE EXPORT', { align: 'center' })
-        doc.moveDown()
-        
-        doc.fontSize(12).font('Helvetica')
-        doc.text(`Filter: ${filterDescription}`)
-        doc.text(`Export Date: ${exportTime}`)
-        doc.text(`Total Records: ${voters.length}`)
-        doc.moveDown()
+          // Header
+          doc.fontSize(18).font('Helvetica-Bold')
+          doc.text('VOTER DATABASE EXPORT', { align: 'center' })
+          doc.moveDown()
+          
+          doc.fontSize(12).font('Helvetica')
+          doc.text(`Filter: ${filterDescription}`)
+          doc.text(`Export Date: ${exportTime}`)
+          doc.text(`Total Records: ${voters.length}`)
+          doc.moveDown()
 
-        // Table headers
-        doc.fontSize(10).font('Helvetica-Bold')
-        let yPosition = doc.y
-        const rowHeight = 20
-        const colWidths = [80, 120, 80, 120, 40, 40]
-        const headers = ['School ID', 'Full Name', 'Department', 'Program', 'Year', 'Status']
-        
-        let xPosition = 50
-        headers.forEach((header, i) => {
-          doc.rect(xPosition, yPosition, colWidths[i], rowHeight).stroke()
-          doc.text(header, xPosition + 2, yPosition + 5, { width: colWidths[i] - 4, height: rowHeight - 10 })
-          xPosition += colWidths[i]
-        })
-
-        yPosition += rowHeight
-        doc.font('Helvetica').fontSize(8)
-
-        // Table rows
-        voters.forEach((voter, index) => {
-          if (yPosition > 700) { // Start new page if needed
-            doc.addPage()
-            yPosition = 50
-          }
-
-          const rowData = [
-            voter.schoolId?.toString() || '',
-            voter.fullName || `${voter.firstName || ''} ${voter.lastName || ''}`,
-            voter.departmentId?.departmentCode || '',
-            voter.departmentId?.degreeProgram?.substring(0, 20) + '...' || '',
-            voter.yearLevel?.toString() || '',
-            voter.isActive ? 'Active' : 'Inactive'
-          ]
-
-          xPosition = 50
-          rowData.forEach((data, i) => {
+          // Table headers - FIXED: Match column widths with headers
+          doc.fontSize(10).font('Helvetica-Bold')
+          let yPosition = doc.y
+          const rowHeight = 20
+          // Updated to match 7 columns
+          const colWidths = [70, 100, 30, 80, 80, 80, 40]
+          const headers = ['School ID', 'Full Name', 'Sex', 'Department', 'Program', 'College', 'Status']
+          
+          let xPosition = 50
+          headers.forEach((header, i) => {
             doc.rect(xPosition, yPosition, colWidths[i], rowHeight).stroke()
-            doc.text(data, xPosition + 2, yPosition + 5, { width: colWidths[i] - 4, height: rowHeight - 10 })
+            doc.text(header, xPosition + 2, yPosition + 5, { width: colWidths[i] - 4, height: rowHeight - 10 })
             xPosition += colWidths[i]
           })
+
           yPosition += rowHeight
+          doc.font('Helvetica').fontSize(8)
+
+          // Table rows - FIXED: Match data with columns
+          voters.forEach((voter, index) => {
+            if (yPosition > 700) { // Start new page if needed
+              doc.addPage()
+              yPosition = 50
+            }
+
+            const rowData = [
+              voter.schoolId?.toString() || '',
+              voter.fullName || `${voter.firstName || ''} ${voter.lastName || ''}`,
+              voter.sex || '', // Added sex field
+              voter.departmentId?.departmentCode || '',
+              voter.departmentId?.degreeProgram?.substring(0, 15) + '...' || '',
+              voter.departmentId?.college?.substring(0, 15) + '...' || '',
+              voter.isActive ? 'Active' : 'Inactive'
+            ]
+
+            xPosition = 50
+            rowData.forEach((data, i) => {
+              doc.rect(xPosition, yPosition, colWidths[i], rowHeight).stroke()
+              doc.text(data, xPosition + 2, yPosition + 5, { width: colWidths[i] - 4, height: rowHeight - 10 })
+              xPosition += colWidths[i]
+            })
+            yPosition += rowHeight
+          })
+
+          doc.end()
+        } else if (format === 'docx') {
+  const { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun, HeadingLevel, AlignmentType } = require('docx')
+
+  // Create table rows - FIXED: Include sex field
+  const tableRows = [
+    new TableRow({
+      children: [
+        new TableCell({ children: [new Paragraph({ text: "School ID", style: "tableHeader" })] }),
+        new TableCell({ children: [new Paragraph({ text: "Full Name", style: "tableHeader" })] }),
+        new TableCell({ children: [new Paragraph({ text: "Sex", style: "tableHeader" })] }),
+        new TableCell({ children: [new Paragraph({ text: "Department", style: "tableHeader" })] }),
+        new TableCell({ children: [new Paragraph({ text: "Program", style: "tableHeader" })] }),
+        new TableCell({ children: [new Paragraph({ text: "College", style: "tableHeader" })] }),
+        new TableCell({ children: [new Paragraph({ text: "Status", style: "tableHeader" })] })
+      ]
+    }),
+    ...voters.map(voter => new TableRow({
+      children: [
+        new TableCell({ children: [new Paragraph(voter.schoolId?.toString() || '')] }),
+        new TableCell({ children: [new Paragraph(voter.fullName || `${voter.firstName || ''} ${voter.lastName || ''}`)] }),
+        new TableCell({ children: [new Paragraph(voter.sex || '')] }), // Added sex field
+        new TableCell({ children: [new Paragraph(voter.departmentId?.departmentCode || '')] }),
+        new TableCell({ children: [new Paragraph(voter.departmentId?.degreeProgram || '')] }),
+        new TableCell({ children: [new Paragraph(voter.departmentId?.college || '')] }),
+        new TableCell({ children: [new Paragraph(voter.isActive ? 'Active' : 'Inactive')] })
+      ]
+    }))
+  ]
+
+  const doc = new Document({
+    sections: [{
+      children: [
+        new Paragraph({
+          text: "VOTER DATABASE EXPORT",
+          heading: HeadingLevel.TITLE,
+          alignment: AlignmentType.CENTER
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({ text: `Filter: ${filterDescription}`, bold: true }),
+            new TextRun({ text: `\nExport Date: ${exportTime}` }),
+            new TextRun({ text: `\nTotal Records: ${voters.length}` })
+          ]
+        }),
+        new Paragraph({ text: "" }), // Empty paragraph for spacing
+        new Table({
+          rows: tableRows,
+          width: { size: 100, type: "pct" }
         })
+      ]
+    }]
+  })
 
-        doc.end()
+  const buffer = await Packer.toBuffer(doc)
+  
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+  res.setHeader('Content-Disposition', `attachment; filename="voters_export_${exportDate}.docx"`)
+  res.send(buffer)
 
-        await AuditLog.logUserAction(
-          "EXPORT_DATA",
-          { username: req.user?.username },
-          `Voters exported - ${voters.length} records exported in PDF format`,
-          req
-        )
-
-      } else if (format === 'docx') {
-        const { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun, HeadingLevel, AlignmentType } = require('docx')
-
-        // Create table rows
-        const tableRows = [
-          new TableRow({
-            children: [
-              new TableCell({ children: [new Paragraph({ text: "School ID", style: "tableHeader" })] }),
-              new TableCell({ children: [new Paragraph({ text: "Full Name", style: "tableHeader" })] }),
-              new TableCell({ children: [new Paragraph({ text: "Department", style: "tableHeader" })] }),
-              new TableCell({ children: [new Paragraph({ text: "Program", style: "tableHeader" })] }),
-              new TableCell({ children: [new Paragraph({ text: "College", style: "tableHeader" })] }),
-              new TableCell({ children: [new Paragraph({ text: "Year", style: "tableHeader" })] }),
-              new TableCell({ children: [new Paragraph({ text: "Status", style: "tableHeader" })] })
-            ]
-          }),
-          ...voters.map(voter => new TableRow({
-            children: [
-              new TableCell({ children: [new Paragraph(voter.schoolId?.toString() || '')] }),
-              new TableCell({ children: [new Paragraph(voter.fullName || `${voter.firstName || ''} ${voter.lastName || ''}`)] }),
-              new TableCell({ children: [new Paragraph(voter.departmentId?.departmentCode || '')] }),
-              new TableCell({ children: [new Paragraph(voter.departmentId?.degreeProgram || '')] }),
-              new TableCell({ children: [new Paragraph(voter.departmentId?.college || '')] }),
-              new TableCell({ children: [new Paragraph(voter.yearLevel?.toString() || '')] }),
-              new TableCell({ children: [new Paragraph(voter.isActive ? 'Active' : 'Inactive')] })
-            ]
-          }))
-        ]
-
-        const doc = new Document({
-          sections: [{
-            children: [
-              new Paragraph({
-                text: "VOTER DATABASE EXPORT",
-                heading: HeadingLevel.TITLE,
-                alignment: AlignmentType.CENTER
-              }),
-              new Paragraph({
-                children: [
-                  new TextRun({ text: `Filter: ${filterDescription}`, bold: true }),
-                  new TextRun({ text: `\nExport Date: ${exportTime}` }),
-                  new TextRun({ text: `\nTotal Records: ${voters.length}` })
-                ]
-              }),
-              new Paragraph({ text: "" }), // Empty paragraph for spacing
-              new Table({
-                rows: tableRows,
-                width: { size: 100, type: "pct" }
-              })
-            ]
-          }]
-        })
-
-        const buffer = await Packer.toBuffer(doc)
-        
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-        res.setHeader('Content-Disposition', `attachment; filename="voters_export_${exportDate}.docx"`)
-        res.send(buffer)
-
-        await AuditLog.logUserAction(
-          "EXPORT_DATA",
-          { username: req.user?.username },
-          `Voters exported - ${voters.length} records exported in DOCX format`,
-          req
-        )
-
-      } else {
+  await AuditLog.logUserAction(
+    "EXPORT_DATA",
+    { username: req.user?.username },
+    `Voters exported - ${voters.length} records exported in DOCX format`,
+    req
+  )
+} else {
         // JSON format fallback
         res.json({
           success: true,
@@ -2039,7 +2035,7 @@ static async getActiveOfficersByDepartmentCode(req, res, next) {
       for (let i = 0; i < voters.length; i++) {
         const voterData = voters[i]
         try {
-          const { schoolId, firstName, middleName, lastName, birthdate, departmentId, yearLevel, email } = voterData
+          const { schoolId, firstName, middleName, lastName, sex, birthdate, departmentId, yearLevel, email } = voterData
 
           // Validation - Only require essential fields
           if (!schoolId || !firstName || !lastName || !departmentId) {
@@ -2090,6 +2086,7 @@ static async getActiveOfficersByDepartmentCode(req, res, next) {
             firstName,
             middleName,
             lastName,
+            sex,
             departmentId,
             yearLevel: yearLevelNumber,
             isActive: true,

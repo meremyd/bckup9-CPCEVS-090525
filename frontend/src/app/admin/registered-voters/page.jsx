@@ -438,6 +438,9 @@ export default function RegisteredVotersPage() {
                     Full Name
                   </th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                    Sex
+                  </th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
                     Email
                   </th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
@@ -463,7 +466,7 @@ export default function RegisteredVotersPage() {
               <tbody className="bg-white/50 divide-y divide-gray-200/50">
                 {voters.length === 0 ? (
                   <tr>
-                    <td colSpan="10" className="px-3 sm:px-6 py-12 text-center text-[#001f65]/60">
+                    <td colSpan="11" className="px-3 sm:px-6 py-12 text-center text-[#001f65]/60">
                       <Users className="mx-auto h-12 w-12 text-[#001f65]/40 mb-4" />
                       <p className="text-lg font-medium">
                         {selectedDepartment ? "No registered voters found in this department" : "No registered voters found"}
@@ -496,6 +499,9 @@ export default function RegisteredVotersPage() {
                             Born: {formatDate(voter.birthdate)}
                           </div>
                         )}
+                      </td>
+                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-[#001f65]">
+                        {voter.sex || '-'}
                       </td>
                       <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-[#001f65]">
                         {voter.email || "-"}

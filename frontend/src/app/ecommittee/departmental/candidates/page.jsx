@@ -616,67 +616,58 @@ export default function DepartmentalCandidatesPage() {
   }
 
   const handleFormSubmit = async (e) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    // Enhanced validation
-    const validationErrors = validateForm();
-    if (validationErrors.length > 0) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Validation Error',
-        text: validationErrors[0], // Show first error
-        confirmButtonColor: '#001f65'
-      });
-      return;
+  // Enhanced validation
+  const validationErrors = validateForm();
+  if (validationErrors.length > 0) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Validation Error',
+      text: validationErrors[0],
+      confirmButtonColor: '#001f65'
+    });
+    return;
+  }
+
+  setFormLoading(true);
+
+  try {
+    // FIXED: Include campaign picture in the main submission for departmental candidates
+    const submitData = {
+      voterId: formData.voterId,
+      positionId: formData.positionId,
+      candidateNumber: formData.candidateNumber,
+      isActive: formData.isActive,
+      deptElectionId: deptElectionId
+    };
+
+    // FIXED: Include campaign picture directly in the main request
+    if (formData.campaignPicture && formData.campaignPicture.startsWith('data:')) {
+      submitData.campaignPicture = formData.campaignPicture;
     }
 
-    setFormLoading(true);
+    let result;
 
-    try {
-      // UPDATED: Prepare submit data without campaign picture initially
-      const submitData = {
-        voterId: formData.voterId,
-        positionId: formData.positionId,
-        candidateNumber: formData.candidateNumber,
-        isActive: formData.isActive,
-        deptElectionId: deptElectionId
-      };
-
-      // Don't include campaign picture in main submission - handle separately
-      let candidateId;
-
-      if (editingCandidate) {
-        // Update candidate
-        const response = await candidatesAPI.departmental.update(editingCandidate._id, submitData);
-        candidateId = editingCandidate._id;
-        showSuccessAlert('Candidate updated successfully!');
-      } else {
-        // Create candidate
-        const response = await candidatesAPI.departmental.create(submitData);
-        candidateId = response?.data?.data?._id || response?.data?._id || response?._id;
-        showSuccessAlert('Candidate added successfully!');
-      }
-
-      // UPDATED: Upload campaign picture separately if present and is a data URL
-      if (formData.campaignPicture && formData.campaignPicture.startsWith('data:') && candidateId) {
-        try {
-          await candidatesAPI.uploadCampaignPicture(candidateId, formData.campaignPicture);
-          console.log('Campaign picture uploaded successfully');
-        } catch (pictureError) {
-          console.error('Error uploading campaign picture:', pictureError);
-          // Don't fail the whole operation if picture upload fails
-        }
-      }
-
-      await fetchData(); // Refresh data
-      setShowAddForm(false);
-    } catch (error) {
-      console.error('Error saving candidate:', error);
-      showErrorAlert(error);
-    } finally {
-      setFormLoading(false);
+    if (editingCandidate) {
+      // Update candidate
+      result = await candidatesAPI.departmental.update(editingCandidate._id, submitData);
+      showSuccessAlert('Candidate updated successfully!');
+    } else {
+      // Create candidate
+      result = await candidatesAPI.departmental.create(submitData);
+      showSuccessAlert('Candidate added successfully!');
     }
-  };
+
+    await fetchData(); // Refresh data
+    setShowAddForm(false);
+  } catch (error) {
+    console.error('Error saving candidate:', error);
+    showErrorAlert(error);
+  } finally {
+    setFormLoading(false);
+  }
+};
 
   // Enhanced filtering
   const filteredCandidates = deptCandidates.filter(candidate => {
@@ -694,51 +685,60 @@ export default function DepartmentalCandidatesPage() {
     return matchesSearch && matchesPosition
   })
 
-  // FIXED: Handle campaign picture view with proper image URL handling
   const handleCampaignPictureView = (candidate) => {
-    const imageData = candidate.campaignPicture
+  if (candidate.campaignPicture || candidate.hasCampaignPicture) {
+    let imageUrl;
     
-    if (imageData) {
-      let imageUrl
-      
-      if (imageData.startsWith('data:')) {
+    if (candidate.campaignPicture) {
+      if (candidate.campaignPicture.startsWith('data:')) {
         // Already a proper data URL
-        imageUrl = imageData
+        imageUrl = candidate.campaignPicture;
       } else {
         // Raw base64 data - convert to proper data URL
-        imageUrl = `data:image/jpeg;base64,${imageData}`
+        imageUrl = `data:image/jpeg;base64,${candidate.campaignPicture}`;
       }
-      
-      Swal.fire({
-        title: `${candidate.fullName} - Campaign Picture`,
-        imageUrl: imageUrl,
-        imageAlt: `${candidate.fullName} Campaign Picture`,
-        showCloseButton: true,
-        showConfirmButton: false,
-        width: 'auto',
-        customClass: {
-          popup: 'max-w-4xl',
-          image: 'max-h-96 w-auto object-contain'
-        },
-        didOpen: () => {
-          // Ensure proper image sizing
-          const img = document.querySelector('.swal2-image')
-          if (img) {
-            img.style.maxWidth = '100%'
-            img.style.height = 'auto'
-            img.style.objectFit = 'contain'
-          }
-        }
-      })
     } else {
-      Swal.fire({
-        icon: 'info',
-        title: 'No Image Available',
-        text: `No campaign picture has been uploaded for ${candidate.fullName}.`,
-        confirmButtonColor: '#001f65'
-      })
+      // Use the API endpoint for fetching the image
+      imageUrl = candidatesAPI.getCampaignPictureUrl(candidate._id);
     }
+    
+    Swal.fire({
+      title: `${candidate.fullName} - Campaign Picture`,
+      imageUrl: imageUrl,
+      imageAlt: `${candidate.fullName} Campaign Picture`,
+      showCloseButton: true,
+      showConfirmButton: false,
+      width: 'auto',
+      customClass: {
+        popup: 'max-w-4xl',
+        image: 'max-h-96 w-auto object-contain'
+      },
+      didOpen: () => {
+        // Ensure proper image sizing
+        const img = document.querySelector('.swal2-image');
+        if (img) {
+          img.style.maxWidth = '100%';
+          img.style.height = 'auto';
+          img.style.objectFit = 'contain';
+        }
+      },
+      didClose: () => {
+        // Clean up if blob URL was created
+        if (imageUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(imageUrl);
+        }
+      }
+    });
+  } else {
+    Swal.fire({
+      icon: 'info',
+      title: 'No Image Available',
+      text: `No campaign picture has been uploaded for ${candidate.fullName}.`,
+      confirmButtonColor: '#001f65'
+    });
   }
+};
+
 
   if (loading) {
     return (
@@ -1175,30 +1175,34 @@ export default function DepartmentalCandidatesPage() {
                   
                   return (
                     <tr key={candidateKey} className="hover:bg-gray-50">
-                      {/* FIXED: Campaign Picture Column with proper preview */}
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center overflow-hidden">
-                          {candidate.campaignPicture ? (
-                            <img
-                              src={candidate.campaignPicture.startsWith('data:') ? 
-                                candidate.campaignPicture : 
-                                candidatesAPI.getCampaignPictureUrl(candidate._id)}
-                              alt={`${candidate.fullName} Campaign Picture`}
-                              className="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                              onClick={() => handleCampaignPictureView(candidate)}
-                              title="Click to view campaign picture"
-                              onError={(e) => {
-                                // Hide broken image and show placeholder
-                                e.target.style.display = 'none'
-                                e.target.nextElementSibling.style.display = 'flex'
-                              }}
+                      {/* Campaign Picture Column */}
+                     
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center overflow-hidden">
+                            {(candidate.campaignPicture || candidate.hasCampaignPicture) ? (
+                              <img
+                                src={
+                                  candidate.campaignPicture ? 
+                                    (candidate.campaignPicture.startsWith('data:') ? 
+                                      candidate.campaignPicture : 
+                                      `data:image/jpeg;base64,${candidate.campaignPicture}`) :
+                                    candidatesAPI.getCampaignPictureUrl(candidate._id)
+                                }
+                                alt={`${candidate.fullName} Campaign Picture`}
+                                className="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                onClick={() => handleCampaignPictureView(candidate)}
+                                title="Click to view campaign picture"
+                                onError={(e) => {
+                                  e.target.style.display = 'none';
+                                  e.target.nextElementSibling.style.display = 'flex';
+                                }}
+                              />
+                            ) : null}
+                            <Image 
+                              className={`w-5 h-5 text-gray-400 ${(candidate.campaignPicture || candidate.hasCampaignPicture) ? 'hidden' : 'flex'}`} 
                             />
-                          ) : null}
-                          <Image 
-                            className={`w-5 h-5 text-gray-400 ${candidate.campaignPicture ? 'hidden' : 'flex'}`} 
-                          />
-                        </div>
-                      </td>
+                          </div>
+                        </td>
 
                       {/* Candidate Info Column - UPDATED to show officer status */}
                       <td className="px-6 py-4 whitespace-nowrap">

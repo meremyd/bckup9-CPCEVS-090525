@@ -407,6 +407,7 @@ export default function SAOVotersPage() {
                 <tr>
                   <th className="px-3 sm:px-6 py-4 text-left text-xs sm:text-sm font-medium uppercase tracking-wider">School ID</th>
                   <th className="px-3 sm:px-6 py-4 text-left text-xs sm:text-sm font-medium uppercase tracking-wider">Name</th>
+                  <th className="px-3 sm:px-6 py-4 text-left text-xs sm:text-sm font-medium uppercase tracking-wider">Sex</th>
                   <th className="px-3 sm:px-6 py-4 text-left text-xs sm:text-sm font-medium uppercase tracking-wider">Email</th>
                   <th className="px-3 sm:px-6 py-4 text-left text-xs sm:text-sm font-medium uppercase tracking-wider">Department</th>
                   <th className="px-3 sm:px-6 py-4 text-left text-xs sm:text-sm font-medium uppercase tracking-wider">Year Level</th>
@@ -424,6 +425,9 @@ export default function SAOVotersPage() {
                       <div className="max-w-[150px] truncate">
                         {voter.firstName} {voter.middleName ? `${voter.middleName} ` : ""}{voter.lastName}
                       </div>
+                    </td>
+                    <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900">
+                      {voter.sex || '-'}
                     </td>
                     <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900">
                       <div className="max-w-[200px] truncate">

@@ -235,7 +235,7 @@ static async validateDepartmentalCandidate(candidateData, excludeCandidateId = n
     return { isValid: false, errors }
   }
 
-  // UPDATED: Check if voter is ACTIVE (removed isRegistered requirement)
+  // Check if voter is ACTIVE
   if (!voter.isActive) {
     errors.push('Only active voters can be departmental candidates')
     return { isValid: false, errors }
@@ -254,11 +254,36 @@ static async validateDepartmentalCandidate(candidateData, excludeCandidateId = n
     return { isValid: false, errors }
   }
 
-  // UPDATED: Check if voter's department matches election's department
-  if (!voter.departmentId || voter.departmentId._id.toString() !== deptElection.departmentId._id.toString()) {
-    errors.push(`Only officers from ${deptElection.departmentId.departmentCode} department can be candidates in this election`)
+  // --- Debug and robust department matching ---
+  let voterDeptId = null
+  let electionDeptId = null
+
+  if (voter.departmentId) {
+    voterDeptId = voter.departmentId._id ? voter.departmentId._id.toString() : voter.departmentId.toString()
+  }
+  if (deptElection.departmentId) {
+    electionDeptId = deptElection.departmentId._id ? deptElection.departmentId._id.toString() : deptElection.departmentId.toString()
+  }
+
+  // Debug logs
+  console.log('==== Department Matching Debug ====')
+  console.log('Voter:', {
+    _id: voter._id?.toString?.() || voter._id,
+    deptId: voterDeptId,
+    deptObj: voter.departmentId
+  })
+  console.log('Election:', {
+    _id: deptElection._id?.toString?.() || deptElection._id,
+    deptId: electionDeptId,
+    deptObj: deptElection.departmentId
+  })
+  console.log('Comparing:', voterDeptId, '===', electionDeptId)
+
+  if (!voterDeptId || !electionDeptId || voterDeptId !== electionDeptId) {
+    errors.push(`Only officers from ${deptElection.departmentId.departmentCode || '(unknown)'} department can be candidates in this election`)
     return { isValid: false, errors }
   }
+  // --- End department matching ---
 
   // Check if voter is already a candidate in this departmental election (any position)
   const existingCandidateQuery = {
@@ -266,12 +291,10 @@ static async validateDepartmentalCandidate(candidateData, excludeCandidateId = n
     deptElectionId,
     ssgElectionId: null
   }
-  
   if (excludeCandidateId) {
     existingCandidateQuery._id = { $ne: excludeCandidateId }
   }
-  
-  const existingCandidate = await this.findOne(existingCandidateQuery)
+  const existingCandidate = await Candidate.findOne(existingCandidateQuery)
     .populate('positionId', 'positionName')
 
   if (existingCandidate) {
@@ -286,7 +309,6 @@ static async validateDepartmentalCandidate(candidateData, excludeCandidateId = n
     election: deptElection
   }
 }
-
 
 static async getPartylistCandidateSlots(req, res, next) {
   try {
@@ -728,17 +750,38 @@ static async getPartylistCandidateSlots(req, res, next) {
       }
     }
 
+    let campaignPictureBuffer = null
+if (candidateData.campaignPicture) {
+  try {
+    if (typeof candidateData.campaignPicture === 'string') {
+      const base64Data = candidateData.campaignPicture.replace(/^data:[^;]+;base64,/, '')
+      campaignPictureBuffer = Buffer.from(base64Data, 'base64')
+    } else if (Buffer.isBuffer(candidateData.campaignPicture)) {
+      campaignPictureBuffer = candidateData.campaignPicture
+    }
+
+    if (campaignPictureBuffer && campaignPictureBuffer.length === 0) {
+      throw new Error("Invalid campaign picture data")
+    }
+  } catch (error) {
+    const err = new Error("Invalid campaign picture format")
+    err.statusCode = 400
+    return next(err)
+  }
+}
+
     // Create candidate
     const candidate = new Candidate({
-      voterId,
-      ssgElectionId: electionType === 'ssg' ? ssgElectionId : null,
-      deptElectionId: electionType === 'departmental' ? deptElectionId : null,
-      positionId,
-      partylistId: electionType === 'ssg' ? partylistId : null,
-      candidateNumber: finalCandidateNumber,
-      credentials: credentialsBuffer, // Changed from platform
-      isActive
-    })
+  voterId,
+  ssgElectionId: electionType === 'ssg' ? ssgElectionId : null,
+  deptElectionId: electionType === 'departmental' ? deptElectionId : null,
+  positionId,
+  partylistId: electionType === 'ssg' ? partylistId : null,
+  candidateNumber: finalCandidateNumber,
+  credentials: credentialsBuffer, // Changed from platform
+  campaignPicture: campaignPictureBuffer, // Add this line
+  isActive
+})
 
     await candidate.save()
 
@@ -905,13 +948,12 @@ static async checkCandidateEligibility(req, res, next) {
       ...req.body,
       deptElectionId: req.body.deptElectionId || req.body.electionId,
       ssgElectionId: null,
-      partylistId: null // Ensure no partylist for departmental
+      partylistId: null   
     }
 
-    // Remove credentials if present (not allowed for departmental)
+    // FIXED: Remove ONLY credentials, keep campaign picture
     delete candidateData.credentials
 
-    // UPDATED: Use departmental candidate validation
     const validation = await CandidateController.validateDepartmentalCandidate(candidateData)
     if (!validation.isValid) {
       await CandidateController.logAuditAction(
@@ -936,6 +978,7 @@ static async checkCandidateEligibility(req, res, next) {
     next(err)
   }
 }
+
 
 
   // Update candidate with validation
@@ -965,6 +1008,28 @@ static async checkCandidateEligibility(req, res, next) {
       error.statusCode = 400
       return next(error)
     }
+
+    if (updateData.campaignPicture) {
+  try {
+    let campaignPictureBuffer
+    if (typeof updateData.campaignPicture === 'string') {
+      const base64Data = updateData.campaignPicture.replace(/^data:[^;]+;base64,/, '')
+      campaignPictureBuffer = Buffer.from(base64Data, 'base64')
+    } else if (Buffer.isBuffer(updateData.campaignPicture)) {
+      campaignPictureBuffer = updateData.campaignPicture
+    }
+
+    if (campaignPictureBuffer && campaignPictureBuffer.length > 0) {
+      updateData.campaignPicture = campaignPictureBuffer
+    } else {
+      delete updateData.campaignPicture // Don't update if invalid
+    }
+  } catch (error) {
+    const err = new Error("Invalid campaign picture format")
+    err.statusCode = 400
+    return next(err)
+  }
+}
 
     // Handle credentials update for SSG candidates
     if (updateData.credentials && candidate.ssgElectionId) {
@@ -1167,12 +1232,14 @@ static async checkCandidateEligibility(req, res, next) {
       return next(error)
     }
 
-    // Remove partylist and credentials if present (not allowed for departmental)
+    // Remove partylist if present (not allowed for departmental)
     if (updateData.partylistId) {
       const error = new Error("Departmental candidates cannot have partylists")
       error.statusCode = 400
       return next(error)
     }
+    
+    // FIXED: Only remove credentials, keep campaign picture
     delete updateData.credentials
 
     // If changing voter, validate that new voter is an active class officer in correct department
