@@ -178,16 +178,16 @@ export default function DepartmentalLayout({
       active: activeItem === 'status'
     },
     { 
-      icon: Users, 
-      label: "Candidates", 
-      path: `/ecommittee/departmental/candidates?deptElectionId=${deptElectionId}`,
-      active: activeItem === 'candidates'
-    },
-    { 
       icon: Clipboard, 
       label: "Position", 
       path: `/ecommittee/departmental/position?deptElectionId=${deptElectionId}`,
       active: activeItem === 'position'
+    },
+    { 
+      icon: Users, 
+      label: "Candidates", 
+      path: `/ecommittee/departmental/candidates?deptElectionId=${deptElectionId}`,
+      active: activeItem === 'candidates'
     },
     { 
       icon: UserCheck, 

@@ -150,83 +150,107 @@ export default function DepartmentalPage() {
         voterTurnout: 0
       }
 
-      // Helper function to safely get count from response
-      const getCount = (response, countKeys = ['length', 'total', 'count']) => {
-        console.log('Getting count from response:', response)
-        
-        if (Array.isArray(response)) {
-          console.log('Response is array, length:', response.length)
-          return response.length
-        }
-        
-        for (const key of countKeys) {
-          if (response[key] !== undefined) {
-            const value = Array.isArray(response[key]) ? response[key].length : Number(response[key]) || 0
-            console.log(`Found count in ${key}:`, value)
-            return value
-          }
-        }
-        
-        const dataKeys = ['data', 'candidates', 'officers', 'ballots', 'positions']
-        for (const key of dataKeys) {
-          if (response[key] && Array.isArray(response[key])) {
-            console.log(`Found array in ${key}, length:`, response[key].length)
-            return response[key].length
-          }
-        }
-        
-        console.log('No count found, returning 0')
-        return 0
-      }
-
-      // Fetch candidates
+      // Fetch candidates - Updated to handle the actual response structure
       console.log('Fetching candidates...')
       try {
         const candidatesResponse = await candidatesAPI.departmental.getByElection(deptElectionId)
         console.log('Candidates response:', candidatesResponse)
-        counts.candidates = getCount(candidatesResponse)
+        
+        // Handle the nested data structure from the API
+        if (candidatesResponse?.data?.candidates) {
+          counts.candidates = Array.isArray(candidatesResponse.data.candidates) 
+            ? candidatesResponse.data.candidates.length 
+            : 0
+        } else if (candidatesResponse?.data?.totalCandidates !== undefined) {
+          counts.candidates = candidatesResponse.data.totalCandidates
+        } else if (Array.isArray(candidatesResponse)) {
+          counts.candidates = candidatesResponse.length
+        } else {
+          counts.candidates = 0
+        }
+        
         console.log('Candidates count:', counts.candidates)
       } catch (candidatesError) {
         console.error('Failed to fetch candidates:', candidatesError)
         counts.candidates = 0
       }
 
-      // Fetch officers using the new API method
+      
+console.log('Fetching positions...')
+try {
+  const electionResponse = await departmentalElectionsAPI.getById(deptElectionId)
+  console.log('Election details response:', electionResponse)
+  
+  // The positions should be included in the election details response
+  if (electionResponse?.positions) {
+    counts.position = Array.isArray(electionResponse.positions) 
+      ? electionResponse.positions.length 
+      : 0
+  } else {
+    // If positions aren't included, we'll get them from candidates response
+    const candidatesResponse = await candidatesAPI.departmental.getByElection(deptElectionId)
+    if (candidatesResponse?.data?.positions) {
+      counts.position = Array.isArray(candidatesResponse.data.positions) 
+        ? candidatesResponse.data.positions.length 
+        : 0
+    } else {
+      counts.position = 0
+    }
+  }
+  console.log('Positions count:', counts.position)
+} catch (positionsError) {
+  console.error('Failed to fetch positions:', positionsError)
+  counts.position = 0
+}
+
+      // Fetch officers using the API method
       console.log('Fetching officers count...')
       try {
         const officersResponse = await departmentalElectionsAPI.getOfficersCount(deptElectionId)
         console.log('Officers response:', officersResponse)
-        counts.officers = officersResponse.officersCount || 0
-        console.log('Officers count:', counts.officers)
+        
+        // Use the eligibleToVote count if available, otherwise use officersCount
+        counts.officers = officersResponse.eligibleToVote || officersResponse.officersCount || 0
+        console.log('Officers count (eligible to vote):', counts.officers)
       } catch (officersError) {
         console.error('Failed to fetch officers:', officersError)
         counts.officers = 0
       }
 
-      // Fetch ballots
+      // Fetch ballots - get submitted ballots count
       console.log('Fetching ballots...')
       try {
         const ballotsResponse = await ballotAPI.getAllDepartmentalBallots({ 
-          electionId: deptElectionId,
-          limit: 1 
+          electionId: deptElectionId
         })
         console.log('Ballots response:', ballotsResponse)
-        counts.ballot = getCount(ballotsResponse, ['total', 'count'])
-        console.log('Ballots count:', counts.ballot)
+        
+        // Count only submitted ballots
+        let submittedCount = 0
+        if (Array.isArray(ballotsResponse)) {
+          submittedCount = ballotsResponse.filter(b => b.isSubmitted).length
+        } else if (ballotsResponse.ballots && Array.isArray(ballotsResponse.ballots)) {
+          submittedCount = ballotsResponse.ballots.filter(b => b.isSubmitted).length
+        } else if (ballotsResponse.submittedCount !== undefined) {
+          submittedCount = ballotsResponse.submittedCount
+        } else if (ballotsResponse.total !== undefined) {
+          // If we only have total, we'll use it (though ideally we want submitted only)
+          submittedCount = ballotsResponse.total
+        }
+        
+        counts.ballot = submittedCount
+        console.log('Ballots count (submitted):', counts.ballot)
       } catch (ballotsError) {
         console.error('Failed to fetch ballots:', ballotsError)
         counts.ballot = 0
       }
 
-      // Position count - typically based on available positions in the election
-      counts.position = selectedElection.positions?.length || 0
-
-      // Set statistics count (using candidates count)
-      counts.statistics = counts.candidates
+      // Statistics count should reflect total votes cast (submitted ballots)
+      counts.statistics = counts.ballot
 
       // Calculate voter turnout percentage
-      if (counts.officers > 0) {
-        counts.voterTurnout = Math.round((counts.ballot / counts.officers) * 100)
+      if (counts.officers > 0 && counts.ballot >= 0) {
+        counts.voterTurnout = Math.min(100, Math.round((counts.ballot / counts.officers) * 100))
       } else {
         counts.voterTurnout = 0
       }

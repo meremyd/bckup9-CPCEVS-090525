@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { candidatesAPI } from "@/lib/api/candidates"
 import { positionsAPI } from "@/lib/api/positions"
 import { votersAPI } from "@/lib/api/voters"
+import { departmentalElectionsAPI } from "@/lib/api/departmentalElections"
 import DepartmentalLayout from '@/components/DepartmentalLayout'
 import Swal from 'sweetalert2'
 import { 
@@ -23,28 +24,23 @@ import {
   UserPlus,
   Upload,
   Image,
-  FileText,
   Download,
-  Eye,
-  Shield
+  Eye
 } from "lucide-react"
 
 export default function DepartmentalCandidatesPage() {
-  const [departmentalCandidates, setDepartmentalCandidates] = useState([])
-  const [departmentalPositions, setDepartmentalPositions] = useState([])
-  const [classOfficers, setClassOfficers] = useState([])
+  const [deptCandidates, setDeptCandidates] = useState([])
+  const [deptPositions, setDeptPositions] = useState([])
+  const [eligibleOfficers, setEligibleOfficers] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingCandidate, setEditingCandidate] = useState(null)
   const [formLoading, setFormLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterPosition, setFilterPosition] = useState('')
+  const [election, setElection] = useState(null)
   
-  // Position limits states
-  const [positionLimits, setPositionLimits] = useState({})
-  const [checkingEligibility, setCheckingEligibility] = useState(false)
-  
-  // Voter lookup states (class officers only)
+  // Officer search states
   const [officerSearchId, setOfficerSearchId] = useState('')
   const [officerSearchResults, setOfficerSearchResults] = useState([])
   const [officerSearchLoading, setOfficerSearchLoading] = useState(false)
@@ -112,7 +108,7 @@ export default function DepartmentalCandidatesPage() {
     })
   }
 
-  // Calculate candidate statistics (no partylist)
+  // Calculate candidate statistics
   const calculateCandidateStats = (candidates, positions) => {
     const stats = {
       total: candidates.length,
@@ -148,36 +144,6 @@ export default function DepartmentalCandidatesPage() {
     return stats
   }
 
-  // Calculate position limits based on existing candidates and max limits
-  const calculatePositionLimits = (candidates, positions) => {
-    const limits = {}
-    
-    positions.forEach(position => {
-      limits[position._id] = {
-        maxCandidates: position.maxCandidates || 10,
-        currentTotal: 0,
-        canAddMore: true
-      }
-    })
-    
-    // Count existing candidates
-    candidates.forEach(candidate => {
-      const positionId = candidate.positionId?._id || candidate.positionId
-      
-      if (limits[positionId]) {
-        limits[positionId].currentTotal++
-      }
-    })
-    
-    // Update canAddMore flags
-    Object.keys(limits).forEach(positionId => {
-      const positionLimit = limits[positionId]
-      positionLimit.canAddMore = positionLimit.currentTotal < positionLimit.maxCandidates
-    })
-    
-    return limits
-  }
-
   useEffect(() => {
     if (deptElectionId) {
       fetchData()
@@ -189,19 +155,61 @@ export default function DepartmentalCandidatesPage() {
   const fetchData = async () => {
     try {
       setLoading(true)
-      console.log('Fetching data for Departmental election:', deptElectionId)
+      console.log('Fetching data for departmental election:', deptElectionId)
 
-      // Use departmental API endpoints
-      const [candidatesResponse, positionsResponse, officersResponse] = await Promise.all([
+      // Fetch election details first
+      const electionResponse = await departmentalElectionsAPI.getById(deptElectionId)
+      const electionData = electionResponse.election || electionResponse.data
+      setElection(electionData)
+
+      // Use the correct API endpoints
+      const [candidatesResponse, positionsResponse] = await Promise.all([
         candidatesAPI.departmental.getByElection(deptElectionId, {}),
         positionsAPI.departmental.getByElection(deptElectionId),
-        votersAPI.getOfficers({ limit: 1000 }) // Get ALL class officers
       ])
+
+      // FIXED: Get eligible officers for this election (active class officers from the same department)
+      let officersData = []
+      if (electionData?.departmentId) {
+        try {
+          const departmentId = electionData.departmentId._id || electionData.departmentId
+          console.log('Fetching officers for department:', departmentId)
+          
+          // UPDATED: Use the correct API method to get active departmental officers
+          const officersResponse = await votersAPI.getActiveOfficers({
+            department: departmentId,
+            limit: 1000 // Get all officers
+          })
+          
+          // Filter to only include officers from this specific department
+          officersData = (officersResponse.data || []).filter(officer => {
+            const officerDeptId = officer.departmentId?._id || officer.departmentId
+            const electionDeptId = electionData.departmentId._id || electionData.departmentId
+            return officerDeptId && officerDeptId.toString() === electionDeptId.toString()
+          })
+          
+          console.log('Officers fetched and filtered:', officersData.length)
+        } catch (error) {
+          console.error('Error fetching eligible officers:', error)
+          console.log('Trying alternative method...')
+          
+          // Alternative: Try getting by department code if available
+          if (electionData.departmentId?.departmentCode) {
+            try {
+              const officersResponse = await votersAPI.getActiveOfficersByDepartmentCode(electionData.departmentId.departmentCode)
+              officersData = officersResponse.data || []
+              console.log('Officers fetched by department code:', officersData.length)
+            } catch (altError) {
+              console.error('Alternative method also failed:', altError)
+            }
+          }
+        }
+      }
 
       console.log('API Responses received:', {
         candidates: !!candidatesResponse,
         positions: !!positionsResponse,
-        officers: !!officersResponse
+        officers: officersData.length
       })
 
       // Process API responses
@@ -219,27 +227,20 @@ export default function DepartmentalCandidatesPage() {
         positionsData = positionsResponse.data
       }
 
-      let officersData = []
-      if (officersResponse?.data?.voters) {
-        officersData = officersResponse.data.voters
-      } else if (Array.isArray(officersResponse?.data)) {
-        officersData = officersResponse.data
-      }
-
       console.log('Data counts:', {
         candidates: candidatesData.length,
         positions: positionsData.length,
         officers: officersData.length
       })
 
-      // Process candidates data
+      // Process candidates data with proper campaign picture handling
       const processedCandidates = candidatesData.map((candidate, index) => {
         const processedCandidate = {
-          _id: candidate._id || `candidate-${index}`,
+          _id: candidate._id,
           candidateNumber: candidate.candidateNumber || 'N/A',
           isActive: candidate.isActive !== false,
           
-          // Voter information (class officer)
+          // Voter information
           voterId: candidate.voterId?._id || candidate.voterId,
           voterInfo: candidate.voterId ? {
             _id: candidate.voterId._id || candidate.voterId,
@@ -249,8 +250,8 @@ export default function DepartmentalCandidatesPage() {
             lastName: candidate.voterId.lastName || '',
             yearLevel: candidate.voterId.yearLevel || 'N/A',
             departmentId: candidate.voterId.departmentId || null,
-            isRegistered: candidate.voterId.isRegistered || false,
-            isOfficer: candidate.voterId.isOfficer || false
+            isActive: candidate.voterId.isActive || false, // UPDATED: Check isActive instead of isRegistered
+            isClassOfficer: candidate.voterId.isClassOfficer || false
           } : null,
           
           // Position information
@@ -261,9 +262,9 @@ export default function DepartmentalCandidatesPage() {
             positionOrder: candidate.positionId.positionOrder || 999
           } : null,
           
-          // Campaign picture only (no credentials for departmental)
+          // FIXED: Campaign picture handling
           campaignPicture: candidate.campaignPicture || null,
-          hasCampaignPicture: !!candidate.campaignPicture
+          hasCampaignPicture: !!candidate.campaignPicture,
         }
 
         // Add computed fields
@@ -276,8 +277,8 @@ export default function DepartmentalCandidatesPage() {
         processedCandidate.schoolId = processedCandidate.voterInfo?.schoolId || 'N/A'
         processedCandidate.yearLevel = processedCandidate.voterInfo?.yearLevel || 'N/A'
         processedCandidate.department = processedCandidate.voterInfo?.departmentId?.departmentCode || 'Unknown'
-        processedCandidate.isRegistered = processedCandidate.voterInfo?.isRegistered || false
-        processedCandidate.isOfficer = processedCandidate.voterInfo?.isOfficer || false
+        processedCandidate.isActive = processedCandidate.voterInfo?.isActive || false // UPDATED
+        processedCandidate.isClassOfficer = processedCandidate.voterInfo?.isClassOfficer || false
 
         return processedCandidate
       })
@@ -294,9 +295,9 @@ export default function DepartmentalCandidatesPage() {
         ).length
       }))
 
-      // Process class officers
+      // UPDATED: Process officers - only show active class officers
       const processedOfficers = officersData
-        .filter(officer => officer.isOfficer) // Only class officers
+        .filter(officer => officer.isActive && officer.isClassOfficer) // UPDATED: Removed isRegistered check
         .map((officer, index) => ({
           ...officer,
           _id: officer._id || `officer-${index}`,
@@ -304,9 +305,7 @@ export default function DepartmentalCandidatesPage() {
                    `${officer.firstName || ''} ${officer.middleName || ''} ${officer.lastName || ''}`.replace(/\s+/g, ' ').trim(),
           schoolId: officer.schoolId || 'N/A',
           departmentId: officer.departmentId || null,
-          yearLevel: officer.yearLevel || 'N/A',
-          isRegistered: officer.isRegistered || false,
-          isOfficer: officer.isOfficer || false
+          yearLevel: officer.yearLevel || 'N/A'
         }))
 
       console.log('Processed data:', {
@@ -316,35 +315,33 @@ export default function DepartmentalCandidatesPage() {
       })
 
       // Update state
-      setDepartmentalCandidates(processedCandidates)
-      setDepartmentalPositions(processedPositions)
-      setClassOfficers(processedOfficers)
+      setDeptCandidates(processedCandidates)
+      setDeptPositions(processedPositions)
+      setEligibleOfficers(processedOfficers)
       
-      // Calculate stats and limits
+      // Calculate stats
       setCandidateStats(calculateCandidateStats(processedCandidates, processedPositions))
-      setPositionLimits(calculatePositionLimits(processedCandidates, processedPositions))
 
     } catch (error) {
       console.error("Error in fetchData:", error)
       showErrorAlert(error)
       
       // Reset to empty states on error
-      setDepartmentalCandidates([])
-      setDepartmentalPositions([])
-      setClassOfficers([])
+      setDeptCandidates([])
+      setDeptPositions([])
+      setEligibleOfficers([])
       setCandidateStats({
         total: 0,
         active: 0,
         inactive: 0,
         byPosition: {}
       })
-      setPositionLimits({})
     } finally {
       setLoading(false)
     }
   }
 
-  // Search class officers with eligibility checking
+  // UPDATED: Enhanced officer search - now uses eligibleOfficers correctly
   const searchOfficers = async (searchValue) => {
     if (!searchValue.trim()) {
       setOfficerSearchResults([])
@@ -357,8 +354,8 @@ export default function DepartmentalCandidatesPage() {
     try {
       const searchTerm = searchValue.toLowerCase()
       
-      // Filter class officers only
-      const filteredOfficers = classOfficers.filter(officer => {
+      // UPDATED: Filter from eligibleOfficers (which are already filtered by department)
+      const filteredOfficers = eligibleOfficers.filter(officer => {
         const matchesSchoolId = officer.schoolId?.toString().toLowerCase().includes(searchTerm)
         const matchesName = officer.fullName?.toLowerCase().includes(searchTerm) ||
                            officer.firstName?.toLowerCase().includes(searchTerm) ||
@@ -371,7 +368,7 @@ export default function DepartmentalCandidatesPage() {
           return true // Allow current candidate when editing
         }
         
-        return !departmentalCandidates.some(candidate => 
+        return !deptCandidates.some(candidate => 
           candidate.voterId === officer._id || candidate.voterId?._id === officer._id
         )
       })
@@ -380,6 +377,8 @@ export default function DepartmentalCandidatesPage() {
       const sortedOfficers = filteredOfficers.sort((a, b) => 
         a.fullName.localeCompare(b.fullName)
       )
+      
+      console.log('Search results for "' + searchTerm + '":', sortedOfficers.length)
       
       setOfficerSearchResults(sortedOfficers.slice(0, 15)) // Show top 15 results
       setShowOfficerDropdown(true)
@@ -393,11 +392,9 @@ export default function DepartmentalCandidatesPage() {
 
   const selectOfficer = async (officer) => {
     try {
-      setCheckingEligibility(true)
-      
       // Check if officer is already a candidate in this election (unless editing)
       if (!editingCandidate || editingCandidate.voterId !== officer._id) {
-        const existingCandidate = departmentalCandidates.find(candidate => 
+        const existingCandidate = deptCandidates.find(candidate => 
           candidate.voterId === officer._id || candidate.voterId?._id === officer._id
         )
         
@@ -420,12 +417,10 @@ export default function DepartmentalCandidatesPage() {
     } catch (error) {
       console.error('Error selecting officer:', error)
       showErrorAlert(error)
-    } finally {
-      setCheckingEligibility(false)
     }
   }
 
-  // Position Filter Dropdown with candidate counts and limits
+  // Position Filter Dropdown
   const PositionFilterDropdown = () => {
     return (
       <select
@@ -434,7 +429,7 @@ export default function DepartmentalCandidatesPage() {
         className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
       >
         <option value="">All Positions ({candidateStats.total})</option>
-        {departmentalPositions.map(position => {
+        {deptPositions.map(position => {
           const candidateCount = candidateStats.byPosition[position._id]?.count || 0
           const maxCandidates = position.maxCandidates || 10
           
@@ -448,7 +443,7 @@ export default function DepartmentalCandidatesPage() {
     )
   }
 
-  // Handle image upload for campaign picture
+  // UPDATED: Handle image upload for campaign picture with proper base64 conversion
   const handleImageUpload = (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -478,13 +473,8 @@ export default function DepartmentalCandidatesPage() {
     const reader = new FileReader()
     reader.onloadend = () => {
       try {
-        // Extract base64 data
-        const base64Data = reader.result.split(',')[1]
-        if (base64Data) {
-          setFormData(prev => ({ ...prev, campaignPicture: base64Data }))
-        } else {
-          throw new Error('Invalid image data')
-        }
+        // Store the complete data URL for preview
+        setFormData(prev => ({ ...prev, campaignPicture: reader.result }))
       } catch (error) {
         console.error('Error processing image:', error)
         Swal.fire({
@@ -526,11 +516,17 @@ export default function DepartmentalCandidatesPage() {
     setEditingCandidate(candidate)
     setShowAddForm(true)
     
+    // FIXED: Prepare image data URL for existing campaign picture with proper preview
+    const campaignPictureData = candidate.campaignPicture ? 
+      (candidate.campaignPicture.startsWith('data:') ? 
+        candidate.campaignPicture : 
+        `data:image/jpeg;base64,${candidate.campaignPicture}`) : ''
+    
     setFormData({
       voterId: candidate.voterId?._id || candidate.voterId || '',
       positionId: candidate.positionId?._id || candidate.positionId || '',
       candidateNumber: candidate.candidateNumber || '',
-      campaignPicture: candidate.campaignPicture || '',
+      campaignPicture: campaignPictureData,
       isActive: candidate.isActive !== false
     })
     
@@ -543,8 +539,8 @@ export default function DepartmentalCandidatesPage() {
         schoolId: candidate.voterInfo.schoolId || '',
         departmentId: candidate.voterInfo.departmentId || null,
         yearLevel: candidate.voterInfo.yearLevel || '',
-        isRegistered: candidate.voterInfo.isRegistered || false,
-        isOfficer: candidate.voterInfo.isOfficer || false
+        isActive: candidate.voterInfo.isActive || false, // UPDATED: Use isActive
+        isClassOfficer: candidate.voterInfo.isClassOfficer || false
       })
     }
     setOfficerSearchResults([])
@@ -575,19 +571,34 @@ export default function DepartmentalCandidatesPage() {
     }
   }
 
+  // UPDATED: Enhanced validation - removed registered voter requirement
   const validateForm = () => {
     const errors = []
     
     if (!selectedOfficer) {
-      errors.push('Please select a class officer.')
+      errors.push('Please select an officer.')
     } else {
-      // Check if officer is not a class officer
-      if (!selectedOfficer.isOfficer) {
-        errors.push('Only class officers can be departmental candidates.')
+      // UPDATED: Check if officer is active and class officer
+      if (!selectedOfficer.isActive) {
+        errors.push('Selected voter must be an active voter.')
+      }
+      
+      if (!selectedOfficer.isClassOfficer) {
+        errors.push('Selected voter must be a class officer.')
+      }
+      
+      // Check department match
+      if (election && selectedOfficer.departmentId) {
+        const officerDeptId = selectedOfficer.departmentId._id || selectedOfficer.departmentId
+        const electionDeptId = election.departmentId._id || election.departmentId
+        
+        if (officerDeptId.toString() !== electionDeptId.toString()) {
+          errors.push('Selected officer must belong to the same department as the election.')
+        }
       }
       
       // Check if officer is already a candidate (except when editing)
-      const existingCandidate = departmentalCandidates.find(candidate => 
+      const existingCandidate = deptCandidates.find(candidate => 
         (candidate.voterId === selectedOfficer._id || candidate.voterId?._id === selectedOfficer._id) &&
         (!editingCandidate || candidate._id !== editingCandidate._id)
       )
@@ -601,76 +612,74 @@ export default function DepartmentalCandidatesPage() {
       errors.push('Please select a position.')
     }
 
-    // Position limit validation
-    if (formData.positionId) {
-      const positionLimit = positionLimits[formData.positionId]
-      
-      if (positionLimit) {
-        // Check if adding a new candidate or if editing candidate changed position
-        let shouldCheckLimit = true
-        if (editingCandidate) {
-          const currentPositionId = editingCandidate.positionId?._id || editingCandidate.positionId
-          
-          // Don't check limit if position hasn't changed
-          if (currentPositionId === formData.positionId) {
-            shouldCheckLimit = false
-          }
-        }
-        
-        if (shouldCheckLimit && !positionLimit.canAddMore) {
-          const positionName = departmentalPositions.find(p => p._id === formData.positionId)?.positionName || 'this position'
-          
-          errors.push(`${positionName} already has the maximum number of candidates (${positionLimit.maxCandidates}).`)
-        }
-      }
-    }
-
     return errors
   }
 
   const handleFormSubmit = async (e) => {
-    e.preventDefault()
-    
-    // Validation
-    const validationErrors = validateForm()
+    e.preventDefault();
+
+    // Enhanced validation
+    const validationErrors = validateForm();
     if (validationErrors.length > 0) {
       Swal.fire({
         icon: 'error',
         title: 'Validation Error',
         text: validationErrors[0], // Show first error
         confirmButtonColor: '#001f65'
-      })
-      return
+      });
+      return;
     }
 
-    setFormLoading(true)
+    setFormLoading(true);
 
     try {
+      // UPDATED: Prepare submit data without campaign picture initially
       const submitData = {
-        ...formData,
+        voterId: formData.voterId,
+        positionId: formData.positionId,
+        candidateNumber: formData.candidateNumber,
+        isActive: formData.isActive,
         deptElectionId: deptElectionId
-      }
+      };
+
+      // Don't include campaign picture in main submission - handle separately
+      let candidateId;
 
       if (editingCandidate) {
-        await candidatesAPI.departmental.update(editingCandidate._id, submitData)
-        showSuccessAlert('Candidate updated successfully!')
+        // Update candidate
+        const response = await candidatesAPI.departmental.update(editingCandidate._id, submitData);
+        candidateId = editingCandidate._id;
+        showSuccessAlert('Candidate updated successfully!');
       } else {
-        await candidatesAPI.departmental.create(submitData)
-        showSuccessAlert('Candidate added successfully!')
+        // Create candidate
+        const response = await candidatesAPI.departmental.create(submitData);
+        candidateId = response?.data?.data?._id || response?.data?._id || response?._id;
+        showSuccessAlert('Candidate added successfully!');
       }
 
-      await fetchData() // Refresh data
-      setShowAddForm(false)
+      // UPDATED: Upload campaign picture separately if present and is a data URL
+      if (formData.campaignPicture && formData.campaignPicture.startsWith('data:') && candidateId) {
+        try {
+          await candidatesAPI.uploadCampaignPicture(candidateId, formData.campaignPicture);
+          console.log('Campaign picture uploaded successfully');
+        } catch (pictureError) {
+          console.error('Error uploading campaign picture:', pictureError);
+          // Don't fail the whole operation if picture upload fails
+        }
+      }
+
+      await fetchData(); // Refresh data
+      setShowAddForm(false);
     } catch (error) {
-      console.error('Error saving candidate:', error)
-      showErrorAlert(error)
+      console.error('Error saving candidate:', error);
+      showErrorAlert(error);
     } finally {
-      setFormLoading(false)
+      setFormLoading(false);
     }
-  }
+  };
 
   // Enhanced filtering
-  const filteredCandidates = departmentalCandidates.filter(candidate => {
+  const filteredCandidates = deptCandidates.filter(candidate => {
     // Search filter
     const matchesSearch = searchTerm === '' || 
       candidate.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -685,36 +694,50 @@ export default function DepartmentalCandidatesPage() {
     return matchesSearch && matchesPosition
   })
 
-  // Get position options with availability status
-  const getPositionOptions = () => {
-    return departmentalPositions.map(position => {
-      const positionLimit = positionLimits[position._id]
+  // FIXED: Handle campaign picture view with proper image URL handling
+  const handleCampaignPictureView = (candidate) => {
+    const imageData = candidate.campaignPicture
+    
+    if (imageData) {
+      let imageUrl
       
-      let isDisabled = false
-      let reasonText = ''
+      if (imageData.startsWith('data:')) {
+        // Already a proper data URL
+        imageUrl = imageData
+      } else {
+        // Raw base64 data - convert to proper data URL
+        imageUrl = `data:image/jpeg;base64,${imageData}`
+      }
       
-      if (positionLimit) {
-        // Check overall position limit
-        if (!positionLimit.canAddMore) {
-          isDisabled = true
-          reasonText = ` - Position Full (${positionLimit.currentTotal}/${positionLimit.maxCandidates})`
+      Swal.fire({
+        title: `${candidate.fullName} - Campaign Picture`,
+        imageUrl: imageUrl,
+        imageAlt: `${candidate.fullName} Campaign Picture`,
+        showCloseButton: true,
+        showConfirmButton: false,
+        width: 'auto',
+        customClass: {
+          popup: 'max-w-4xl',
+          image: 'max-h-96 w-auto object-contain'
+        },
+        didOpen: () => {
+          // Ensure proper image sizing
+          const img = document.querySelector('.swal2-image')
+          if (img) {
+            img.style.maxWidth = '100%'
+            img.style.height = 'auto'
+            img.style.objectFit = 'contain'
+          }
         }
-      }
-      
-      // Don't disable if editing and current position
-      if (editingCandidate && (editingCandidate.positionId === position._id || editingCandidate.positionId?._id === position._id)) {
-        isDisabled = false
-        reasonText = ''
-      }
-      
-      return {
-        ...position,
-        isDisabled,
-        displayText: `${position.positionName}${reasonText}`,
-        candidateCount: positionLimit ? positionLimit.currentTotal : 0,
-        maxCandidates: position.maxCandidates || 10
-      }
-    })
+      })
+    } else {
+      Swal.fire({
+        icon: 'info',
+        title: 'No Image Available',
+        text: `No campaign picture has been uploaded for ${candidate.fullName}.`,
+        confirmButtonColor: '#001f65'
+      })
+    }
   }
 
   if (loading) {
@@ -762,10 +785,15 @@ export default function DepartmentalCandidatesPage() {
 
               <form onSubmit={handleFormSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Class Officer Search */}
+                  {/* UPDATED: Enhanced Officer Search - removed registration requirement */}
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Search and Select Class Officer *
+                      Search and Select Officer *
+                      {eligibleOfficers.length === 0 && (
+                        <span className="text-red-500 text-xs ml-2">
+                          (No eligible officers found for this department)
+                        </span>
+                      )}
                     </label>
                     <div className="relative">
                       <input
@@ -779,26 +807,27 @@ export default function DepartmentalCandidatesPage() {
                             searchOfficers(e.target.value)
                           }, 300)
                         }}
-                        placeholder="Type class officer name or school ID..."
+                        placeholder="Type officer name or school ID (active class officers only)..."
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-10"
                         onFocus={() => {
                           if (officerSearchResults.length > 0) {
                             setShowOfficerDropdown(true)
                           }
                         }}
+                        disabled={eligibleOfficers.length === 0}
                       />
-                      {(officerSearchLoading || checkingEligibility) && (
+                      {officerSearchLoading && (
                         <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
                           <Loader2 className="animate-spin h-4 w-4 text-gray-400" />
                         </div>
                       )}
                       
-                      {/* Dropdown with officer results */}
+                      {/* Enhanced Dropdown */}
                       {showOfficerDropdown && officerSearchResults.length > 0 && (
                         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                           {officerSearchResults.map((officer) => {
                             // Check if officer is already a candidate
-                            const isAlreadyCandidate = departmentalCandidates.some(candidate => 
+                            const isAlreadyCandidate = deptCandidates.some(candidate => 
                               (candidate.voterId === officer._id || candidate.voterId?._id === officer._id) &&
                               (!editingCandidate || candidate._id !== editingCandidate._id)
                             )
@@ -819,19 +848,13 @@ export default function DepartmentalCandidatesPage() {
                                   <div>
                                     <div className="font-medium text-gray-900">{officer.fullName}</div>
                                     <div className="text-sm text-gray-500">
-                                      ID: {officer.schoolId} • {officer.departmentId?.departmentCode || 'N/A'}
+                                      ID: {officer.schoolId} • {officer.departmentId?.departmentCode || 'N/A'} • Year {officer.yearLevel}
                                     </div>
                                   </div>
                                   <div className="flex items-center space-x-1">
-                                    <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full flex items-center">
-                                      <Shield className="w-3 h-3 mr-1" />
+                                    <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full">
                                       Officer
                                     </span>
-                                    {officer.isRegistered && (
-                                      <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full">
-                                        Registered
-                                      </span>
-                                    )}
                                     {isAlreadyCandidate && (
                                       <span className="text-xs px-2 py-1 bg-red-100 text-red-800 rounded-full">
                                         Already Candidate
@@ -846,11 +869,11 @@ export default function DepartmentalCandidatesPage() {
                       )}
                     </div>
                     
-                    {/* Selected officer display */}
+                    {/* UPDATED: Selected officer display - removed registration requirement */}
                     {selectedOfficer && (
                       <div className="mt-2 p-3 border rounded-lg bg-blue-50 border-blue-200">
                         <div className="flex items-center">
-                          <Shield className="w-4 h-4 mr-2 text-blue-600" />
+                          <UserCheck className="w-4 h-4 mr-2 text-blue-600" />
                           <div className="text-sm">
                             <p className="font-medium text-blue-800">
                               {selectedOfficer.fullName}
@@ -859,23 +882,25 @@ export default function DepartmentalCandidatesPage() {
                               ID: {selectedOfficer.schoolId} • {selectedOfficer.departmentId?.departmentCode || 'N/A'} - Year {selectedOfficer.yearLevel}
                             </p>
                             <p className="text-blue-700 text-xs mt-1">
-                              ✓ Class Officer {selectedOfficer.isRegistered && '• Registered voter'}
+                              ✓ Active Class Officer
                             </p>
                           </div>
                         </div>
                       </div>
                     )}
                     
-                    {/* Info about class officer requirement */}
-                    <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
-                      <div className="flex items-start">
-                        <Info className="w-4 h-4 text-amber-600 mt-0.5 mr-2 flex-shrink-0" />
-                        <div className="text-xs text-amber-800">
-                          <p className="font-medium">Class Officer Requirement</p>
-                          <p>Only students with class officer status can be departmental candidates.</p>
+                    {/* Show message when no officers available */}
+                    {eligibleOfficers.length === 0 && (
+                      <div className="mt-2 p-3 border rounded-lg bg-yellow-50 border-yellow-200">
+                        <div className="flex items-center">
+                          <AlertCircle className="w-4 h-4 mr-2 text-yellow-600" />
+                          <p className="text-sm text-yellow-800">
+                            No eligible class officers found for this department. 
+                            Make sure officers are active and marked as class officers.
+                          </p>
                         </div>
                       </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* Position Selection */}
@@ -890,14 +915,9 @@ export default function DepartmentalCandidatesPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option value="">Select a position</option>
-                      {getPositionOptions().map(position => (
-                        <option 
-                          key={position._id} 
-                          value={position._id}
-                          disabled={position.isDisabled}
-                          className={position.isDisabled ? 'text-gray-400 bg-gray-100' : ''}
-                        >
-                          {position.displayText}
+                      {deptPositions.map(position => (
+                        <option key={position._id} value={position._id}>
+                          {position.positionName}
                         </option>
                       ))}
                     </select>
@@ -917,7 +937,7 @@ export default function DepartmentalCandidatesPage() {
                     />
                   </div>
 
-                  {/* Campaign Picture Upload */}
+                  {/* FIXED: Campaign Picture Upload with proper preview */}
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Campaign Picture (Optional)
@@ -943,9 +963,39 @@ export default function DepartmentalCandidatesPage() {
                           Image uploaded
                         </div>
                       )}
+                      {editingCandidate?.campaignPicture && !formData.campaignPicture && (
+                        <div className="flex items-center text-sm text-blue-600">
+                          <Image className="w-4 h-4 mr-1" />
+                          Current image available
+                        </div>
+                      )}
                     </div>
+                    {/* FIXED: Campaign Picture Preview with proper click handler */}
+                    {formData.campaignPicture && (
+                      <div className="mt-2">
+                        <img
+                          src={formData.campaignPicture}
+                          alt="Campaign picture preview"
+                          className="w-20 h-20 object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
+                          onClick={() => {
+                            Swal.fire({
+                              title: 'Campaign Picture Preview',
+                              imageUrl: formData.campaignPicture,
+                              imageAlt: 'Campaign picture preview',
+                              showCloseButton: true,
+                              showConfirmButton: false,
+                              width: 'auto',
+                              customClass: {
+                                popup: 'max-w-4xl',
+                                image: 'max-h-96 object-contain'
+                              }
+                            })
+                          }}
+                        />
+                      </div>
+                    )}
                     <p className="text-xs text-gray-500 mt-1">
-                      Maximum file size: 2MB. Supported formats: JPG, PNG, GIF
+                      Maximum file size: 2MB. Supported formats: JPG, PNG, GIF. Click image to preview.
                     </p>
                   </div>
                 </div>
@@ -973,10 +1023,10 @@ export default function DepartmentalCandidatesPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={formLoading || !selectedOfficer || checkingEligibility}
+                    disabled={formLoading || !selectedOfficer}
                     className="flex-1 flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {(formLoading || checkingEligibility) ? (
+                    {formLoading ? (
                       <Loader2 className="animate-spin rounded-full h-4 w-4" />
                     ) : (
                       <>
@@ -999,7 +1049,7 @@ export default function DepartmentalCandidatesPage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-4">
               <h2 className="text-xl font-bold text-[#001f65]">
-                Candidates 
+                Departmental Candidates 
                 <span className="text-lg font-normal text-gray-600 ml-2">
                   ({filteredCandidates.length}{searchTerm || filterPosition ? ` of ${candidateStats.total}` : ''})
                 </span>
@@ -1038,6 +1088,17 @@ export default function DepartmentalCandidatesPage() {
               Add Candidate
             </button>
           </div>
+
+          {/* Election Info */}
+          {election && (
+            <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="text-sm text-blue-800">
+                <strong>Election:</strong> {election.title} • 
+                <strong> Department:</strong> {election.departmentId?.departmentCode} - {election.departmentId?.degreeProgram} • 
+                <strong> Date:</strong> {new Date(election.electionDate).toLocaleDateString()}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Table Content */}
@@ -1046,7 +1107,7 @@ export default function DepartmentalCandidatesPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Profile
+                  Campaign Picture
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Candidate
@@ -1061,9 +1122,6 @@ export default function DepartmentalCandidatesPage() {
                   Number
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Files
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1074,7 +1132,7 @@ export default function DepartmentalCandidatesPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredCandidates.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="px-6 py-12 text-center">
+                  <td colSpan="7" className="px-6 py-12 text-center">
                     <div className="flex flex-col items-center">
                       <Users className="w-12 h-12 text-gray-400 mb-4" />
                       <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -1117,24 +1175,32 @@ export default function DepartmentalCandidatesPage() {
                   
                   return (
                     <tr key={candidateKey} className="hover:bg-gray-50">
-                      {/* Profile Picture Column */}
+                      {/* FIXED: Campaign Picture Column with proper preview */}
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex-shrink-0 h-12 w-12">
+                        <div className="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center overflow-hidden">
                           {candidate.campaignPicture ? (
                             <img
-                              className="h-12 w-12 rounded-full object-cover border-2 border-gray-200"
-                              src={`data:image/jpeg;base64,${candidate.campaignPicture}`}
-                              alt={candidate.fullName}
+                              src={candidate.campaignPicture.startsWith('data:') ? 
+                                candidate.campaignPicture : 
+                                candidatesAPI.getCampaignPictureUrl(candidate._id)}
+                              alt={`${candidate.fullName} Campaign Picture`}
+                              className="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => handleCampaignPictureView(candidate)}
+                              title="Click to view campaign picture"
+                              onError={(e) => {
+                                // Hide broken image and show placeholder
+                                e.target.style.display = 'none'
+                                e.target.nextElementSibling.style.display = 'flex'
+                              }}
                             />
-                          ) : (
-                            <div className="h-12 w-12 rounded-full bg-[#b0c8fe]/30 flex items-center justify-center border-2 border-gray-200">
-                              <UserCheck className="h-6 w-6 text-[#001f65]" />
-                            </div>
-                          )}
+                          ) : null}
+                          <Image 
+                            className={`w-5 h-5 text-gray-400 ${candidate.campaignPicture ? 'hidden' : 'flex'}`} 
+                          />
                         </div>
                       </td>
 
-                      {/* Candidate Info Column */}
+                      {/* Candidate Info Column - UPDATED to show officer status */}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
                           <div className="text-sm font-medium text-gray-900">
@@ -1143,12 +1209,11 @@ export default function DepartmentalCandidatesPage() {
                           <div className="text-sm text-gray-500 flex items-center">
                             ID: {candidate.schoolId}
                             <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                              <Shield className="w-3 h-3 mr-1" />
                               Officer
                             </span>
-                            {candidate.isRegistered && (
+                            {candidate.isActive && (
                               <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                Registered
+                                Active
                               </span>
                             )}
                           </div>
@@ -1175,20 +1240,6 @@ export default function DepartmentalCandidatesPage() {
                       {/* Number Column */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {candidate.candidateNumber}
-                      </td>
-
-                      {/* Files Column */}
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center space-x-2">
-                          {candidate.hasCampaignPicture && (
-                            <span className="text-green-600 p-1" title="Has campaign picture">
-                              <Image className="w-4 h-4" />
-                            </span>
-                          )}
-                          {!candidate.hasCampaignPicture && (
-                            <span className="text-gray-400 text-xs">No files</span>
-                          )}
-                        </div>
                       </td>
 
                       {/* Status Column */}
@@ -1231,54 +1282,6 @@ export default function DepartmentalCandidatesPage() {
             </tbody>
           </table>
         </div>
-
-        {/* Position Limits Information Panel */}
-        {Object.keys(positionLimits).length > 0 && (
-          <div className="p-6 border-t border-gray-200 bg-gray-50">
-            <div>
-              <h4 className="text-sm font-semibold text-gray-800 mb-3">Position Limits</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Object.entries(positionLimits).map(([positionId, limit]) => {
-                  const position = departmentalPositions.find(p => p._id === positionId)
-                  if (!position) return null
-                  
-                  const percentage = limit.maxCandidates > 0 ? 
-                    Math.round((limit.currentTotal / limit.maxCandidates) * 100) : 0
-                  
-                  return (
-                    <div key={positionId} className="flex items-center justify-between p-3 bg-white rounded-lg border">
-                      <div>
-                        <span className="text-sm font-medium text-gray-900">
-                          {position.positionName}
-                        </span>
-                        <span className="text-xs text-gray-500 ml-2">
-                          ({limit.currentTotal}/{limit.maxCandidates})
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        <div className="w-20 bg-gray-200 rounded-full h-2">
-                          <div 
-                            className={`h-2 rounded-full ${
-                              percentage >= 100 ? 'bg-red-500' : 
-                              percentage >= 80 ? 'bg-yellow-500' : 'bg-green-500'
-                            }`}
-                            style={{ width: `${Math.min(percentage, 100)}%` }}
-                          ></div>
-                        </div>
-                        <span className={`text-xs font-medium ${
-                          percentage >= 100 ? 'text-red-600' : 
-                          percentage >= 80 ? 'text-yellow-600' : 'text-green-600'
-                        }`}>
-                          {percentage}%
-                        </span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </DepartmentalLayout>
   )

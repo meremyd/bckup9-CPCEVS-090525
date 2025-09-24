@@ -228,16 +228,35 @@ static async validateDepartmentalCandidate(candidateData, excludeCandidateId = n
   const { voterId, deptElectionId, positionId } = candidateData
   const errors = []
 
-  // Verify voter exists
+  // Verify voter exists and is ACTIVE (not necessarily registered)
   const voter = await Voter.findById(voterId).populate('departmentId')
   if (!voter) {
     errors.push('Voter not found')
     return { isValid: false, errors }
   }
 
-  // NEW: Check if voter is a class officer for departmental elections
+  // UPDATED: Check if voter is ACTIVE (removed isRegistered requirement)
+  if (!voter.isActive) {
+    errors.push('Only active voters can be departmental candidates')
+    return { isValid: false, errors }
+  }
+
+  // Check if voter is a CLASS OFFICER
   if (!voter.isClassOfficer) {
     errors.push('Only class officers can be departmental candidates')
+    return { isValid: false, errors }
+  }
+
+  // Get the departmental election to check department match
+  const deptElection = await DepartmentalElection.findById(deptElectionId).populate('departmentId')
+  if (!deptElection) {
+    errors.push('Departmental election not found')
+    return { isValid: false, errors }
+  }
+
+  // UPDATED: Check if voter's department matches election's department
+  if (!voter.departmentId || voter.departmentId._id.toString() !== deptElection.departmentId._id.toString()) {
+    errors.push(`Only officers from ${deptElection.departmentId.departmentCode} department can be candidates in this election`)
     return { isValid: false, errors }
   }
 
@@ -252,20 +271,22 @@ static async validateDepartmentalCandidate(candidateData, excludeCandidateId = n
     existingCandidateQuery._id = { $ne: excludeCandidateId }
   }
   
-  const existingCandidate = await Candidate.findOne(existingCandidateQuery)
+  const existingCandidate = await this.findOne(existingCandidateQuery)
     .populate('positionId', 'positionName')
 
   if (existingCandidate) {
-    errors.push(`Voter is already a candidate for ${existingCandidate.positionId.positionName} in this departmental election`)
+    errors.push(`Officer is already a candidate for ${existingCandidate.positionId.positionName} in this departmental election`)
     return { isValid: false, errors }
   }
 
   return { 
     isValid: true, 
     errors: [],
-    voter 
+    voter,
+    election: deptElection
   }
 }
+
 
 static async getPartylistCandidateSlots(req, res, next) {
   try {
@@ -884,10 +905,13 @@ static async checkCandidateEligibility(req, res, next) {
       ...req.body,
       deptElectionId: req.body.deptElectionId || req.body.electionId,
       ssgElectionId: null,
-      partylistId: null
+      partylistId: null // Ensure no partylist for departmental
     }
 
-    // NEW: Use departmental candidate validation
+    // Remove credentials if present (not allowed for departmental)
+    delete candidateData.credentials
+
+    // UPDATED: Use departmental candidate validation
     const validation = await CandidateController.validateDepartmentalCandidate(candidateData)
     if (!validation.isValid) {
       await CandidateController.logAuditAction(
@@ -902,7 +926,7 @@ static async checkCandidateEligibility(req, res, next) {
       return next(error)
     }
 
-    // Continue with candidate creation
+    // Continue with candidate creation using the base method
     req.body = candidateData
     await CandidateController.createCandidate(req, res, next)
   } catch (error) {
@@ -912,6 +936,7 @@ static async checkCandidateEligibility(req, res, next) {
     next(err)
   }
 }
+
 
   // Update candidate with validation
   static async updateCandidate(req, res, next) {
@@ -1142,13 +1167,15 @@ static async checkCandidateEligibility(req, res, next) {
       return next(error)
     }
 
+    // Remove partylist and credentials if present (not allowed for departmental)
     if (updateData.partylistId) {
       const error = new Error("Departmental candidates cannot have partylists")
       error.statusCode = 400
       return next(error)
     }
+    delete updateData.credentials
 
-    // NEW: If changing voter, validate that new voter is a class officer
+    // If changing voter, validate that new voter is an active class officer in correct department
     if (updateData.voterId && updateData.voterId !== candidate.voterId.toString()) {
       const candidateData = {
         voterId: updateData.voterId,
@@ -1282,91 +1309,90 @@ static async checkCandidateEligibility(req, res, next) {
 
   // Upload campaign picture (SSG only)
   static async uploadCampaignPicture(req, res, next) {
-    try {
-      const { id } = req.params
-      const { campaignPicture } = req.body
+  try {
+    const { id } = req.params
+    const { campaignPicture } = req.body
 
-      CandidateController.validateObjectId(id, 'candidate ID')
+    CandidateController.validateObjectId(id, 'candidate ID')
 
-      if (!campaignPicture) {
-        const error = new Error("Campaign picture is required")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const candidate = await Candidate.findById(id)
-        .populate('voterId', 'firstName lastName schoolId')
-        .populate('ssgElectionId', 'title status')
-
-      if (!candidate) {
-        const error = new Error("Candidate not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      // Only SSG candidates can have campaign pictures
-      if (!candidate.ssgElectionId) {
-        const error = new Error("Campaign pictures are only allowed for SSG candidates")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      // Check election status
-      if (['completed', 'cancelled'].includes(candidate.ssgElectionId.status)) {
-        const error = new Error("Cannot modify campaign pictures in completed or cancelled elections")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      // Convert base64 to buffer
-      let pictureBuffer
-      try {
-        if (typeof campaignPicture === 'string') {
-          const base64Data = campaignPicture.replace(/^data:image\/[a-z]+;base64,/, '')
-          pictureBuffer = Buffer.from(base64Data, 'base64')
-        } else {
-          pictureBuffer = campaignPicture
-        }
-
-        if (pictureBuffer.length === 0) {
-          throw new Error("Invalid image data")
-        }
-      } catch (error) {
-        const err = new Error("Invalid campaign picture format")
-        err.statusCode = 400
-        return next(err)
-      }
-
-      candidate.campaignPicture = pictureBuffer
-      await candidate.save()
-
-      await CandidateController.logAuditAction(
-        "CAMPAIGN_PICTURE_UPDATE",
-        req.user,
-        `Updated campaign picture for SSG candidate: ${candidate.getDisplayName()} (${candidate.voterId.schoolId})`,
-        req
-      )
-
-      console.log("Raw campaignPicture input:", typeof campaignPicture, campaignPicture.substring(0, 100));
-console.log("Buffer length:", pictureBuffer.length);
-console.log("First bytes:", pictureBuffer.slice(0, 10));
-
-      res.json({
-        success: true,
-        data: {
-          _id: candidate._id,
-          candidateNumber: candidate.candidateNumber,
-          hasCampaignPicture: candidate.hasCampaignPicture()
-        },
-        message: "Campaign picture uploaded successfully"
-      })
-    } catch (error) {
-      console.error("Error uploading campaign picture:", error)
-      const err = new Error(error.message || "Failed to upload campaign picture")
-      err.statusCode = error.statusCode || 500
-      next(err)
+    if (!campaignPicture) {
+      const error = new Error("Campaign picture is required")
+      error.statusCode = 400
+      return next(error)
     }
+
+    const candidate = await Candidate.findById(id)
+      .populate('voterId', 'firstName lastName schoolId')
+      .populate('ssgElectionId', 'title status')
+      .populate('deptElectionId', 'title status')
+
+    if (!candidate) {
+      const error = new Error("Candidate not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Allow campaign pictures for both SSG and Departmental candidates
+    const election = candidate.ssgElectionId || candidate.deptElectionId
+    if (['completed', 'cancelled'].includes(election.status)) {
+      const error = new Error("Cannot modify campaign pictures in completed or cancelled elections")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    // Convert base64 to buffer - FIXED for proper handling
+    let pictureBuffer
+    try {
+      if (typeof campaignPicture === 'string') {
+        let base64Data
+        if (campaignPicture.startsWith('data:')) {
+          // Handle data URL format
+          base64Data = campaignPicture.split(',')[1]
+        } else {
+          // Handle raw base64
+          base64Data = campaignPicture
+        }
+        pictureBuffer = Buffer.from(base64Data, 'base64')
+      } else {
+        pictureBuffer = campaignPicture
+      }
+
+      if (pictureBuffer.length === 0) {
+        throw new Error("Invalid image data")
+      }
+    } catch (error) {
+      const err = new Error("Invalid campaign picture format")
+      err.statusCode = 400
+      return next(err)
+    }
+
+    candidate.campaignPicture = pictureBuffer
+    await candidate.save()
+
+    const electionType = candidate.ssgElectionId ? 'SSG' : 'Departmental'
+    await CandidateController.logAuditAction(
+      "CAMPAIGN_PICTURE_UPDATE",
+      req.user,
+      `Updated campaign picture for ${electionType} candidate: ${candidate.getDisplayName()} (${candidate.voterId.schoolId})`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        _id: candidate._id,
+        candidateNumber: candidate.candidateNumber,
+        hasCampaignPicture: candidate.hasCampaignPicture()
+      },
+      message: "Campaign picture uploaded successfully"
+    })
+  } catch (error) {
+    console.error("Error uploading campaign picture:", error)
+    const err = new Error(error.message || "Failed to upload campaign picture")
+    err.statusCode = error.statusCode || 500
+    next(err)
   }
+}
 
   // Get candidates by election using model method
 static async getCandidatesBySSGElection(req, res, next) {
@@ -1593,11 +1619,11 @@ static async getCandidatesByDepartmentalElection(req, res, next) {
       query.isActive = status === 'active'
     }
 
-    // Get candidates with full population
+    // UPDATED: Get candidates with full population and campaign picture handling
     const candidates = await Candidate.find(query)
       .populate({
         path: 'voterId',
-        select: 'schoolId firstName middleName lastName departmentId yearLevel',
+        select: 'schoolId firstName middleName lastName departmentId yearLevel isActive isClassOfficer',
         populate: {
           path: 'departmentId',
           select: 'departmentCode degreeProgram college'
@@ -1613,7 +1639,7 @@ static async getCandidatesByDepartmentalElection(req, res, next) {
         candidateNumber: 1
       })
 
-    // Process candidates
+    // UPDATED: Process candidates with campaign picture data
     const processedCandidates = candidates.map(candidate => {
       const candidateObj = candidate.toObject()
       
@@ -1627,6 +1653,16 @@ static async getCandidatesByDepartmentalElection(req, res, next) {
       candidateObj.schoolId = candidate.voterId?.schoolId || 'N/A'
       candidateObj.yearLevel = candidate.voterId?.yearLevel || 'N/A'
       candidateObj.electionType = 'departmental'
+      candidateObj.isActive = candidate.isActive !== false
+      candidateObj.isClassOfficer = candidate.voterId?.isClassOfficer || false
+      
+      // UPDATED: Ensure campaign picture is properly formatted
+      if (candidate.campaignPicture) {
+        candidateObj.hasCampaignPicture = true
+        // Keep the buffer for API responses that will convert to base64
+      } else {
+        candidateObj.hasCampaignPicture = false
+      }
       
       return candidateObj
     })
@@ -1937,42 +1973,36 @@ static async getCandidatesByElection(req, res, next) {
 
   // Get candidate campaign picture (for image display)
   static async getCandidateCampaignPicture(req, res, next) {
-    try {
-      const { id } = req.params
+  try {
+    const { id } = req.params
 
-      CandidateController.validateObjectId(id, 'candidate ID')
+    CandidateController.validateObjectId(id, 'candidate ID')
 
-      const candidate = await Candidate.findById(id).select('campaignPicture ssgElectionId')
+    const candidate = await Candidate.findById(id).select('campaignPicture ssgElectionId deptElectionId')
 
-      if (!candidate) {
-        const error = new Error("Candidate not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      if (!candidate.ssgElectionId) {
-        const error = new Error("Campaign pictures are only available for SSG candidates")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      if (!candidate.hasCampaignPicture()) {
-        const error = new Error("No campaign picture found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      res.setHeader('Content-Type', 'image/jpeg')
-      res.setHeader('Cache-Control', 'public, max-age=3600')
-      res.send(candidate.campaignPicture)
-
-    } catch (error) {
-      console.error("Error fetching campaign picture:", error)
-      const err = new Error(error.message || "Failed to fetch campaign picture")
-      err.statusCode = error.statusCode || 500
-      next(err)
+    if (!candidate) {
+      const error = new Error("Candidate not found")
+      error.statusCode = 404
+      return next(error)
     }
+
+    if (!candidate.hasCampaignPicture()) {
+      const error = new Error("No campaign picture found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    res.setHeader('Content-Type', 'image/jpeg')
+    res.setHeader('Cache-Control', 'public, max-age=3600')
+    res.send(candidate.campaignPicture)
+
+  } catch (error) {
+    console.error("Error fetching campaign picture:", error)
+    const err = new Error(error.message || "Failed to fetch campaign picture")
+    err.statusCode = error.statusCode || 500
+    next(err)
   }
+}
 
   static async uploadCredentials(req, res, next) {
   try {

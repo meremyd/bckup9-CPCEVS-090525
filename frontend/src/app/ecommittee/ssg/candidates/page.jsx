@@ -842,10 +842,10 @@ export default function SSGCandidatesPage() {
     };
     delete submitData.campaignPicture;
 
-    // Convert credentials (if present) to base64 for API submission
-    if (submitData.credentials && submitData.credentials.startsWith('data:')) {
-      submitData.credentials = submitData.credentials.split(',')[1];
-    }
+  
+    // if (submitData.credentials && submitData.credentials.startsWith('data:')) {
+    //   submitData.credentials = submitData.credentials.split(',')[1];
+    // }
 
     // Remove empty partylistId to make candidate independent
     if (!submitData.partylistId) {

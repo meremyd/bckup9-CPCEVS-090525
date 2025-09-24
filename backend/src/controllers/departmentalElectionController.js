@@ -1227,6 +1227,7 @@ class DepartmentalElectionController {
       return next(error)
     }
 
+    // Get the departmental election with populated department info
     const election = await DepartmentalElection.findById(id).populate("departmentId")
     if (!election) {
       const error = new Error("Departmental election not found")
@@ -1234,32 +1235,133 @@ class DepartmentalElectionController {
       return next(error)
     }
 
-    // Count officers specifically from the election's department
-    const officersCount = await Voter.countDocuments({
-      departmentId: election.departmentId._id,
-      isActive: true,
-      isRegistered: true,
-      isClassOfficer: true,
-      isPasswordActive: true
-    })
+    // Log the election details for debugging
+    console.log(`[DEBUG] Counting officers for departmental election:`)
+    console.log(`[DEBUG] - Election: ${election.title} (${election.deptElectionId})`)
+    console.log(`[DEBUG] - Department: ${election.departmentId.departmentCode} - ${election.departmentId.degreeProgram}`)
+    console.log(`[DEBUG] - Department ID: ${election.departmentId._id}`)
 
+    // For departmental elections, count ALL voters from the department who are class officers
+    // Relaxing the requirement for isRegistered and isPasswordActive for counting purposes
+    // Since the actual voting eligibility is checked separately
+    const officersQuery = {
+      departmentId: election.departmentId._id,
+      isClassOfficer: true,
+      isActive: true
+    }
+
+    console.log(`[DEBUG] Query for officers:`, officersQuery)
+
+    const officersCount = await Voter.countDocuments(officersQuery)
+
+    console.log(`[DEBUG] Officers count result: ${officersCount}`)
+
+    // Get detailed breakdown to understand the data
+    const breakdown = {
+      totalVotersInDepartment: await Voter.countDocuments({ 
+        departmentId: election.departmentId._id 
+      }),
+      activeVotersInDepartment: await Voter.countDocuments({ 
+        departmentId: election.departmentId._id, 
+        isActive: true 
+      }),
+      totalClassOfficersInDepartment: await Voter.countDocuments({ 
+        departmentId: election.departmentId._id,
+        isClassOfficer: true 
+      }),
+      activeClassOfficersInDepartment: await Voter.countDocuments({ 
+        departmentId: election.departmentId._id,
+        isClassOfficer: true,
+        isActive: true 
+      }),
+      registeredClassOfficersInDepartment: await Voter.countDocuments({ 
+        departmentId: election.departmentId._id, 
+        isActive: true, 
+        isRegistered: true,
+        isClassOfficer: true 
+      }),
+      eligibleToVoteClassOfficers: await Voter.countDocuments({ 
+        departmentId: election.departmentId._id,
+        isActive: true,
+        isRegistered: true,
+        isClassOfficer: true,
+        isPasswordActive: true
+      }),
+      // Additional breakdowns
+      inactiveClassOfficers: await Voter.countDocuments({ 
+        departmentId: election.departmentId._id,
+        isClassOfficer: true,
+        isActive: false 
+      }),
+      unregisteredClassOfficers: await Voter.countDocuments({ 
+        departmentId: election.departmentId._id,
+        isClassOfficer: true,
+        isActive: true,
+        isRegistered: false 
+      }),
+      classOfficersWithInactivePassword: await Voter.countDocuments({ 
+        departmentId: election.departmentId._id,
+        isActive: true,
+        isRegistered: true,
+        isClassOfficer: true,
+        isPasswordActive: false 
+      })
+    }
+
+    console.log(`[DEBUG] Detailed department breakdown for ${election.departmentId.departmentCode}:`, breakdown)
+
+    // Get sample class officers for inspection (if debugging needed)
+    const sampleOfficers = await Voter.find({ 
+      departmentId: election.departmentId._id,
+      isClassOfficer: true 
+    }).limit(5).select('schoolId firstName lastName isActive isRegistered isClassOfficer isPasswordActive')
+    
+    if (sampleOfficers.length > 0) {
+      console.log(`[DEBUG] Sample class officers in ${election.departmentId.departmentCode}:`, sampleOfficers)
+    } else {
+      console.log(`[DEBUG] No class officers found in ${election.departmentId.departmentCode} department`)
+      
+      // Check if there are ANY voters in this department
+      const anyVotersInDept = await Voter.find({ 
+        departmentId: election.departmentId._id 
+      }).limit(5).select('schoolId firstName lastName isActive isRegistered isClassOfficer')
+      
+      console.log(`[DEBUG] Sample voters in department (to verify department has voters):`, anyVotersInDept)
+    }
+
+    // Log the access for audit trail
     await AuditLog.logUserAction(
       "SYSTEM_ACCESS",
       req.user,
-      `Officers count accessed for departmental election - ${election.title} (${election.deptElectionId}) for ${election.departmentId.departmentCode}: ${officersCount} officers`,
+      `Officers count accessed for departmental election - ${election.title} (${election.deptElectionId}) for ${election.departmentId.departmentCode}: ${officersCount} class officers found`,
       req
     )
 
+    // Return the count along with election info
     res.json({
       election: {
         id: election._id,
         title: election.title,
         deptElectionId: election.deptElectionId,
-        department: election.departmentId
+        department: {
+          _id: election.departmentId._id,
+          departmentCode: election.departmentId.departmentCode,
+          degreeProgram: election.departmentId.degreeProgram,
+          college: election.departmentId.college
+        }
       },
-      officersCount
+      officersCount, // This now shows ALL active class officers in the department
+      breakdown,
+      message: `${officersCount} active class officers found in ${election.departmentId.departmentCode} department`,
+      eligibleToVote: breakdown.eligibleToVoteClassOfficers, // Shows how many can actually vote
+      debugInfo: {
+        queryUsed: officersQuery,
+        departmentId: election.departmentId._id.toString(),
+        sampleOfficersFound: sampleOfficers.length
+      }
     })
   } catch (error) {
+    console.error('Error in getDepartmentalElectionOfficersCount:', error)
     next(error)
   }
 }

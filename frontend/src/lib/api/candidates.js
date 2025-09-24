@@ -460,108 +460,184 @@ if (candidateData.credentials &&
   // ===== DEPARTMENTAL SPECIFIC METHODS (Aligned with /candidates/departmental routes) =====
   
   departmental: {
-    // Get all Departmental candidates
-    getAll: async (params = {}) => {
-      try {
-        const { page = 1, limit = 10, electionId, positionId, status, search } = params
-        const queryParams = new URLSearchParams({
-          page: page.toString(),
-          limit: limit.toString(),
-          ...(electionId && { electionId }),
-          ...(positionId && { positionId }),
-          ...(status !== undefined && { status }),
-          ...(search && { search })
-        })
-        
-        const response = await api.get(`/candidates/departmental?${queryParams}`)
-        return response.data
-      } catch (error) {
-        console.error('Error fetching departmental candidates:', error)
-        throw error
-      }
-    },
-
-    // Get Departmental candidate by ID
-    getById: async (id) => {
-      try {
-        const response = await api.get(`/candidates/departmental/${id}`)
-        return response.data
-      } catch (error) {
-        console.error(`Error fetching departmental candidate ${id}:`, error)
-        throw error
-      }
-    },
-
-    // Create Departmental candidate
-    create: async (candidateData) => {
-      try {
-        const response = await api.post('/candidates/departmental', { 
-          ...candidateData, 
-          ssgElectionId: null,
-          partylistId: null
-        })
-        return response.data
-      } catch (error) {
-        console.error('Error creating departmental candidate:', error)
-        throw error
-      }
-    },
-
-    // Update Departmental candidate
-    update: async (id, candidateData) => {
-      try {
-        const response = await api.put(`/candidates/departmental/${id}`, candidateData)
-        return response.data
-      } catch (error) {
-        console.error(`Error updating departmental candidate ${id}:`, error)
-        throw error
-      }
-    },
-
-    // Delete Departmental candidate
-    delete: async (id) => {
-      try {
-        const response = await api.delete(`/candidates/departmental/${id}`)
-        return response.data
-      } catch (error) {
-        console.error(`Error deleting departmental candidate ${id}:`, error)
-        throw error
-      }
-    },
-
-    // Get Departmental candidates by election
-    getByElection: async (electionId, params = {}) => {
-      try {
-        const { positionId, status } = params
-        const queryParams = new URLSearchParams({
-          ...(positionId && { positionId }),
-          ...(status !== undefined && { status })
-        })
-        
-        const queryString = queryParams.toString()
-        const url = queryString 
-          ? `/candidates/departmental/election/${electionId}?${queryString}` 
-          : `/candidates/departmental/election/${electionId}`
-        
-        const response = await api.get(url)
-        return response.data
-      } catch (error) {
-        console.error(`Error fetching departmental candidates for election ${electionId}:`, error)
-        throw error
-      }
-    },
-
-    // Get Departmental candidates for voter
-    getForVoter: async (electionId) => {
-      try {
-        const response = await api.get(`/candidates/departmental/voter/election/${electionId}`)
-        return response.data
-      } catch (error) {
-        console.error(`Error fetching departmental candidates for voter - election ${electionId}:`, error)
-        throw error
-      }
+  // Get all Departmental candidates
+  getAll: async (params = {}) => {
+    try {
+      const { page = 1, limit = 10, electionId, positionId, status, search } = params
+      const queryParams = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString(),
+        ...(electionId && { electionId }),
+        ...(positionId && { positionId }),
+        ...(status !== undefined && { status }),
+        ...(search && { search })
+      })
+      
+      const response = await api.get(`/candidates/departmental?${queryParams}`)
+      return response.data
+    } catch (error) {
+      console.error('Error fetching departmental candidates:', error)
+      throw error
     }
   },
+
+  // Get Departmental candidate by ID
+  getById: async (id) => {
+    try {
+      const response = await api.get(`/candidates/departmental/${id}`)
+      return response.data
+    } catch (error) {
+      console.error(`Error fetching departmental candidate ${id}:`, error)
+      throw error
+    }
+  },
+
+  // UPDATED: Create Departmental candidate - removed credentials, fixed campaign picture handling
+  create: async (candidateData) => {
+    try {
+      // Clean the candidate data - only include fields allowed for departmental candidates
+      const cleanedData = {
+        voterId: candidateData.voterId,
+        positionId: candidateData.positionId,
+        deptElectionId: candidateData.deptElectionId || candidateData.electionId,
+        ssgElectionId: null,
+        partylistId: null, // No partylists for departmental elections
+        isActive: candidateData.isActive !== false // Default to true
+      }
+
+      // Only include optional fields if they have values
+      if (candidateData.candidateNumber) {
+        cleanedData.candidateNumber = candidateData.candidateNumber
+      }
+
+      // Don't include campaign picture in main create call - handle separately
+      // Campaign picture will be uploaded after candidate creation
+
+      console.log('Creating departmental candidate with cleaned data:', cleanedData)
+      
+      const response = await api.post('/candidates/departmental', cleanedData)
+      
+      console.log('Departmental candidate created successfully:', response.data)
+      return response.data
+    } catch (error) {
+      console.error('Error creating departmental candidate:', error)
+      
+      // Enhanced error handling for validation messages
+      if (error.response?.data?.message) {
+        const errorMessage = error.response.data.message
+        
+        // Check for specific validation errors
+        if (errorMessage.includes('active voters')) {
+          throw new Error('Only active voters can be departmental candidates')
+        } else if (errorMessage.includes('class officers')) {
+          throw new Error('Only class officers can be departmental candidates')
+        } else if (errorMessage.includes('department')) {
+          throw new Error('Officer must belong to the same department as the election')
+        } else if (errorMessage.includes('already a candidate')) {
+          throw new Error('This officer is already a candidate in this departmental election')
+        }
+      }
+      
+      throw error
+    }
+  },
+
+  // UPDATED: Update Departmental candidate - removed credentials, fixed campaign picture handling
+  update: async (id, candidateData) => {
+    try {
+      console.log(`Updating departmental candidate ${id} with data:`, {
+        ...candidateData,
+        campaignPicture: candidateData.campaignPicture ? '[IMAGE_DATA]' : candidateData.campaignPicture
+      })
+      
+      // Remove fields not allowed for departmental candidates
+      const updateData = { ...candidateData }
+      delete updateData.partylistId // No partylists allowed
+      delete updateData.credentials // No credentials allowed
+      delete updateData.campaignPicture // Handle separately
+      
+      const response = await api.put(`/candidates/departmental/${id}`, updateData)
+      
+      console.log('Departmental candidate updated successfully:', response.data)
+      return response.data
+    } catch (error) {
+      console.error(`Error updating departmental candidate ${id}:`, error)
+      
+      // Enhanced error handling for validation messages
+      if (error.response?.data?.message) {
+        const errorMessage = error.response.data.message
+        
+        if (errorMessage.includes('active voters')) {
+          throw new Error('Only active voters can be departmental candidates')
+        } else if (errorMessage.includes('class officers')) {
+          throw new Error('Only class officers can be departmental candidates')
+        } else if (errorMessage.includes('department')) {
+          throw new Error('Officer must belong to the same department as the election')
+        } else if (errorMessage.includes('already a candidate')) {
+          throw new Error('This officer is already a candidate in this departmental election')
+        }
+      }
+      
+      throw error
+    }
+  },
+
+  // Delete Departmental candidate
+  delete: async (id) => {
+    try {
+      const response = await api.delete(`/candidates/departmental/${id}`)
+      return response.data
+    } catch (error) {
+      console.error(`Error deleting departmental candidate ${id}:`, error)
+      throw error
+    }
+  },
+
+  // UPDATED: Get Departmental candidates by election
+  getByElection: async (electionId, params = {}) => {
+    try {
+      const { positionId, status } = params
+      const queryParams = new URLSearchParams({
+        ...(positionId && { positionId }),
+        ...(status !== undefined && { status })
+      })
+      
+      const queryString = queryParams.toString()
+      const url = queryString 
+        ? `/candidates/departmental/election/${electionId}?${queryString}` 
+        : `/candidates/departmental/election/${electionId}`
+      
+      console.log('Making API call to departmental candidates endpoint:', url)
+      
+      const response = await api.get(url)
+      
+      console.log('Departmental Candidates API Response Status:', response.status)
+      console.log('Departmental Candidates API Response Data keys:', Object.keys(response.data || {}))
+      
+      // Validate response structure
+      if (!response.data?.data) {
+        console.error('Invalid response structure - missing data object')
+        throw new Error('Invalid response format from server')
+      }
+      
+      return response.data
+    } catch (error) {
+      console.error(`Error fetching departmental candidates for election ${electionId}:`, error)
+      throw error
+    }
+  },
+
+  // Get Departmental candidates for voter
+  getForVoter: async (electionId) => {
+    try {
+      const response = await api.get(`/candidates/departmental/voter/election/${electionId}`)
+      return response.data
+    } catch (error) {
+      console.error(`Error fetching departmental candidates for voter - election ${electionId}:`, error)
+      throw error
+    }
+  }
+},
 
   // ===== VALIDATION FUNCTIONS =====
 
@@ -611,6 +687,46 @@ if (candidateData.credentials &&
       errors
     }
   },
+
+  validateDepartmentalCandidateForm: (formData) => {
+  const errors = {}
+  
+  // Required fields validation
+  if (!formData.voterId) {
+    errors.voterId = 'Officer selection is required'
+  }
+  
+  if (!formData.positionId) {
+    errors.positionId = 'Position selection is required'
+  }
+  
+  if (!formData.deptElectionId && !formData.electionId) {
+    errors.election = 'Departmental Election selection is required'
+  }
+  
+  // Candidate number validation
+  if (formData.candidateNumber) {
+    const num = parseInt(formData.candidateNumber)
+    if (isNaN(num) || num < 1) {
+      errors.candidateNumber = 'Candidate number must be a positive number'
+    }
+  }
+  
+  // Partylists are not allowed for departmental candidates
+  if (formData.partylistId) {
+    errors.partylist = 'Partylists are not available for departmental elections'
+  }
+  
+  // Credentials are not allowed for departmental candidates
+  if (formData.credentials) {
+    errors.credentials = 'Credentials are not available for departmental elections'
+  }
+  
+  return {
+    isValid: Object.keys(errors).length === 0,
+    errors
+  }
+},
 
   validateCandidateForm: (formData) => {
     const errors = {}

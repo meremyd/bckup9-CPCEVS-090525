@@ -1206,86 +1206,86 @@ static async getActiveOfficers(req, res, next) {
 
 
 static async getDepartmentalOfficers(req, res, next) {
-    try {
-      const { departmentId } = req.params
-      const { yearLevel, page = 1, limit = 100, search } = req.query
+  try {
+    const { departmentId } = req.params
+    const { yearLevel, page = 1, limit = 100, search } = req.query
 
-      if (!departmentId) {
-        const error = new Error("Department ID is required")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      // Verify department exists
-      const department = await Department.findById(departmentId)
-      if (!department) {
-        const error = new Error("Department not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      const filter = { 
-        departmentId: departmentId,
-        isClassOfficer: true,
-        isActive: true,
-        isRegistered: true,
-        isPasswordActive: true
-      }
-      
-      if (yearLevel) filter.yearLevel = Number(yearLevel)
-      
-      if (search) {
-        const searchNumber = Number(search)
-        const searchConditions = [
-          { firstName: { $regex: search, $options: "i" } },
-          { lastName: { $regex: search, $options: "i" } },
-        ]
-        
-        if (!isNaN(searchNumber)) {
-          searchConditions.push({ schoolId: searchNumber })
-        }
-        
-        filter.$or = searchConditions
-      }
-
-      const skip = (page - 1) * limit
-
-      const officers = await Voter.find(filter)
-        .populate("departmentId")
-        .sort({ schoolId: 1 })
-        .skip(skip)
-        .limit(Number.parseInt(limit))
-        .select("-password -faceEncoding -profilePicture")
-
-      const total = await Voter.countDocuments(filter)
-
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        { username: req.user?.username },
-        `Departmental officers accessed - ${department.departmentCode}: ${officers.length} active officers returned`,
-        req
-      )
-
-      res.json({
-        success: true,
-        data: officers,
-        department: {
-          id: department._id,
-          departmentCode: department.departmentCode,
-          degreeProgram: department.degreeProgram,
-          college: department.college
-        },
-        pagination: {
-          current: Number(page),
-          total: Math.ceil(total / limit),
-          count: officers.length,
-          totalRecords: total
-        }
-      })
-    } catch (error) {
-      next(error)
+    if (!departmentId) {
+      const error = new Error("Department ID is required")
+      error.statusCode = 400
+      return next(error)
     }
+
+    // Verify department exists
+    const department = await Department.findById(departmentId)
+    if (!department) {
+      const error = new Error("Department not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // UPDATED: Filter for active class officers (removed registration requirement)
+    const filter = { 
+      departmentId: departmentId,
+      isClassOfficer: true,
+      isActive: true // Only requirement: active and class officer
+    }
+    
+    if (yearLevel) filter.yearLevel = Number(yearLevel)
+    
+    if (search) {
+      const searchNumber = Number(search)
+      const searchConditions = [
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
+      ]
+      
+      if (!isNaN(searchNumber)) {
+        searchConditions.push({ schoolId: searchNumber })
+      }
+      
+      filter.$or = searchConditions
+    }
+
+    const skip = (page - 1) * limit
+
+    const officers = await Voter.find(filter)
+      .populate("departmentId")
+      .sort({ schoolId: 1 })
+      .skip(skip)
+      .limit(Number.parseInt(limit))
+      .select("-password -faceEncoding -profilePicture")
+
+    const total = await Voter.countDocuments(filter)
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      { username: req.user?.username },
+      `Departmental officers accessed - ${department.departmentCode}: ${officers.length} active officers returned`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: officers,
+      department: {
+        id: department._id,
+        departmentCode: department.departmentCode,
+        degreeProgram: department.degreeProgram,
+        college: department.college
+      },
+      pagination: {
+        current: Number(page),
+        total: Math.ceil(total / limit),
+        count: officers.length,
+        totalRecords: total
+      }
+    })
+  } catch (error) {
+    next(error)
   }
+}
+
 
 static async getActiveVotersByDepartmentCode(req, res, next) {
     try {
@@ -1374,96 +1374,95 @@ static async getActiveVotersByDepartmentCode(req, res, next) {
     }
   }  
 
-  static async getActiveOfficersByDepartmentCode(req, res, next) {
-    try {
-      const { departmentCode } = req.params
-      const { yearLevel, page = 1, limit = 100, search } = req.query
+static async getActiveOfficersByDepartmentCode(req, res, next) {
+  try {
+    const { departmentCode } = req.params
+    const { yearLevel, page = 1, limit = 100, search } = req.query
 
-      if (!departmentCode) {
-        const error = new Error("Department code is required")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      const departments = await Department.find({ 
-        departmentCode: departmentCode.toUpperCase() 
-      })
-
-      if (departments.length === 0) {
-        const error = new Error("Department code not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      const departmentIds = departments.map(dept => dept._id)
-
-      const filter = { 
-        departmentId: { $in: departmentIds },
-        isClassOfficer: true,
-        isActive: true,
-        isRegistered: true,      // Officers should be registered
-        isPasswordActive: true   // Officers should have active passwords
-      }
-      
-      if (yearLevel) filter.yearLevel = Number(yearLevel)
-      
-      if (search) {
-        const searchNumber = Number(search)
-        const searchConditions = [
-          { firstName: { $regex: search, $options: "i" } },
-          { lastName: { $regex: search, $options: "i" } },
-        ]
-        
-        if (!isNaN(searchNumber)) {
-          searchConditions.push({ schoolId: searchNumber })
-        }
-        
-        filter.$or = searchConditions
-      }
-
-      const skip = (page - 1) * limit
-
-      const officers = await Voter.find(filter)
-        .populate("departmentId")
-        .sort({ schoolId: 1 })
-        .skip(skip)
-        .limit(Number.parseInt(limit))
-        .select("-password -faceEncoding -profilePicture")
-
-      const total = await Voter.countDocuments(filter)
-
-      const departmentInfo = {
-        departmentCode: departmentCode.toUpperCase(),
-        programs: departments.map(dept => ({
-          id: dept._id,
-          degreeProgram: dept.degreeProgram,
-          college: dept.college
-        })),
-        colleges: [...new Set(departments.map(dept => dept.college))]
-      }
-
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        { username: req.user?.username },
-        `Active officers by department code accessed - ${departmentCode}: ${officers.length} active officers returned`,
-        req
-      )
-
-      res.json({
-        success: true,
-        data: officers,
-        departmentInfo,
-        pagination: {
-          current: Number(page),
-          total: Math.ceil(total / limit),
-          count: officers.length,
-          totalRecords: total
-        }
-      })
-    } catch (error) {
-      next(error)
+    if (!departmentCode) {
+      const error = new Error("Department code is required")
+      error.statusCode = 400
+      return next(error)
     }
+
+    const departments = await Department.find({ 
+      departmentCode: departmentCode.toUpperCase() 
+    })
+
+    if (departments.length === 0) {
+      const error = new Error("Department code not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    const departmentIds = departments.map(dept => dept._id)
+
+    // UPDATED: Only require active and class officer status
+    const filter = { 
+      departmentId: { $in: departmentIds },
+      isClassOfficer: true,
+      isActive: true // Removed isRegistered and isPasswordActive requirements
+    }
+    
+    if (yearLevel) filter.yearLevel = Number(yearLevel)
+    
+    if (search) {
+      const searchNumber = Number(search)
+      const searchConditions = [
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
+      ]
+      
+      if (!isNaN(searchNumber)) {
+        searchConditions.push({ schoolId: searchNumber })
+      }
+      
+      filter.$or = searchConditions
+    }
+
+    const skip = (page - 1) * limit
+
+    const officers = await Voter.find(filter)
+      .populate("departmentId")
+      .sort({ schoolId: 1 })
+      .skip(skip)
+      .limit(Number.parseInt(limit))
+      .select("-password -faceEncoding -profilePicture")
+
+    const total = await Voter.countDocuments(filter)
+
+    const departmentInfo = {
+      departmentCode: departmentCode.toUpperCase(),
+      programs: departments.map(dept => ({
+        id: dept._id,
+        degreeProgram: dept.degreeProgram,
+        college: dept.college
+      })),
+      colleges: [...new Set(departments.map(dept => dept.college))]
+    }
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      { username: req.user?.username },
+      `Active officers by department code accessed - ${departmentCode}: ${officers.length} active officers returned`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: officers,
+      departmentInfo,
+      pagination: {
+        current: Number(page),
+        total: Math.ceil(total / limit),
+        count: officers.length,
+        totalRecords: total
+      }
+    })
+  } catch (error) {
+    next(error)
   }
+}
 
   // Get registered voters by department code
   static async getRegisteredVotersByDepartmentCode(req, res, next) {
