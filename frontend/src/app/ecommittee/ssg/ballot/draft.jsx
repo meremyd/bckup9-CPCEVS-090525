@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ballotAPI } from "@/lib/api/ballots"
 import SSGLayout from "@/components/SSGLayout"
+import CampaignPicture from "@/components/CampaignPicture"
 import Swal from "sweetalert2"
 import {
   Vote,
@@ -255,57 +256,57 @@ export default function SSGBallotPage() {
   }
 
   // FIXED: Campaign picture component with proper API URL
-  const CampaignPicture = ({ candidate }) => {
-    const [imageError, setImageError] = useState(false)
-    const [imageLoading, setImageLoading] = useState(true)
+  // const CampaignPicture = ({ candidate }) => {
+  //   const [imageError, setImageError] = useState(false)
+  //   const [imageLoading, setImageLoading] = useState(true)
 
-    const handleImageLoad = () => {
-      setImageLoading(false)
-      setImageError(false)
-    }
+  //   const handleImageLoad = () => {
+  //     setImageLoading(false)
+  //     setImageError(false)
+  //   }
 
-    const handleImageError = (e) => {
-      console.error(`Failed to load campaign picture for candidate ${candidate._id}:`, e)
-      setImageLoading(false)
-      setImageError(true)
-    }
+  //   const handleImageError = (e) => {
+  //     console.error(`Failed to load campaign picture for candidate ${candidate._id}:`, e)
+  //     setImageLoading(false)
+  //     setImageError(true)
+  //   }
 
-    // Always show placeholder if no campaign picture or if image failed to load
-    if (!candidate.hasCampaignPicture || imageError) {
-      return (
-        <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-100">
-          <Users className="w-20 h-20" />
-        </div>
-      )
-    }
+  //   // Always show placeholder if no campaign picture or if image failed to load
+  //   if (!candidate.hasCampaignPicture || imageError) {
+  //     return (
+  //       <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-100">
+  //         <Users className="w-20 h-20" />
+  //       </div>
+  //     )
+  //   }
 
-    // FIXED: Construct proper campaign picture URL with /api prefix
-    return (
-      <>
-        {imageLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-10">
-            <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />
-          </div>
-        )}
-        <img
-          src={`/api/candidates/${candidate._id}/campaign-picture?t=${Date.now()}`}
-          alt={`${candidate.name} campaign picture`}
-          className={`w-full h-full object-cover transition-opacity duration-300 ${
-            imageLoading ? 'opacity-0' : 'opacity-100'
-          }`}
-          onLoad={handleImageLoad}
-          onError={handleImageError}
-          style={{ display: imageError ? 'none' : 'block' }}
-        />
-        {/* Fallback if image fails */}
-        {imageError && (
-          <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-100">
-            <Users className="w-20 h-20" />
-          </div>
-        )}
-      </>
-    )
-  }
+  //   // FIXED: Construct proper campaign picture URL with /api prefix
+  //   return (
+  //     <>
+  //       {imageLoading && (
+  //         <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-10">
+  //           <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />
+  //         </div>
+  //       )}
+  //       <img
+  //         src={`/api/candidates/${candidate._id}/campaign-picture?t=${Date.now()}`}
+  //         alt={`${candidate.name} campaign picture`}
+  //         className={`w-full h-full object-cover transition-opacity duration-300 ${
+  //           imageLoading ? 'opacity-0' : 'opacity-100'
+  //         }`}
+  //         onLoad={handleImageLoad}
+  //         onError={handleImageError}
+  //         style={{ display: imageError ? 'none' : 'block' }}
+  //       />
+  //       {/* Fallback if image fails */}
+  //       {imageError && (
+  //         <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-100">
+  //           <Users className="w-20 h-20" />
+  //         </div>
+  //       )}
+  //     </>
+  //   )
+  // }
 
   if (!ssgElectionId) {
     return (

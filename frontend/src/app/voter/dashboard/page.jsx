@@ -7,6 +7,7 @@ import Swal from 'sweetalert2'
 import { dashboardAPI } from '@/lib/api/dashboard'
 import { ssgElectionsAPI } from '@/lib/api/ssgElections'
 import { departmentalElectionsAPI } from '@/lib/api/departmentalElections'
+import { votersAPI } from "@/lib/api/voters"
 import { getVoterFromToken, voterLogout } from '../../../lib/auth'
 import VoterLayout from '@/components/VoterLayout'
 

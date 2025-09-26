@@ -55,9 +55,9 @@ const ballotSchema = new mongoose.Schema(
     },
     ballotDuration: {
       type: Number,
-      default: 30, // Default 30 minutes
+      default: 10, 
       min: 5,
-      max: 180 // Max 3 hours
+      max: 180 
     },
     timerStarted: {
       type: Boolean,
@@ -101,7 +101,7 @@ ballotSchema.methods.startTimer = function(durationMinutes = null) {
     throw new Error('Ballot timer has already been started')
   }
 
-  const duration = durationMinutes || this.ballotDuration || 30
+  const duration = durationMinutes || this.ballotDuration || 10
   const now = new Date()
 
   this.timerStarted = true

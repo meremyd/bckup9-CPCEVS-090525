@@ -22,6 +22,7 @@ router.get("/ssg/partylist-slots/:ssgElectionId/:partylistId", authMiddleware, a
 
 router.get("/ssg/election/:electionId", authMiddleware, authorizeRoles("election_committee", "sao", "voter"), asyncHandler(CandidateController.getCandidatesBySSGElection))
 
+// SSG Voter-specific route (uses voterAuthMiddleware for voter-only access)
 router.get("/ssg/voter/election/:electionId", voterAuthMiddleware, asyncHandler(CandidateController.getCandidatesForVoter))
 
 router.get("/ssg/:id", authMiddleware, authorizeRoles("election_committee", "sao", "voter"), asyncHandler(CandidateController.getSSGCandidateById))
@@ -36,6 +37,7 @@ router.delete("/departmental/:id", authMiddleware, authorizeRoles("election_comm
 
 router.get("/departmental/election/:electionId", authMiddleware, authorizeRoles("election_committee", "sao", "voter"), asyncHandler(CandidateController.getCandidatesByDepartmentalElection))
 
+// Departmental Voter-specific route (uses voterAuthMiddleware for voter-only access)
 router.get("/departmental/voter/election/:electionId", voterAuthMiddleware, asyncHandler(CandidateController.getCandidatesForVoter))
 
 router.get("/departmental/:id", authMiddleware, authorizeRoles("election_committee", "sao", "voter"), asyncHandler(CandidateController.getDepartmentalCandidateById))
@@ -43,6 +45,7 @@ router.get("/departmental/:id", authMiddleware, authorizeRoles("election_committ
 // ===== GENERAL CANDIDATE ROUTES =====
 router.get("/election/:electionId", authMiddleware, authorizeRoles("election_committee", "sao", "voter"), asyncHandler(CandidateController.getCandidatesByElection))
 
+// General Voter-specific route (uses voterAuthMiddleware for voter-only access)
 router.get("/voter/election/:electionId", voterAuthMiddleware, asyncHandler(CandidateController.getCandidatesForVoter))
 
 // ===== CANDIDATE CREDENTIALS ROUTES (NOW FOR IMAGES) =====
@@ -64,7 +67,6 @@ router.get("/:id", authMiddleware, authorizeRoles("election_committee", "sao", "
 
 router.put("/:id", authMiddleware, authorizeRoles("election_committee"), asyncHandler(CandidateController.updateCandidate))
 
-// FIXED: Added missing authMiddleware
 router.delete("/:id", authMiddleware, authorizeRoles("election_committee"), asyncHandler(CandidateController.deleteCandidate))
 
 module.exports = router

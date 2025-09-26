@@ -12,13 +12,13 @@ const voteSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Candidate",
       required: true,
-      index: true // Add index for vote counting
+      index: true 
     },
     positionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Position",
       required: true,
-      index: true // Add index for position-based queries
+      index: true 
     },
     // Add election references for easier querying
     deptElectionId: {

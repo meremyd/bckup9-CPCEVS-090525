@@ -1,225 +1,126 @@
 import api from '../api'
 
 export const ballotAPI = {
-  // General Ballot APIs (NEW)
-  
-  // Get all ballots (combined SSG and Departmental)
-  getAllBallots: async (params = {}) => {
-    const { page = 1, limit = 10, type = 'all', status, electionId } = params
+  // ==================== SSG BALLOT API FUNCTIONS ====================
+
+  // Get all SSG ballots for selected election (Election Committee)
+  getSelectedSSGElectionBallots: async (electionId, params = {}) => {
+    const { page = 1, limit = 10, status } = params
     const queryParams = new URLSearchParams({
       page: page.toString(),
       limit: limit.toString(),
-      ...(type !== 'all' && { type }),
-      ...(status && { status }),
-      ...(electionId && { electionId })
-    })
-    
-    const response = await api.get(`/ballots?${queryParams}`)
-    return response.data
-  },
-
-  // Get combined ballot statistics
-  getBallotStatistics: async (params = {}) => {
-    const { type = 'all', electionId } = params
-    const queryParams = new URLSearchParams({
-      ...(type !== 'all' && { type }),
-      ...(electionId && { electionId })
-    })
-    
-    const response = await api.get(`/ballots/statistics?${queryParams}`)
-    return response.data
-  },
-
-  // Export ballot data (Admin/Committee)
-  exportBallotData: async (params = {}) => {
-    const { type = 'all', electionId, format = 'csv' } = params
-    const queryParams = new URLSearchParams({
-      format,
-      ...(type !== 'all' && { type }),
-      ...(electionId && { electionId })
-    })
-    
-    const response = await api.get(`/ballots/export?${queryParams}`, {
-      responseType: 'blob'
-    })
-    return response.data
-  },
-
-  // Timeout Management APIs (NEW)
-  
-  // Check and process expired ballots (Admin/Committee/SAO)
-  checkExpiredBallots: async () => {
-    const response = await api.get('/ballots/expired/check')
-    return response.data
-  },
-
-  // Get ballot timeout status
-  getBallotTimeoutStatus: async (ballotId) => {
-    const response = await api.get(`/ballots/${ballotId}/timeout-status`)
-    return response.data
-  },
-
-  // Extend ballot timeout (Admin/Committee)
-  extendBallotTimeout: async (ballotId, additionalMinutes = 15) => {
-    const response = await api.put(`/ballots/${ballotId}/extend-timeout`, { additionalMinutes })
-    return response.data
-  },
-
-  // SSG Ballot APIs
-  
-  // Admin/Committee/SAO - Get all SSG ballots with pagination and filtering
-  getAllSSGBallots: async (params = {}) => {
-    const { page = 1, limit = 10, electionId, status } = params
-    const queryParams = new URLSearchParams({
-      page: page.toString(),
-      limit: limit.toString(),
-      ...(electionId && { electionId }),
       ...(status && { status })
     })
     
-    const response = await api.get(`/ballots/ssg?${queryParams}`)
+    const response = await api.get(`/ballots/ssg/${electionId}/ballots?${queryParams}`)
     return response.data
   },
 
-  // Get SSG ballot statistics (Admin/Committee/SAO)
-  getSSGBallotStatistics: async (electionId = null) => {
-    const params = electionId ? `?electionId=${electionId}` : ''
-    const response = await api.get(`/ballots/ssg/statistics${params}`)
+  // Get selected SSG election ballot statistics (Election Committee)
+  getSelectedSSGElectionBallotStatistics: async (electionId) => {
+    const response = await api.get(`/ballots/ssg/${electionId}/statistics`)
     return response.data
   },
 
-  // Delete SSG ballot (Admin/Committee only - FIXED)
-  deleteSSGBallot: async (id) => {
-    const response = await api.delete(`/ballots/ssg/${id}`)
+  // Preview SSG ballot for election committee
+  previewSSGBallot: async (electionId) => {
+    const response = await api.get(`/ballots/ssg/${electionId}/preview`)
     return response.data
   },
 
-  // Voter - Start new SSG ballot for election
+  // Submit SSG ballot (Election Committee can also use for testing)
+  submitSelectedSSGBallot: async (ballotId, votes) => {
+    const response = await api.post(`/ballots/ssg/${ballotId}/submit`, { votes })
+    return response.data
+  },
+
+  // Get voter SSG ballot status for selected election
+  getVoterSelectedSSGBallotStatus: async (electionId) => {
+    const response = await api.get(`/ballots/ssg/${electionId}/voter-status`)
+    return response.data
+  },
+
+  // Get selected SSG election ballot with votes (for review)
+  getSelectedSSGBallotWithVotes: async (ballotId) => {
+    const response = await api.get(`/ballots/ssg/ballot/${ballotId}/votes`)
+    return response.data
+  },
+
+  // Update SSG ballot timer (Election Committee)
+  updateSSGBallotTimer: async (ballotId, additionalMinutes = 10) => {
+    const response = await api.put(`/ballots/ssg/${ballotId}/timer`, { additionalMinutes })
+    return response.data
+  },
+
+  // Start SSG ballot with timer (Voters)
   startSSGBallot: async (electionId) => {
     const response = await api.post('/ballots/ssg/start', { electionId })
     return response.data
   },
 
-  // Voter - Start new SSG ballot with timeout (NEW)
-  startSSGBallotWithTimeout: async (electionId) => {
-    const response = await api.post('/ballots/ssg/start-with-timeout', { electionId })
-    return response.data
-  },
+  // ==================== DEPARTMENTAL BALLOT API FUNCTIONS ====================
 
-  // Voter - Submit completed SSG ballot
-  submitSSGBallot: async (ballotId) => {
-    const response = await api.put(`/ballots/ssg/${ballotId}/submit`)
-    return response.data
-  },
-
-  // Voter - Abandon current SSG ballot
-  abandonSSGBallot: async (ballotId) => {
-    const response = await api.delete(`/ballots/ssg/${ballotId}/abandon`)
-    return response.data
-  },
-
-  // Voter - Get SSG voting status for specific election
-  getVoterSSGBallotStatus: async (electionId) => {
-    const response = await api.get(`/ballots/ssg/status/${electionId}`)
-    return response.data
-  },
-
-  // Voter - Get SSG ballot with votes for review
-  getSSGBallotWithVotes: async (ballotId) => {
-    const response = await api.get(`/ballots/ssg/${ballotId}/review`)
-    return response.data
-  },
-
-  // Departmental Ballot APIs
-  
-  // Admin/Committee/SAO - Get all Departmental ballots with pagination and filtering
-  getAllDepartmentalBallots: async (params = {}) => {
-    const { page = 1, limit = 10, electionId, status, positionId } = params
+  // Get departmental ballots for selected election and position
+  getDepartmentalBallots: async (electionId, positionId, params = {}) => {
+    const { page = 1, limit = 10, status } = params
     const queryParams = new URLSearchParams({
       page: page.toString(),
       limit: limit.toString(),
-      ...(electionId && { electionId }),
-      ...(status && { status }),
-      ...(positionId && { positionId })
+      ...(status && { status })
     })
     
-    const response = await api.get(`/ballots/departmental?${queryParams}`)
+    const response = await api.get(`/ballots/departmental/${electionId}/${positionId}/ballots?${queryParams}`)
     return response.data
   },
 
-  // Get Departmental ballot statistics (Admin/Committee/SAO)
-  getDepartmentalBallotStatistics: async (electionId = null) => {
-    const params = electionId ? `?electionId=${electionId}` : ''
-    const response = await api.get(`/ballots/departmental/statistics${params}`)
+  // Get departmental ballot statistics for selected election and position
+  getDepartmentalBallotStatistics: async (electionId, positionId) => {
+    const response = await api.get(`/ballots/departmental/${electionId}/${positionId}/statistics`)
     return response.data
   },
 
-  // Get available positions for departmental voting (Class officers only)
+  // Preview departmental ballot for election committee
+  previewDepartmentalBallot: async (electionId, positionId) => {
+    const response = await api.get(`/ballots/departmental/${electionId}/${positionId}/preview`)
+    return response.data
+  },
+
+  // Get available positions for departmental voting
   getAvailablePositionsForVoting: async (electionId) => {
     const response = await api.get(`/ballots/departmental/${electionId}/available-positions`)
     return response.data
   },
 
-  // Get next position for departmental voting (Class officers only)
-  getNextPositionForVoting: async (electionId) => {
-    const response = await api.get(`/ballots/departmental/${electionId}/next-position`)
+  // Delete departmental ballot (Election Committee)
+  deleteDepartmentalBallot: async (ballotId) => {
+    const response = await api.delete(`/ballots/departmental/${ballotId}`)
     return response.data
   },
 
-  // Delete Departmental ballot (Admin/Committee only - FIXED)
-  deleteDepartmentalBallot: async (id) => {
-    const response = await api.delete(`/ballots/departmental/${id}`)
+  // Get voter departmental ballot status
+  getVoterDepartmentalBallotStatus: async (electionId, positionId) => {
+    const response = await api.get(`/ballots/departmental/${electionId}/${positionId}/voter-status`)
     return response.data
   },
 
-  // Voter - Start new Departmental ballot for election and position (Class officers only)
+  // Update year level restriction for departmental position (Election Committee)
+  updateYearLevelRestriction: async (positionId, allowedYearLevels) => {
+    const response = await api.put(`/ballots/departmental/position/${positionId}/year-restriction`, { allowedYearLevels })
+    return response.data
+  },
+
+  // Start departmental ballot with timer (Voters)
   startDepartmentalBallot: async (electionId, positionId) => {
     const response = await api.post('/ballots/departmental/start', { electionId, positionId })
     return response.data
   },
 
-  // Voter - Submit completed Departmental ballot
-  submitDepartmentalBallot: async (ballotId) => {
-    const response = await api.put(`/ballots/departmental/${ballotId}/submit`)
-    return response.data
-  },
+  // ==================== UTILITY FUNCTIONS ====================
 
-  // Voter - Abandon current Departmental ballot
-  abandonDepartmentalBallot: async (ballotId) => {
-    const response = await api.delete(`/ballots/departmental/${ballotId}/abandon`)
-    return response.data
-  },
-
-  // Voter - Get Departmental voting status for specific election and position
-  // FIXED: Updated to match controller parameter expectations
-  getVoterDepartmentalBallotStatus: async (electionId, positionId = null) => {
-    const path = positionId 
-      ? `/ballots/departmental/status/${electionId}/${positionId}` 
-      : `/ballots/departmental/status/${electionId}`
-    const response = await api.get(path)
-    return response.data
-  },
-
-  // Voter - Get Departmental ballot with votes for review
-  getDepartmentalBallotWithVotes: async (ballotId) => {
-    const response = await api.get(`/ballots/departmental/${ballotId}/review`)
-    return response.data
-  },
-
-  // General Ballot APIs
-  
-  // Get ballot by ID (Admin/Committee/SAO/Owner)
-  getBallotById: async (id) => {
-    const response = await api.get(`/ballots/${id}`)
-    return response.data
-  },
-
-  // Utility functions for frontend state management
-  
   // Check if voter can vote in SSG election
   canVoteInSSGElection: async (electionId) => {
     try {
-      const status = await ballotAPI.getVoterSSGBallotStatus(electionId)
+      const status = await ballotAPI.getVoterSelectedSSGBallotStatus(electionId)
       return status.canVote && !status.hasVoted
     } catch (error) {
       console.error('Error checking SSG voting eligibility:', error)
@@ -227,13 +128,13 @@ export const ballotAPI = {
     }
   },
 
-  // Check if voter can vote in Departmental election
-  canVoteInDepartmentalElection: async (electionId, positionId = null) => {
+  // Check if voter can vote for specific departmental position
+  canVoteForDepartmentalPosition: async (electionId, positionId) => {
     try {
       const status = await ballotAPI.getVoterDepartmentalBallotStatus(electionId, positionId)
       return status.canVote && !status.hasVoted
     } catch (error) {
-      console.error('Error checking Departmental voting eligibility:', error)
+      console.error('Error checking departmental voting eligibility:', error)
       return false
     }
   },
@@ -241,7 +142,7 @@ export const ballotAPI = {
   // Get active SSG ballot for voter (if any)
   getActiveSSGBallot: async (electionId) => {
     try {
-      const status = await ballotAPI.getVoterSSGBallotStatus(electionId)
+      const status = await ballotAPI.getVoterSelectedSSGBallotStatus(electionId)
       if (status.ballot && !status.ballot.isSubmitted) {
         return status.ballot
       }
@@ -300,48 +201,30 @@ export const ballotAPI = {
     }
   },
 
-  // Enhanced utility functions with timeout support (NEW)
-  
-  // Get ballot with timeout information
-  getBallotWithTimeout: async (ballotId) => {
+  // Get SSG voting progress for voter
+  getSSGVotingProgress: async (electionId) => {
     try {
-      const [ballot, timeoutStatus] = await Promise.all([
-        ballotAPI.getBallotById(ballotId),
-        ballotAPI.getBallotTimeoutStatus(ballotId)
-      ])
+      const status = await ballotAPI.getVoterSelectedSSGBallotStatus(electionId)
+      const preview = await ballotAPI.previewSSGBallot(electionId)
       
       return {
-        ...ballot,
-        timeout: timeoutStatus
+        totalPositions: preview.totalPositions,
+        hasStartedVoting: !!status.ballot,
+        hasCompletedVoting: status.hasVoted,
+        canVote: status.canVote,
+        isVotingTime: status.election.isVotingTime,
+        ballotStatus: status.ballot?.ballotStatus || 'not_started'
       }
     } catch (error) {
-      console.error('Error getting ballot with timeout:', error)
-      return null
-    }
-  },
-
-  // Check if ballot is about to expire (less than 5 minutes remaining)
-  isBallotAboutToExpire: async (ballotId) => {
-    try {
-      const timeoutStatus = await ballotAPI.getBallotTimeoutStatus(ballotId)
-      return timeoutStatus.remainingTimeSeconds > 0 && timeoutStatus.remainingTimeSeconds <= 300 // 5 minutes
-    } catch (error) {
-      console.error('Error checking ballot expiration:', error)
-      return false
-    }
-  },
-
-  // Auto-extend ballot if user is active (Admin/Committee only)
-  autoExtendBallot: async (ballotId, additionalMinutes = 10) => {
-    try {
-      const timeoutStatus = await ballotAPI.getBallotTimeoutStatus(ballotId)
-      if (timeoutStatus.remainingTimeSeconds <= 300 && !timeoutStatus.isExpired) { // Less than 5 minutes
-        return await ballotAPI.extendBallotTimeout(ballotId, additionalMinutes)
+      console.error('Error getting SSG voting progress:', error)
+      return {
+        totalPositions: 0,
+        hasStartedVoting: false,
+        hasCompletedVoting: false,
+        canVote: false,
+        isVotingTime: false,
+        ballotStatus: 'error'
       }
-      return null
-    } catch (error) {
-      console.error('Error auto-extending ballot:', error)
-      return null
     }
   },
 
@@ -355,48 +238,207 @@ export const ballotAPI = {
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
   },
 
-  // UPDATED: Legacy combined functions now use new endpoints
-  
-  // Get all ballots for admin dashboard (UPDATED to use new endpoint)
-  getAllBallotsForDashboard: async (params = {}) => {
-    try {
-      // Use the new dedicated endpoint instead of combining frontend calls
-      return await ballotAPI.getAllBallots(params)
-    } catch (error) {
-      console.error('Error getting all ballots:', error)
-      const { page = 1, limit = 10 } = params
-      return {
-        ballots: [],
-        total: 0,
-        totalPages: 0,
-        currentPage: page,
-        totalSSG: 0,
-        totalDepartmental: 0
+  // Get year level display text
+  getYearLevelText: (yearLevel) => {
+    const suffixes = { 1: 'st', 2: 'nd', 3: 'rd', 4: 'th' }
+    return `${yearLevel}${suffixes[yearLevel] || 'th'} Year`
+  },
+
+  // Validate year levels array
+  validateYearLevels: (yearLevels) => {
+    const validLevels = [1, 2, 3, 4]
+    
+    if (!Array.isArray(yearLevels)) {
+      return { valid: false, message: "Year levels must be an array" }
+    }
+    
+    if (yearLevels.length === 0) {
+      return { valid: false, message: "At least one year level must be specified" }
+    }
+    
+    const invalidLevels = yearLevels.filter(level => !validLevels.includes(level))
+    if (invalidLevels.length > 0) {
+      return { 
+        valid: false, 
+        message: `Invalid year levels: ${invalidLevels.join(', ')}. Valid levels are 1, 2, 3, 4` 
       }
+    }
+    
+    return { valid: true, message: "Valid year levels" }
+  },
+
+  // Check if current time is within voting hours for SSG election
+  isVotingTimeForSSG: (election) => {
+    if (!election.ballotOpenTime || !election.ballotCloseTime) {
+      return false
+    }
+    
+    const now = new Date()
+    const electionDate = new Date(election.electionDate)
+    
+    // Check if it's the election date
+    if (now.toDateString() !== electionDate.toDateString()) {
+      return false
+    }
+    
+    // Parse time strings and check if current time is within voting hours
+    const [openHour, openMinute] = election.ballotOpenTime.split(':').map(Number)
+    const [closeHour, closeMinute] = election.ballotCloseTime.split(':').map(Number)
+    
+    const currentHour = now.getHours()
+    const currentMinute = now.getMinutes()
+    
+    const currentTimeMinutes = currentHour * 60 + currentMinute
+    const openTimeMinutes = openHour * 60 + openMinute
+    const closeTimeMinutes = closeHour * 60 + closeMinute
+    
+    return currentTimeMinutes >= openTimeMinutes && currentTimeMinutes <= closeTimeMinutes
+  },
+
+  // Get ballot status text for display
+  getBallotStatusText: (ballotStatus) => {
+    const statusTexts = {
+      'not_started': 'Not Started',
+      'active': 'Active - In Progress',
+      'expired': 'Expired',
+      'submitted': 'Submitted'
+    }
+    
+    return statusTexts[ballotStatus] || 'Unknown Status'
+  },
+
+  // Check if voter meets department requirements for departmental election
+  checkDepartmentEligibility: (voterDepartment, electionDepartment) => {
+    if (!voterDepartment || !electionDepartment) {
+      return {
+        eligible: false,
+        message: "Department information missing"
+      }
+    }
+    
+    const departmentMatch = voterDepartment.college === electionDepartment.college
+    
+    return {
+      eligible: departmentMatch,
+      message: departmentMatch ? 
+        "Department eligibility confirmed" : 
+        "You can only vote in elections for your own department"
     }
   },
 
-  // Get combined ballot statistics for dashboard (UPDATED to use new endpoint)
-  getCombinedBallotStatistics: async (type = 'all', electionId = null) => {
-    try {
-      // Use the new dedicated endpoint instead of combining frontend calls
-      return await ballotAPI.getBallotStatistics({ type, electionId })
-    } catch (error) {
-      console.error('Error getting ballot statistics:', error)
-      return {
-        totalBallots: 0,
-        submittedBallots: 0,
-        pendingBallots: 0,
-        turnoutRate: 0,
-        ssgStats: null,
-        departmentalStats: null,
-        breakdown: {
-          ssgBallots: 0,
-          departmentalBallots: 0,
-          ssgSubmitted: 0,
-          departmentalSubmitted: 0
-        }
+  // Get election status display information
+  getElectionStatusInfo: (election) => {
+    const statusInfo = {
+      'upcoming': {
+        color: 'blue',
+        text: 'Upcoming',
+        description: 'Election has not started yet'
+      },
+      'active': {
+        color: 'green',
+        text: 'Active',
+        description: 'Election is currently ongoing'
+      },
+      'completed': {
+        color: 'gray',
+        text: 'Completed',
+        description: 'Election has ended'
+      },
+      'cancelled': {
+        color: 'red',
+        text: 'Cancelled',
+        description: 'Election has been cancelled'
       }
+    }
+    
+    return statusInfo[election.status] || statusInfo['upcoming']
+  },
+
+  // Format election date for display
+  formatElectionDate: (dateString) => {
+    const date = new Date(dateString)
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'long'
+    })
+  },
+
+  // Format election time for display
+  formatElectionTime: (timeString) => {
+    if (!timeString) return 'Not set'
+    
+    const [hour, minute] = timeString.split(':').map(Number)
+    const period = hour >= 12 ? 'PM' : 'AM'
+    const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour
+    
+    return `${displayHour}:${minute.toString().padStart(2, '0')} ${period}`
+  },
+
+  // Create vote payload for submission
+  createVotePayload: (selectedCandidates) => {
+    return Object.entries(selectedCandidates).map(([positionId, candidateId]) => ({
+      positionId,
+      candidateId
+    }))
+  },
+
+  // Validate vote selections before submission
+  validateVoteSelections: (selectedCandidates, ballotPreview) => {
+    const errors = []
+    const votes = []
+    
+    // Check each position
+    for (const positionData of ballotPreview.ballot) {
+      const positionId = positionData.position._id
+      const selectedCandidateId = selectedCandidates[positionId]
+      
+      if (!selectedCandidateId) {
+        errors.push(`No candidate selected for ${positionData.position.positionName}`)
+        continue
+      }
+      
+      // Check if selected candidate exists for this position
+      const candidateExists = positionData.candidates.some(
+        candidate => candidate._id === selectedCandidateId
+      )
+      
+      if (!candidateExists) {
+        errors.push(`Invalid candidate selection for ${positionData.position.positionName}`)
+        continue
+      }
+      
+      votes.push({
+        positionId,
+        candidateId: selectedCandidateId
+      })
+    }
+    
+    return {
+      valid: errors.length === 0,
+      errors,
+      votes
+    }
+  },
+
+  // Get timer warning thresholds
+  getTimerWarningThresholds: () => ({
+    critical: 60,    // 1 minute - critical warning (red)
+    warning: 300,    // 5 minutes - warning (yellow)
+    normal: 600      // 10 minutes - normal (green)
+  }),
+
+  // Determine timer warning level
+  getTimerWarningLevel: (remainingSeconds) => {
+    const thresholds = ballotAPI.getTimerWarningThresholds()
+    
+    if (remainingSeconds <= thresholds.critical) {
+      return { level: 'critical', color: 'red', message: 'Time almost up!' }
+    } else if (remainingSeconds <= thresholds.warning) {
+      return { level: 'warning', color: 'yellow', message: 'Time running low' }
+    } else {
+      return { level: 'normal', color: 'green', message: 'Sufficient time remaining' }
     }
   }
 }

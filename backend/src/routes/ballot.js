@@ -3,40 +3,27 @@ const BallotController = require("../controllers/ballotController")
 const { authMiddleware, authorizeRoles } = require("../middleware/authMiddleware")
 const router = express.Router()
 
-router.get("/", authMiddleware, authorizeRoles("admin", "election_committee", "sao", "voter"), BallotController.getAllBallots)
-router.get("/statistics", authMiddleware, authorizeRoles("admin", "election_committee", "sao", "voter"), BallotController.getBallotStatistics)
-router.get("/export", authMiddleware, authorizeRoles("admin", "election_committee"), BallotController.exportBallotData)
+// ==================== SSG BALLOT ROUTES ====================
 
-router.get("/expired/check", authMiddleware, authorizeRoles("admin", "election_committee", "sao"), BallotController.checkExpiredBallots)
-router.get("/:ballotId/timeout-status", authMiddleware, authorizeRoles("admin", "election_committee", "sao", "voter"), BallotController.getBallotTimeoutStatus)
-router.put("/:ballotId/extend-timeout", authMiddleware, authorizeRoles("admin", "election_committee"), BallotController.extendBallotTimeout)
-
-// SSG Ballot APIs
-router.get("/ssg", authMiddleware, authorizeRoles("admin", "election_committee", "sao", "voter"), BallotController.getSSGBallots)
-router.get("/ssg/statistics", authMiddleware, authorizeRoles("admin", "election_committee", "sao", "voter"), BallotController.getSSGBallotStatistics)
-router.delete("/ssg/:id", authMiddleware, authorizeRoles("admin", "election_committee"), BallotController.deleteSSGBallot)
+router.get("/ssg/:electionId/ballots", authMiddleware, authorizeRoles("election_committee", "admin"), BallotController.getSelectedSSGElectionBallots)
+router.get("/ssg/:electionId/statistics", authMiddleware, authorizeRoles("election_committee", "admin"), BallotController.getSelectedSSGElectionBallotStatistics)
+router.get("/ssg/:electionId/preview", authMiddleware, authorizeRoles("election_committee", "admin"), BallotController.previewSSGBallot)
+router.post("/ssg/:ballotId/submit", authMiddleware, authorizeRoles("voter", "election_committee"), BallotController.submitSelectedSSGBallot)
+router.get("/ssg/:electionId/voter-status", authMiddleware, authorizeRoles("voter", "election_committee"), BallotController.getVoterSelectedSSGBallotStatus)
+router.get("/ssg/ballot/:ballotId/votes", authMiddleware, authorizeRoles("voter", "election_committee", "admin"), BallotController.getSelectedSSGBallotWithVotes)
+router.put("/ssg/:ballotId/timer", authMiddleware, authorizeRoles("election_committee", "admin"), BallotController.updateSSGBallotTimer)
 router.post("/ssg/start", authMiddleware, authorizeRoles("voter", "election_committee"), BallotController.startSSGBallot)
-router.post("/ssg/start-with-timeout", authMiddleware, authorizeRoles("voter", "election_committee"), BallotController.startSSGBallotWithTimeout)
-router.put("/ssg/:id/submit", authMiddleware, authorizeRoles("voter", "election_committee"), BallotController.submitSSGBallot)
-router.delete("/ssg/:id/abandon", authMiddleware, authorizeRoles("voter", "election_committee"), BallotController.abandonSSGBallot)
-router.get("/ssg/status/:electionId", authMiddleware, authorizeRoles("voter", "election_committee"), BallotController.getVoterSSGBallotStatus)
-router.get("/ssg/:id/review", authMiddleware, authorizeRoles("voter", "election_committee"), BallotController.getSSGBallotWithVotes)
 
-// Departmental Ballot APIs
-router.get("/departmental", authMiddleware, authorizeRoles("admin", "election_committee", "sao", "voter"), BallotController.getDepartmentalBallots)
-router.get("/departmental/statistics", authMiddleware, authorizeRoles("admin", "election_committee", "sao"), BallotController.getDepartmentalBallotStatistics)
+// ==================== DEPARTMENTAL BALLOT ROUTES ====================
+
+router.get("/departmental/:electionId/:positionId/ballots", authMiddleware, authorizeRoles("election_committee", "admin"), BallotController.getDepartmentalBallots)
+router.get("/departmental/:electionId/:positionId/statistics", authMiddleware, authorizeRoles("election_committee", "admin"), BallotController.getDepartmentalBallotStatistics)
+router.get("/departmental/:electionId/:positionId/preview", authMiddleware, authorizeRoles("election_committee", "admin"), BallotController.previewDepartmentalBallot)
 router.get("/departmental/:electionId/available-positions", authMiddleware, authorizeRoles("voter", "election_committee"), BallotController.getAvailablePositionsForVoting)
-router.get("/departmental/:electionId/next-position", authMiddleware, authorizeRoles("voter", "election_committee"), BallotController.getNextPositionForVoting)
-router.delete("/departmental/:id", authMiddleware, authorizeRoles("admin", "election_committee"), BallotController.deleteDepartmentalBallot)
-router.post("/departmental/start", authMiddleware, authorizeRoles("voter"), BallotController.startDepartmentalBallot)
-router.put("/departmental/:id/submit", authMiddleware, authorizeRoles("voter"), BallotController.submitDepartmentalBallot)
-router.delete("/departmental/:id/abandon", authMiddleware, authorizeRoles("voter"), BallotController.abandonDepartmentalBallot)
-
-router.get("/departmental/status/:electionId/:positionId", authMiddleware, authorizeRoles("admin", "voter", "election_committee", "sao"), BallotController.getVoterDepartmentalBallotStatus)
-router.get("/departmental/status/:electionId", authMiddleware, authorizeRoles("admin", "election_committee", "sao"), BallotController.getVoterDepartmentalBallotStatus)
-router.get("/departmental/:id/review", authMiddleware, authorizeRoles("voter"), BallotController.getDepartmentalBallotWithVotes)
-
-// ⚠️ IMPORTANT: This should be LAST to avoid conflicts with specific routes above
-router.get("/:id", authMiddleware, authorizeRoles("admin", "election_committee", "sao", "voter"), BallotController.getBallotById)
+router.get("/departmental/:electionId/preview-positions", authMiddleware, authorizeRoles("election_committee", "admin"), BallotController.getPositionsForPreview)
+router.delete("/departmental/:ballotId", authMiddleware, authorizeRoles("election_committee", "admin"), BallotController.deleteDepartmentalBallot)
+router.get("/departmental/:electionId/:positionId/voter-status", authMiddleware, authorizeRoles("voter", "election_committee"), BallotController.getVoterDepartmentalBallotStatus)
+router.put("/departmental/position/:positionId/year-restriction", authMiddleware, authorizeRoles("election_committee", "admin"), BallotController.updateYearLevelRestriction)
+router.post("/departmental/start", authMiddleware, authorizeRoles("voter", "election_committee"), BallotController.startDepartmentalBallot)
 
 module.exports = router

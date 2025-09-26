@@ -562,7 +562,7 @@ export default function SSGPage() {
       textColor: "text-[#001f65]",
       description: "Manage voting ballots",
       count: cardCounts.ballots,
-      path: `/ecommittee/ssg/ballots?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
+      path: `/ecommittee/ssg/ballot?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
     }
   ]
 
