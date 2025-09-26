@@ -178,7 +178,7 @@ export function getVoterFromToken() {
   }
 }
 
-// NEW: Function to check token validity without automatic logout
+//  Function to check token validity without automatic logout
 export function isVoterTokenValid() {
   const token = getVoterToken()
   if (!token) return false

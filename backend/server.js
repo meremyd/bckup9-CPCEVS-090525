@@ -81,7 +81,7 @@ try {
 
 try {
   console.log("Loading voters routes...")
-  app.use("/api/voters", authMiddleware, authorizeRoles("admin", "election_committee"), adminLimiter, require("./src/routes/voters"))
+  app.use("/api/voters", authMiddleware, authorizeRoles("admin", "election_committee", "sao"), adminLimiter, require("./src/routes/voters"))
   console.log("Voters routes loaded")
 } catch (error) {
   console.error("Error loading voters routes:", error.message)

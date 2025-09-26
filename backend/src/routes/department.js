@@ -10,7 +10,7 @@ router.get("/colleges/all", DepartmentController.getColleges);
 router.get("/degree-programs", DepartmentController.getDegreePrograms);
 router.get("/department-codes", DepartmentController.getDepartmentCodes);
 
-// NEW: Total count routes (public)
+// Total count routes (public)
 router.get("/counts/all", DepartmentController.getTotalCounts);
 router.get("/counts/departments", DepartmentController.getTotalDepartments);
 router.get("/counts/colleges", DepartmentController.getTotalColleges);

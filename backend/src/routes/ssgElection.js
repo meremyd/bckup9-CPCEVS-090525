@@ -6,9 +6,9 @@ const { authMiddleware, authorizeRoles, authorizeStaffAndVoters } = require("../
 router.use(authMiddleware)
 
 // Main routes
-router.get("/", authorizeRoles("election_committee", "sao", "voter"), SSGElectionController.getAllSSGElections)
+router.get("/", authorizeStaffAndVoters("election_committee", "sao", "voter"), SSGElectionController.getAllSSGElections)
 router.get("/dashboard", authorizeRoles("election_committee", "sao"), SSGElectionController.getSSGDashboardSummary)
-router.get("/upcoming", authorizeRoles("election_committee", "sao", "voter"), SSGElectionController.getUpcomingSSGElections)
+router.get("/upcoming", authorizeStaffAndVoters("election_committee", "sao", "voter"), SSGElectionController.getUpcomingSSGElections)
 router.get("/for-voting", authorizeStaffAndVoters("election_committee", "sao", "voter"), SSGElectionController.getSSGElectionsForVoting)
 router.get("/for-voting/:voterId", authorizeStaffAndVoters("election_committee", "sao", "voter"), SSGElectionController.getSSGElectionsForVoting)
 

@@ -538,7 +538,7 @@ export default function SSGPage() {
       textColor: "text-[#001f65]",
       description: "View registered voters",
       count: cardCounts.participants,
-      path: `/ecommittee/ssg/participants?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
+      path: `/ecommittee/ssg/voterTurnout?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
       title: "Voter Turnout",

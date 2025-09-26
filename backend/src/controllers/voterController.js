@@ -74,7 +74,7 @@ class VoterController {
         filter.password = hasPassword === "true" ? { $ne: null } : null
       }
       
-      // NEW: Add activeOnly filter
+      // Add activeOnly filter
       if (activeOnly === "true") {
         filter.isActive = true
       }

@@ -1,38 +1,33 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { departmentalElectionsAPI } from "@/lib/api/departmentalElections"
+import { ssgElectionsAPI } from "@/lib/api/ssgElections"
 import BackgroundWrapper from '@/components/BackgroundWrapper'
 import { 
   Home, 
   Users, 
-  Clipboard, 
-  User, 
-  Vote,
   TrendingUp, 
   BarChart3,
   Menu,
   X,
   LayoutDashboard,
   LogOut,
-  Settings,
   Loader2,
   ArrowLeft,
-  AlertCircle,
-  UserCheck
+  AlertCircle
 } from "lucide-react"
 
-// Departmental Layout Component for consistent sidebar and header
-export default function DepartmentalLayout({ 
+// SAO SSG Layout Component for consistent sidebar and header
+export default function SAOSSGLayout({ 
   children, 
-  deptElectionId, 
-  title = "Departmental Management", 
-  subtitle = "Manage Election", 
+  ssgElectionId, 
+  title = "SAO - SSG Election", 
+  subtitle = "View Election Data", 
   activeItem = "", 
   showBackButton = true,
   headerAction = null
 }) {
   const [user, setUser] = useState(null)
-  const [departmentalElection, setElection] = useState(null)
+  const [ssgElection, setElection] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -52,30 +47,30 @@ export default function DepartmentalLayout({
       const parsedUser = JSON.parse(userData)
       setUser(parsedUser)
 
-      if (parsedUser.userType !== "election_committee") {
+      if (parsedUser.userType !== "sao") {
         router.push("/adminlogin")
         return
       }
 
-      console.log('DepartmentalLayout - deptElectionId:', deptElectionId)
+      console.log('SAOSSGLayout - ssgElectionId:', ssgElectionId)
 
       // Try to get election from localStorage first for better UX
-      if (deptElectionId) {
-        const storedElection = localStorage.getItem('selectedDepartmentalElection')
-        console.log('DepartmentalLayout - stored election:', storedElection)
+      if (ssgElectionId) {
+        const storedElection = localStorage.getItem('selectedSSGElection')
+        console.log('SAOSSGLayout - stored election:', storedElection)
         
         if (storedElection) {
           try {
             const parsed = JSON.parse(storedElection)
-            console.log('DepartmentalLayout - parsed stored election:', parsed)
-            if (parsed._id === deptElectionId || parsed.id === deptElectionId) {
+            console.log('SAOSSGLayout - parsed stored election:', parsed)
+            if (parsed._id === ssgElectionId || parsed.id === ssgElectionId) {
               setElection(parsed)
               setLoading(false)
               return
             }
           } catch (e) {
-            console.warn('DepartmentalLayout - error parsing stored election:', e)
-            localStorage.removeItem('selectedDepartmentalElection')
+            console.warn('SAOSSGLayout - error parsing stored election:', e)
+            localStorage.removeItem('selectedSSGElection')
           }
         }
         
@@ -88,14 +83,14 @@ export default function DepartmentalLayout({
       router.push("/adminlogin")
       return
     }
-  }, [router, deptElectionId])
+  }, [router, ssgElectionId])
 
   const fetchElection = async () => {
     try {
       setLoading(true)
       setError('')
       
-      const response = await departmentalElectionsAPI.getById(deptElectionId)
+      const response = await ssgElectionsAPI.getById(ssgElectionId)
       
       // Handle different response structures
       let electionData
@@ -103,7 +98,7 @@ export default function DepartmentalLayout({
         electionData = response.data
       } else if (response.election) {
         electionData = response.election
-      } else if (response._id || response.deptElectionId) {
+      } else if (response._id || response.ssgElectionId) {
         electionData = response
       } else {
         throw new Error('Invalid response structure from API')
@@ -111,8 +106,27 @@ export default function DepartmentalLayout({
       
       setElection(electionData)
       
-      // Store in localStorage for persistence
-      localStorage.setItem('selectedDepartmentalElection', JSON.stringify(electionData))
+      // Store only essential election data to avoid localStorage quota issues
+      const essentialElectionData = {
+        _id: electionData._id,
+        id: electionData.id,
+        ssgElectionId: electionData.ssgElectionId,
+        electionYear: electionData.electionYear,
+        title: electionData.title,
+        status: electionData.status,
+        electionDate: electionData.electionDate,
+        ballotOpenTime: electionData.ballotOpenTime,
+        ballotCloseTime: electionData.ballotCloseTime,
+        ballotStatus: electionData.ballotStatus
+      }
+
+      // Try to store essential data, but don't fail if localStorage is full
+      try {
+        localStorage.setItem('selectedSSGElection', JSON.stringify(essentialElectionData))
+        console.log('Successfully stored essential election data')
+      } catch (storageError) {
+        console.warn('Failed to store election in localStorage (quota exceeded), but continuing:', storageError)
+      }
       
     } catch (error) {
       console.error("Error fetching election:", error)
@@ -135,13 +149,13 @@ export default function DepartmentalLayout({
   const handleLogout = () => {
     localStorage.removeItem("token")
     localStorage.removeItem("user")
-    localStorage.removeItem("selectedDepartmentalElection")
+    localStorage.removeItem("selectedSSGElection")
     router.push("/adminlogin")
   }
 
   const handleBackToElections = () => {
-    localStorage.removeItem("selectedDepartmentalElection")
-    router.push('/ecommittee/departmental')
+    localStorage.removeItem("selectedSSGElection")
+    router.push('/sao/ssg')
   }
 
   const getStatusColor = (status) => {
@@ -159,58 +173,39 @@ export default function DepartmentalLayout({
     }
   }
 
-  // Sidebar items
+  // Sidebar items - SAO specific navigation
   const sidebarItems = [
     { 
       icon: LayoutDashboard, 
-      label: "Main Dashboard", 
-      path: "/ecommittee/dashboard" 
+      label: "SAO Dashboard", 
+      path: "/sao/dashboard" 
     },
     { 
       icon: Home, 
-      label: "Departmental Elections", 
+      label: "SSG Elections", 
       onClick: handleBackToElections
-    },
-    { 
-      icon: Settings, 
-      label: "Status", 
-      path: `/ecommittee/departmental/status?deptElectionId=${deptElectionId}`,
-      active: activeItem === 'status'
-    },
-    { 
-      icon: Clipboard, 
-      label: "Position", 
-      path: `/ecommittee/departmental/position?deptElectionId=${deptElectionId}`,
-      active: activeItem === 'position'
     },
     { 
       icon: Users, 
       label: "Candidates", 
-      path: `/ecommittee/departmental/candidates?deptElectionId=${deptElectionId}`,
+      path: `/sao/ssg/candidates?ssgElectionId=${ssgElectionId}`,
       active: activeItem === 'candidates'
     },
     { 
-      icon: Vote, 
-      label: "Ballot", 
-      path: `/ecommittee/departmental/ballot?deptElectionId=${deptElectionId}`,
-      active: activeItem === 'ballot'
+      icon: BarChart3, 
+      label: "Results", 
+      path: `/sao/ssg/results?ssgElectionId=${ssgElectionId}`,
+      active: activeItem === 'results'
     },
     { 
       icon: TrendingUp, 
       label: "Voter Turnout", 
-      path: `/ecommittee/departmental/voterTurnout?deptElectionId=${deptElectionId}`,
+      path: `/sao/ssg/voterTurnout?ssgElectionId=${ssgElectionId}`,
       active: activeItem === 'voterTurnout'
-    },
-    { 
-      icon: BarChart3, 
-      label: "Statistics", 
-      path: `/ecommittee/departmental/statistics?deptElectionId=${deptElectionId}`,
-      active: activeItem === 'statistics'
     }
-    
   ]
 
-  if (loading && deptElectionId) {
+  if (loading && ssgElectionId) {
     return (
       <BackgroundWrapper>
         <div className="min-h-screen flex items-center justify-center">
@@ -223,7 +218,7 @@ export default function DepartmentalLayout({
     )
   }
 
-  if (error && deptElectionId) {
+  if (error && ssgElectionId) {
     return (
       <BackgroundWrapper>
         <div className="min-h-screen flex items-center justify-center">
@@ -254,31 +249,31 @@ export default function DepartmentalLayout({
   return (
     <BackgroundWrapper>
       {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && deptElectionId && (
+      {sidebarOpen && ssgElectionId && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar - Only show when deptElectionId exists */}
-      {deptElectionId && (
+      {/* Sidebar - Only show when ssgElectionId exists */}
+      {ssgElectionId && (
         <div className={`fixed left-0 top-0 h-full w-64 z-50 transform transition-transform duration-300 ease-in-out ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         } lg:translate-x-0`}
         style={{
-          background: 'linear-gradient(135deg, #001f65 0%, #6895fd 100%)'
+          background: 'linear-gradient(135deg, #001f65 0%, #003399 100%)'
         }}>
           <div className="p-6 flex flex-col h-full">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="text-xl font-bold text-white">Election Committee</h2>
+                <h2 className="text-xl font-bold text-white">Student Affairs Office</h2>
                 <div className="flex items-center gap-2 mt-1">
-                  <p className="text-sm text-white/70 truncate">{departmentalElection?.title || 'Departmental Election'}</p>
+                  <p className="text-sm text-white/70 truncate">{ssgElection?.title || 'SSG Election'}</p>
                 </div>
-                <p className="text-xs text-white/60 mt-1">ID: {departmentalElection?.deptElectionId || deptElectionId}</p>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(departmentalElection?.status).replace('border-', 'bg-').replace('text-', 'text-white')}`}>
-                  {departmentalElection?.status?.toUpperCase() || 'UNKNOWN'}
+                <p className="text-xs text-white/60 mt-1">ID: {ssgElection?.ssgElectionId || ssgElectionId}</p>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(ssgElection?.status).replace('border-', 'bg-').replace('text-', 'text-white')}`}>
+                  {ssgElection?.status?.toUpperCase() || 'UNKNOWN'}
                 </span>
               </div>
               <button
@@ -332,9 +327,9 @@ export default function DepartmentalLayout({
       )}
 
       {/* Header - Mobile */}
-      <div className={`${deptElectionId ? 'lg:hidden' : ''} bg-[#b0c8fe]/95 backdrop-blur-sm shadow-lg border-b border-[#b0c8fe]/30 px-4 py-4`}>
+      <div className={`${ssgElectionId ? 'lg:hidden' : ''} bg-[#b0c8fe]/95 backdrop-blur-sm shadow-lg border-b border-[#b0c8fe]/30 px-4 py-4`}>
         <div className="flex items-center justify-between">
-          {deptElectionId && (
+          {ssgElectionId && (
             <button
               onClick={() => setSidebarOpen(true)}
               className="lg:hidden p-2 hover:bg-white/10 rounded-lg transition-colors"
@@ -344,7 +339,7 @@ export default function DepartmentalLayout({
           )}
           <div className="text-center flex-1">
             <h1 className="text-lg font-bold text-[#001f65]">{title}</h1>
-            <p className="text-xs text-[#001f65]/60">{departmentalElection?.title || subtitle}</p>
+            <p className="text-xs text-[#001f65]/70">{ssgElection?.title || subtitle}</p>
           </div>
           {showBackButton && (
             <button
@@ -363,25 +358,21 @@ export default function DepartmentalLayout({
       </div>
 
       {/* Main Content */}
-      <div className={`${deptElectionId ? 'lg:ml-64' : ''} min-h-screen`}>
+      <div className={`${ssgElectionId ? 'lg:ml-64' : ''} min-h-screen`}>
         <div className="p-4 lg:p-6 pt-20 lg:pt-6">
           {/* Header - Desktop */}
-          {deptElectionId && (
+          {ssgElectionId && (
             <div className="hidden lg:flex items-center justify-between mb-8">
               <div className="flex items-center">
                 <div className="w-8 h-8 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-lg flex items-center justify-center mr-3 shadow-lg">
                   {activeItem === 'candidates' && <Users className="w-5 h-5 text-white" />}
-                  {activeItem === 'status' && <Settings className="w-5 h-5 text-white" />}
-                  {activeItem === 'position' && <Clipboard className="w-5 h-5 text-white" />}
-                  {activeItem === 'officers' && <UserCheck className="w-5 h-5 text-white" />}
-                  {activeItem === 'ballot' && <Vote className="w-5 h-5 text-white" />}
-                  {activeItem === 'statistics' && <BarChart3 className="w-5 h-5 text-white" />}
+                  {activeItem === 'results' && <BarChart3 className="w-5 h-5 text-white" />}
                   {activeItem === 'voterTurnout' && <TrendingUp className="w-5 h-5 text-white" />}
-                  {!activeItem && <Settings className="w-5 h-5 text-white" />}
+                  {!activeItem && <LayoutDashboard className="w-5 h-5 text-white" />}
                 </div>
                 <div>
                   <h1 className="text-2xl font-bold text-white">{title}</h1>
-                  <p className="text-white/80 text-sm">{departmentalElection?.title || 'Loading...'} - {subtitle}</p>
+                  <p className="text-white/80 text-sm">{ssgElection?.title || 'Loading...'} - {subtitle}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -400,7 +391,7 @@ export default function DepartmentalLayout({
           )}
 
           {/* Content with election data passed as prop */}
-          {typeof children === 'function' ? children(departmentalElection) : children}
+          {typeof children === 'function' ? children(ssgElection) : children}
         </div>
       </div>
     </BackgroundWrapper>

@@ -75,21 +75,21 @@ export default function ElectionCommitteeVotersPage() {
       
       // Fetch all data concurrently
       const [votersData, registeredData, officersData, departmentsData] = await Promise.all([
-        votersAPI.getAll().then(data => {
+        votersAPI.getActive().then(data => {
           console.log("All voters data:", data)
           return Array.isArray(data) ? data : (data.voters || data.data || [])
         }).catch(error => {
           console.error("Error fetching all voters:", error)
           return []
         }),
-        votersAPI.getRegistered().then(data => {
+        votersAPI.getActiveRegistered().then(data => {
           console.log("Registered voters data:", data)
           return Array.isArray(data) ? data : (data.voters || data.data || [])
         }).catch(error => {
           console.error("Error fetching registered voters:", error)
           return []
         }),
-        votersAPI.getOfficers().then(data => {
+        votersAPI.getActiveOfficers().then(data => {
           console.log("Officers data:", data)
           return Array.isArray(data) ? data : (data.officers || data.data || [])
         }).catch(error => {
@@ -142,7 +142,7 @@ export default function ElectionCommitteeVotersPage() {
 
   const fetchRegisteredVoters = async () => {
     try {
-      const data = await votersAPI.getRegistered()
+      const data = await votersAPI.getActiveRegistered()
       const votersArray = Array.isArray(data) ? data : (data.voters || data.data || [])
       setRegisteredVoters(votersArray)
     } catch (error) {
@@ -153,7 +153,7 @@ export default function ElectionCommitteeVotersPage() {
 
   const fetchOfficers = async () => {
     try {
-      const data = await votersAPI.getOfficers()
+      const data = await votersAPI.getActiveOfficers()
       const officersArray = Array.isArray(data) ? data : (data.officers || data.data || [])
       setOfficers(officersArray)
     } catch (error) {
@@ -347,9 +347,58 @@ export default function ElectionCommitteeVotersPage() {
           </div>
         </div>
 
+        {/* Department Filter Cards */}
+        <div className="mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            {/* All Departments Card */}
+            <div
+              onClick={() => handleDepartmentCardClick("")}
+              className={`p-4 rounded-lg cursor-pointer transition-all duration-200 border-2 ${
+                selectedDepartment === ""
+                  ? "bg-[#001f65] text-white border-[#001f65] shadow-lg"
+                  : "bg-white/80 backdrop-blur-sm text-[#001f65] border-white/40 hover:border-[#001f65]/30 hover:bg-white/90"
+              }`}
+            >
+              <div className="text-center">
+                <div className="text-2xl font-bold mb-1">
+                  {getCurrentVoters().length}
+                </div>
+                <div className="text-sm font-medium">
+                  All Departments
+                </div>
+              </div>
+            </div>
+            
+            {/* Department Cards */}
+            {getDepartmentCards().map((dept) => (
+              <div
+                key={dept.id}
+                onClick={() => handleDepartmentCardClick(dept.id)}
+                className={`p-4 rounded-lg cursor-pointer transition-all duration-200 border-2 ${
+                  selectedDepartment === dept.id
+                    ? "bg-[#001f65] text-white border-[#001f65] shadow-lg"
+                    : "bg-white/80 backdrop-blur-sm text-[#001f65] border-white/40 hover:border-[#001f65]/30 hover:bg-white/90"
+                }`}
+              >
+                <div className="text-center">
+                  <div className="text-2xl font-bold mb-1">
+                    {dept.count}
+                  </div>
+                  <div className="text-sm font-medium mb-1">
+                    {dept.code}
+                  </div>
+                  <div className="text-xs opacity-80 line-clamp-2">
+                    {dept.name}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Search Bar */}
-        <div className="mb-6 flex flex-col sm:flex-row gap-4 max-w-2xl mx-auto">
-          <div className="relative flex-1">
+        <div className="mb-4 flex justify-start">
+          <div className="relative w-full max-w-md">
             <input
               type="text"
               placeholder="Search voters by name, school ID, or email..."
@@ -360,27 +409,15 @@ export default function ElectionCommitteeVotersPage() {
             <Search className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" />
           </div>
           
-          <div className="relative">
-            <select
-              value={selectedDepartment}
-              onChange={(e) => setSelectedDepartment(e.target.value)}
-              className="px-4 py-3 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-[#001f65] bg-white/80 backdrop-blur-sm"
-            >
-              <option value="">All Departments</option>
-              {departments.map((dept) => (
-                <option key={dept._id} value={dept._id}>
-                  {dept.departmentCode} - {dept.degreeProgram || dept.departmentName}
-                </option>
-              ))}
-            </select>
-          </div>
-          
-          {selectedDepartment && (
+          {(searchTerm || selectedDepartment) && (
             <button
-              onClick={() => setSelectedDepartment("")}
-              className="px-4 py-3 bg-[#001f65]/10 text-[#001f65] rounded-lg hover:bg-[#001f65]/20 transition-colors flex items-center justify-center whitespace-nowrap backdrop-blur-sm border border-[#001f65]/20"
+              onClick={() => {
+                setSearchTerm("")
+                setSelectedDepartment("")
+              }}
+              className="ml-3 px-4 py-3 bg-[#001f65]/10 text-[#001f65] rounded-lg hover:bg-[#001f65]/20 transition-colors flex items-center justify-center whitespace-nowrap backdrop-blur-sm border border-[#001f65]/20"
             >
-              Clear Filter
+              Clear Filters
               <X className="w-4 h-4 ml-2" />
             </button>
           )}
@@ -501,7 +538,7 @@ export default function ElectionCommitteeVotersPage() {
             {getFilteredVoters().length === 0 && (
               <div className="text-center py-8 text-gray-500">
                 <p>No voters found matching your criteria.</p>
-                {searchTerm && (
+                {(searchTerm || selectedDepartment) && (
                   <p className="text-sm mt-2">Try adjusting your search term or clearing filters.</p>
                 )}
               </div>
@@ -512,4 +549,4 @@ export default function ElectionCommitteeVotersPage() {
       </div>
     </BackgroundWrapper>
   )
-} 
+}

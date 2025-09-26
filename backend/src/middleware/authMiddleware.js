@@ -51,7 +51,7 @@ const voterOnly = (req, res, next) => {
   next()
 }
 
-// New middleware that allows both staff and voters
+// middleware that allows both staff and voters
 const authorizeStaffAndVoters = (...staffRoles) => {
   return (req, res, next) => {
     if (!req.user || !req.user.userType) {

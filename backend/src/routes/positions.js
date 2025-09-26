@@ -7,8 +7,8 @@ const { authMiddleware, authorizeRoles, authorizeStaffAndVoters } = require("../
 router.use(authMiddleware)
 
 // SSG Position Routes
-router.get("/ssg", authorizeRoles("election_committee", "sao", "voter"), PositionController.getAllSSGPositions)
-router.get("/ssg/:id", authorizeRoles("election_committee", "sao", "voter"), PositionController.getSSGPositionById)
+router.get("/ssg", authorizeStaffAndVoters("election_committee", "sao", "voter"), PositionController.getAllSSGPositions)
+router.get("/ssg/:id", authorizeStaffAndVoters("election_committee", "sao", "voter"), PositionController.getSSGPositionById)
 router.post("/ssg", authorizeRoles("election_committee"), PositionController.createSSGPosition)
 router.put("/ssg/:id", authorizeRoles("election_committee"), PositionController.updateSSGPosition)
 router.delete("/ssg/:id", authorizeRoles("election_committee"), PositionController.deleteSSGPosition)

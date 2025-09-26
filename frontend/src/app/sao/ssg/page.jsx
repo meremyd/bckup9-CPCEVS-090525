@@ -3,29 +3,20 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { ssgElectionsAPI } from "@/lib/api/ssgElections"
-import { candidatesAPI } from "@/lib/api/candidates"
-import { partylistsAPI } from "@/lib/api/partylists"
-import { ballotAPI } from "@/lib/api/ballots"
-import { votersAPI } from "@/lib/api/voters"
-import SSGLayout from "@/components/SSGLayout"
+import SAOSSGLayout from "@/components/SAOSSGLayout"
 import BackgroundWrapper from '@/components/BackgroundWrapper'
+import Swal from 'sweetalert2'
 import { 
-  Home, 
-  CheckCircle, 
   Users, 
   Clipboard, 
   User, 
   TrendingUp, 
-  BarChart3,
-  Menu,
-  X,
-  LayoutDashboard,
-  LogOut,
-  AlertCircle,
   Vote,
   Building2,
   Loader2,
   ChevronRight,
+  LayoutDashboard,
+  LogOut,
   Eye,
   FileText
 } from "lucide-react"
@@ -38,11 +29,11 @@ export default function SAOSSGPage() {
   const [countsLoading, setCountsLoading] = useState(false)
   const [cardCounts, setCardCounts] = useState({
     candidates: 0,
+    positions: 0,
     partylists: 0,
-    voters: 0,
+    participants: 0,
     turnout: 0,
-    ballots: 0,
-    statistics: 0
+    ballots: 0
   })
   const router = useRouter()
 
@@ -85,14 +76,13 @@ export default function SAOSSGPage() {
     try {
       const response = await ssgElectionsAPI.getAll()
       console.log('Elections API response:', response)
-      setElections(response.elections || response.data || response)
+      setElections(response.data || response.elections || response || [])
     } catch (error) {
       console.error("Error fetching elections:", error)
       setElections([])
     }
   }
 
-  // Fixed fetchCardCounts function
   const fetchCardCounts = async () => {
     if (!selectedElection) {
       console.log('No selected election, skipping count fetch')
@@ -109,126 +99,136 @@ export default function SAOSSGPage() {
       
       let counts = {
         candidates: 0,
+        positions: 0,
         partylists: 0,
-        voters: 0,
+        participants: 0,
         turnout: 0,
-        ballots: 0,
-        statistics: 0
+        ballots: 0
       }
 
-      // Helper function to safely get count from response
-      const getCount = (response, countKeys = ['length', 'total', 'count']) => {
-        console.log('Getting count from response:', response)
+      const extractCount = (response, fallbackKeys = ['length', 'total', 'count']) => {
+        console.log('Extracting count from:', response)
         
         if (Array.isArray(response)) {
-          console.log('Response is array, length:', response.length)
           return response.length
         }
         
-        for (const key of countKeys) {
-          if (response[key] !== undefined) {
-            const value = Array.isArray(response[key]) ? response[key].length : Number(response[key]) || 0
-            console.log(`Found count in ${key}:`, value)
-            return value
+        if (response?.data) {
+          if (Array.isArray(response.data)) {
+            return response.data.length
+          }
+          
+          for (const key of fallbackKeys) {
+            if (response.data[key] !== undefined) {
+              return Number(response.data[key]) || 0
+            }
           }
         }
         
-        // Check for data arrays
-        const dataKeys = ['data', 'candidates', 'partylists', 'voters', 'ballots']
-        for (const key of dataKeys) {
-          if (response[key] && Array.isArray(response[key])) {
-            console.log(`Found array in ${key}, length:`, response[key].length)
-            return response[key].length
+        if (response?.summary) {
+          for (const key of fallbackKeys) {
+            if (response.summary[key] !== undefined) {
+              return Number(response.summary[key]) || 0
+            }
           }
         }
         
-        console.log('No count found, returning 0')
+        for (const key of fallbackKeys) {
+          if (response?.[key] !== undefined) {
+            return Number(response[key]) || 0
+          }
+        }
+        
         return 0
       }
 
-      // Fetch candidates
-      console.log('Fetching candidates...')
-      try {
-        const candidatesResponse = await candidatesAPI.ssg.getByElection(ssgElectionId)
-        console.log('Candidates response:', candidatesResponse)
-        counts.candidates = getCount(candidatesResponse)
-        console.log('Candidates count:', counts.candidates)
-      } catch (candidatesError) {
-        console.error('Failed to fetch candidates:', candidatesError)
+      const fetchPromises = [
+        ssgElectionsAPI.getCandidates(ssgElectionId).catch(error => {
+          console.error('Failed to fetch candidates:', error)
+          return { data: [], summary: { totalCandidates: 0 } }
+        }),
         
-        // Try fallback method
-        try {
-          console.log('Trying fallback candidates method...')
-          const fallbackResponse = await candidatesAPI.getByElection(ssgElectionId, 'ssg')
-          console.log('Fallback candidates response:', fallbackResponse)
-          counts.candidates = getCount(fallbackResponse)
-        } catch (fallbackError) {
-          console.error('Fallback also failed:', fallbackError)
-          counts.candidates = 0
-        }
-      }
-
-      // Fetch partylists
-      console.log('Fetching partylists...')
-      try {
-        const partylistsResponse = await partylistsAPI.getBySSGElection(ssgElectionId)
-        console.log('Partylists response:', partylistsResponse)
-        counts.partylists = getCount(partylistsResponse)
-        console.log('Partylists count:', counts.partylists)
-      } catch (partylistsError) {
-        console.error('Failed to fetch partylists:', partylistsError)
-        counts.partylists = 0
-      }
-
-      // Fetch voters
-      console.log('Fetching voters...')
-      try {
-        const votersResponse = await votersAPI.getRegistered({ limit: 1 })
-        console.log('Voters response:', votersResponse)
-        counts.voters = getCount(votersResponse, ['total', 'count'])
-        console.log('Voters count:', counts.voters)
-      } catch (votersError) {
-        console.error('Failed to fetch voters:', votersError)
-        counts.voters = 0
-      }
-
-      // Fetch ballots
-      console.log('Fetching ballots...')
-      try {
-        const ballotsResponse = await ballotAPI.getAllSSGBallots({ 
-          electionId: ssgElectionId,
-          limit: 1 
+        ssgElectionsAPI.getPositions(ssgElectionId).catch(error => {
+          console.error('Failed to fetch positions:', error)
+          return { data: [], summary: { totalPositions: 0 } }
+        }),
+        
+        ssgElectionsAPI.getPartylists(ssgElectionId).catch(error => {
+          console.error('Failed to fetch partylists:', error)
+          return { data: [], summary: { totalPartylists: 0 } }
+        }),
+        
+        ssgElectionsAPI.getVoterParticipants(ssgElectionId, { limit: 1 }).catch(error => {
+          console.error('Failed to fetch participants:', error)
+          return { data: [], summary: { totalRegisteredVoters: 0 } }
+        }),
+        
+        ssgElectionsAPI.getVoterTurnout(ssgElectionId).catch(error => {
+          console.error('Failed to fetch turnout:', error)
+          return { data: { overall: { turnoutPercentage: 0 } } }
+        }),
+        
+        ssgElectionsAPI.getBallots(ssgElectionId, { limit: 1 }).catch(error => {
+          console.error('Failed to fetch ballots:', error)
+          return { data: [], statistics: { totalBallots: 0 } }
         })
-        console.log('Ballots response:', ballotsResponse)
-        counts.ballots = getCount(ballotsResponse, ['total', 'count'])
-        console.log('Ballots count:', counts.ballots)
-      } catch (ballotsError) {
-        console.error('Failed to fetch ballots:', ballotsError)
-        counts.ballots = 0
+      ]
+
+      console.log('Fetching all data in parallel...')
+      const [
+        candidatesResponse,
+        positionsResponse,
+        partylistsResponse,
+        participantsResponse,
+        turnoutResponse,
+        ballotsResponse
+      ] = await Promise.all(fetchPromises)
+
+      counts.candidates = extractCount(candidatesResponse, ['totalCandidates', 'total', 'length', 'count'])
+      if (candidatesResponse?.data?.candidates) {
+        counts.candidates = candidatesResponse.data.candidates.length
       }
 
-      // Set statistics count (using candidates count)
-      counts.statistics = counts.candidates
+      counts.positions = extractCount(positionsResponse, ['totalPositions', 'total', 'length', 'count'])
+      if (positionsResponse?.data?.positions) {
+        counts.positions = positionsResponse.data.positions.length
+      }
 
-      // Calculate turnout percentage
-      if (counts.voters > 0) {
-        counts.turnout = Math.round((counts.ballots / counts.voters) * 100)
+      counts.partylists = extractCount(partylistsResponse, ['totalPartylists', 'total', 'length', 'count'])
+      if (partylistsResponse?.data?.partylists) {
+        counts.partylists = partylistsResponse.data.partylists.length
+      }
+
+      counts.participants = extractCount(participantsResponse, ['totalRegisteredVoters', 'totalItems', 'total', 'count'])
+      if (participantsResponse?.data?.summary?.totalRegisteredVoters) {
+        counts.participants = participantsResponse.data.summary.totalRegisteredVoters
+      }
+
+      if (turnoutResponse?.data?.overall?.turnoutPercentage) {
+        counts.turnout = Math.round(Number(turnoutResponse.data.overall.turnoutPercentage))
+      } else if (turnoutResponse?.data?.turnoutPercentage) {
+        counts.turnout = Math.round(Number(turnoutResponse.data.turnoutPercentage))
       } else {
         counts.turnout = 0
       }
 
-      console.log('Final counts:', counts)
+      counts.ballots = extractCount(ballotsResponse, ['totalBallots', 'totalItems', 'total', 'count'])
+      if (ballotsResponse?.data?.statistics?.totalBallots) {
+        counts.ballots = ballotsResponse.data.statistics.totalBallots
+      }
+
+      console.log('Final calculated counts:', counts)
       setCardCounts(counts)
 
     } catch (error) {
       console.error("Critical error in fetchCardCounts:", error)
       setCardCounts({
         candidates: 0,
+        positions: 0,
         partylists: 0,
-        voters: 0,
+        participants: 0,
         turnout: 0,
-        ballots: 0,
-        statistics: 0
+        ballots: 0
       })
     } finally {
       setCountsLoading(false)
@@ -239,22 +239,35 @@ export default function SAOSSGPage() {
   const handleElectionClick = (election) => {
     console.log('Election clicked:', election)
     setSelectedElection(election)
-    // Store selected election in localStorage for persistence
-    localStorage.setItem('selectedSSGElection', JSON.stringify(election))
+    
+    // Store essential data for SAOSSGLayout to use
+    try {
+      const essentialElectionData = {
+        _id: election._id,
+        id: election.id,
+        ssgElectionId: election.ssgElectionId,
+        electionYear: election.electionYear,
+        title: election.title,
+        status: election.status,
+        electionDate: election.electionDate,
+        ballotOpenTime: election.ballotOpenTime,
+        ballotCloseTime: election.ballotCloseTime
+      }
+      localStorage.setItem('selectedSSGElection', JSON.stringify(essentialElectionData))
+    } catch (error) {
+      console.warn('Failed to store in localStorage, but app will continue working:', error)
+    }
   }
 
   const handleBackToElections = () => {
     setSelectedElection(null)
-    // Clear selected election from localStorage
-    localStorage.removeItem('selectedSSGElection')
-    // Reset counts when going back
     setCardCounts({
       candidates: 0,
+      positions: 0,
       partylists: 0,
-      voters: 0,
+      participants: 0,
       turnout: 0,
-      ballots: 0,
-      statistics: 0
+      ballots: 0
     })
   }
 
@@ -284,6 +297,21 @@ export default function SAOSSGPage() {
     }
   }
 
+  // Helper function to format time for display (24-hour to 12-hour)
+  const formatTimeDisplay = (time24) => {
+    if (!time24) return 'Not set'
+    
+    try {
+      const [hours, minutes] = time24.split(':').map(Number)
+      const period = hours >= 12 ? 'PM' : 'AM'
+      const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
+      
+      return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`
+    } catch (error) {
+      return 'Invalid time'
+    }
+  }
+
   if (loading) {
     return (
       <BackgroundWrapper>
@@ -297,7 +325,6 @@ export default function SAOSSGPage() {
     )
   }
 
-  // Election monitoring cards data (view-only)
   const electionMonitoringCards = [
     { 
       title: "View Candidates",
@@ -312,6 +339,18 @@ export default function SAOSSGPage() {
       path: `/sao/ssg/candidates?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
+      title: "View Positions",
+      icon: FileText,
+      color: "bg-[#b0c8fe]/35",
+      hoverColor: "hover:bg-[#b0c8fe]/25",
+      borderColor: "border-[#b0c8fe]/45",
+      shadowColor: "shadow-[#b0c8fe]/25",
+      textColor: "text-[#001f65]",
+      description: "View election positions",
+      count: cardCounts.positions,
+      path: `/sao/ssg/candidates?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
+    },
+    { 
       title: "View Partylists",
       icon: Clipboard,
       color: "bg-[#b0c8fe]/40",
@@ -321,7 +360,7 @@ export default function SAOSSGPage() {
       textColor: "text-[#001f65]",
       description: "View party lists",
       count: cardCounts.partylists,
-      path: `/sao/ssg/partylist-position?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
+      path: `/sao/ssg/candidates?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
       title: "Voter Participants",
@@ -332,8 +371,8 @@ export default function SAOSSGPage() {
       shadowColor: "shadow-[#b0c8fe]/35",
       textColor: "text-[#001f65]",
       description: "View registered voters",
-      count: cardCounts.voters,
-      path: `/sao/ssg/participants?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
+      count: cardCounts.participants,
+      path: `/sao/ssg/voterTurnout?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
     },
     { 
       title: "Voter Turnout",
@@ -357,26 +396,13 @@ export default function SAOSSGPage() {
       textColor: "text-[#001f65]",
       description: "Monitor voting ballots",
       count: cardCounts.ballots,
-      path: `/sao/ssg/ballot?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
-    },
-    { 
-      title: "View Statistics",
-      icon: BarChart3,
-      color: "bg-[#b0c8fe]/38",
-      hoverColor: "hover:bg-[#b0c8fe]/28",
-      borderColor: "border-[#b0c8fe]/48",
-      shadowColor: "shadow-[#b0c8fe]/28",
-      textColor: "text-[#001f65]",
-      description: "View election analytics",
-      count: cardCounts.statistics,
-      path: `/sao/ssg/statistics?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
+      path: `/sao/ssg/results?ssgElectionId=${selectedElection?._id || selectedElection?.id}`
     }
   ]
 
   if (selectedElection) {
-    // Use SSGLayout for election monitoring view
     return (
-      <SSGLayout
+      <SAOSSGLayout
         ssgElectionId={selectedElection._id || selectedElection.id}
         title={selectedElection.title}
         subtitle="Election Monitoring"
@@ -390,15 +416,29 @@ export default function SAOSSGPage() {
               <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(selectedElection?.status)}`}>
                 {selectedElection?.status || 'upcoming'}
               </span>
+              <div className="px-3 py-1 bg-blue-500/20 text-blue-100 rounded-full text-xs">
+                <Eye className="w-3 h-3 inline mr-1" />
+                View Only Mode
+              </div>
             </div>
             <p className="text-white/60 text-sm">Election ID: {selectedElection.ssgElectionId}</p>
-            <div className="mt-2 px-3 py-1 bg-blue-500/20 text-blue-100 rounded-full text-xs inline-block">
-              <Eye className="w-3 h-3 inline mr-1" />
-              View Only Mode
-            </div>
+            {/* Display ballot times if available */}
+            {(selectedElection.ballotOpenTime || selectedElection.ballotCloseTime) && (
+              <div className="mt-2 space-y-1">
+                {selectedElection.ballotOpenTime && (
+                  <p className="text-white/60 text-xs">
+                    Ballot opens: {formatTimeDisplay(selectedElection.ballotOpenTime)}
+                  </p>
+                )}
+                {selectedElection.ballotCloseTime && (
+                  <p className="text-white/60 text-xs">
+                    Ballot closes: {formatTimeDisplay(selectedElection.ballotCloseTime)}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Show loading state for counts */}
           {countsLoading && (
             <div className="text-center mb-4">
               <Loader2 className="animate-spin h-6 w-6 mx-auto text-white/60" />
@@ -418,14 +458,12 @@ export default function SAOSSGPage() {
                       className={`bg-white/90 backdrop-blur-sm rounded-xl shadow-lg cursor-pointer transform hover:scale-105 transition-all duration-300 hover:shadow-2xl ${card.hoverColor} border ${card.borderColor} h-56 lg:h-64 flex flex-col justify-center items-center hover:bg-white/95`}
                     >
                       <div className="p-6 text-center h-full flex flex-col justify-center items-center w-full">
-                        {/* Icon */}
                         <div className={`p-4 rounded-full ${card.color} mb-6 shadow-lg border border-[#b0c8fe]/20`}>
                           <div className={card.textColor}>
                             <IconComponent className="w-8 h-8 sm:w-10 md:w-12" />
                           </div>
                         </div>
                         
-                        {/* Content */}
                         <div className="flex-1 flex flex-col justify-center items-center">
                           <p className="text-base sm:text-lg font-medium text-[#001f65]/80 mb-3 text-center">
                             {card.title}
@@ -439,7 +477,6 @@ export default function SAOSSGPage() {
                           </p>
                         </div>
 
-                        {/* Action Indicator */}
                         <div className="flex items-center justify-center text-sm text-[#001f65]/60">
                           <Eye className="w-4 h-4 mr-1" />
                           <span className="hidden sm:inline">Click to view</span>
@@ -452,28 +489,14 @@ export default function SAOSSGPage() {
               </div>
             </div>
           </div>
-
-          {/* Debug info - remove this in production */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="mt-8 bg-black/20 backdrop-blur-sm rounded-lg p-4 max-w-2xl mx-auto">
-              <h4 className="text-white font-bold mb-2">Debug Info:</h4>
-              <pre className="text-white/80 text-xs overflow-auto">
-                {JSON.stringify({ 
-                  selectedElection: selectedElection?._id || selectedElection?.id,
-                  cardCounts,
-                  countsLoading 
-                }, null, 2)}
-              </pre>
-            </div>
-          )}
         </div>
-      </SSGLayout>
+      </SAOSSGLayout>
     )
   }
 
   return (
     <BackgroundWrapper>
-      {/* Header */}
+      {/* Header - Only show when no election is selected */}
       <div className="bg-[#b0c8fe]/95 backdrop-blur-sm shadow-lg border-b border-[#b0c8fe]/30 px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center">
@@ -512,12 +535,7 @@ export default function SAOSSGPage() {
           <div className="text-center mb-8">
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">SSG Elections</h2>
             <p className="text-white/80">Select an election to monitor</p>
-            <div className="mt-2">
-              <span className="px-3 py-1 bg-blue-500/20 text-blue-100 rounded-full text-sm">
-                <Eye className="w-4 h-4 inline mr-1" />
-                View Only Access
-              </span>
-            </div>
+            
           </div>
 
           {/* Elections Grid */}
@@ -572,6 +590,21 @@ export default function SAOSSGPage() {
                           <p className="text-blue-200 text-xs mt-1">
                             ID: {election.ssgElectionId}
                           </p>
+                          {/* Display ballot times in cards */}
+                          {(election.ballotOpenTime || election.ballotCloseTime) && (
+                            <div className="mt-2 space-y-1">
+                              {election.ballotOpenTime && (
+                                <p className="text-blue-200 text-xs">
+                                  Opens: {formatTimeDisplay(election.ballotOpenTime)}
+                                </p>
+                              )}
+                              {election.ballotCloseTime && (
+                                <p className="text-blue-200 text-xs">
+                                  Closes: {formatTimeDisplay(election.ballotCloseTime)}
+                                </p>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         {/* View Indicator */}

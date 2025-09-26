@@ -108,7 +108,7 @@ candidateSchema.methods.hasCampaignPicture = function() {
   return this.campaignPicture && this.campaignPicture.length > 0
 }
 
-// NEW: Check if candidate has credentials
+//  Check if candidate has credentials
 candidateSchema.methods.hasCredentials = function() {
   return this.credentials && this.credentials.length > 0
 }
@@ -141,7 +141,7 @@ candidateSchema.methods.getDisplayInfo = function() {
     candidateNumber: this.candidateNumber,
     position: this.populated('positionId') ? this.positionId.positionName : 'Unknown Position',
     partylist: this.populated('partylistId') && this.partylistId ? this.partylistId.partylistName : 'Independent',
-    hasCredentials: this.hasCredentials(), // NEW: Instead of platform text
+    hasCredentials: this.hasCredentials(), 
     isActive: this.isActive,
     electionType: this.electionType
   }
@@ -157,7 +157,7 @@ candidateSchema.methods.formatForDisplay = function() {
     position: this.populated('positionId') ? this.positionId.positionName : null,
     positionOrder: this.populated('positionId') ? this.positionId.positionOrder : null,
     partylist: this.populated('partylistId') && this.partylistId ? this.partylistId.partylistName : null,
-    hasCredentials: this.hasCredentials(), // NEW: Instead of platform
+    hasCredentials: this.hasCredentials(), 
     department: this.populated('voterId') && this.voterId.departmentId ? this.voterId.departmentId.departmentCode : null,
     yearLevel: this.populated('voterId') ? this.voterId.yearLevel : null,
     electionType: this.electionType,
@@ -306,7 +306,7 @@ candidateSchema.statics.checkSSGEligibility = async function(voterId, ssgElectio
   return { eligible: true, voter }
 }
 
-// NEW: Check if voter can be added to specific partylist
+// Check if voter can be added to specific partylist
 candidateSchema.statics.checkPartylistEligibility = async function(voterId, ssgElectionId, partylistId, excludeCandidateId = null) {
   if (!partylistId) return { eligible: true } // Independent candidates are always eligible
 
@@ -379,8 +379,8 @@ candidateSchema.statics.getStatistics = function(candidates) {
     inactive: 0,
     ssg: 0,
     departmental: 0,
-    withCredentials: 0, // NEW: Track candidates with credentials
-    withoutCredentials: 0, // NEW: Track candidates without credentials
+    withCredentials: 0, 
+    withoutCredentials: 0,
     byPosition: {},
     byPartylist: {},
     byDepartment: {},
@@ -402,7 +402,7 @@ candidateSchema.statics.getStatistics = function(candidates) {
       stats.departmental++
     }
 
-    // NEW: Credentials count
+    // Credentials count
     if (candidate.hasCredentials && candidate.hasCredentials()) {
       stats.withCredentials++
     } else {

@@ -215,12 +215,6 @@ export default function SSGLayout({
       active: activeItem === 'candidates'
     },
     { 
-      icon: User, 
-      label: "Voter Participants", 
-      path: `/ecommittee/ssg/participants?ssgElectionId=${ssgElectionId}`,
-      active: activeItem === 'voters'
-    },
-    { 
       icon: Vote, 
       label: "Ballots", 
       path: `/ecommittee/ssg/ballot?ssgElectionId=${ssgElectionId}`,

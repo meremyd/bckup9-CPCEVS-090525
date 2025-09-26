@@ -57,7 +57,6 @@ export default function SAOVotersPage() {
   }, [router])
 
   useEffect(() => {
-    
     if (activeTab === "registered") {
       fetchRegisteredVoters()
     } else if (activeTab === "officers") {
@@ -72,28 +71,30 @@ export default function SAOVotersPage() {
       
       console.log("Fetching all data...")
       
+      // FIXED: Use the correct API calls that fetch only active voters and departments
       const [votersData, registeredData, officersData, departmentsData] = await Promise.all([
-        votersAPI.getAll().then(data => {
-          console.log("All voters data:", data)
+        votersAPI.getActive().then(data => {
+          console.log("Active voters data:", data)
           return Array.isArray(data) ? data : (data.voters || data.data || [])
         }).catch(error => {
-          console.error("Error fetching all voters:", error)
+          console.error("Error fetching active voters:", error)
           return []
         }),
-        votersAPI.getRegistered().then(data => {
-          console.log("Registered voters data:", data)
+        votersAPI.getActiveRegistered().then(data => {
+          console.log("Active registered voters data:", data)
           return Array.isArray(data) ? data : (data.voters || data.data || [])
         }).catch(error => {
-          console.error("Error fetching registered voters:", error)
+          console.error("Error fetching active registered voters:", error)
           return []
         }),
-        votersAPI.getOfficers().then(data => {
-          console.log("Officers data:", data)
+        votersAPI.getActiveOfficers().then(data => {
+          console.log("Active officers data:", data)
           return Array.isArray(data) ? data : (data.officers || data.data || [])
         }).catch(error => {
-          console.error("Error fetching officers:", error)
+          console.error("Error fetching active officers:", error)
           return []
         }),
+        // FIXED: Properly fetch departments
         departmentsAPI.getAll().then(data => {
           console.log("Departments data:", data)
           return Array.isArray(data) ? data : (data.departments || data.data || [])
@@ -140,7 +141,7 @@ export default function SAOVotersPage() {
 
   const fetchRegisteredVoters = async () => {
     try {
-      const data = await votersAPI.getRegistered()
+      const data = await votersAPI.getActiveRegistered()
       const votersArray = Array.isArray(data) ? data : (data.voters || data.data || [])
       setRegisteredVoters(votersArray)
     } catch (error) {
@@ -151,7 +152,7 @@ export default function SAOVotersPage() {
 
   const fetchOfficers = async () => {
     try {
-      const data = await votersAPI.getOfficers()
+      const data = await votersAPI.getActiveOfficers()
       const officersArray = Array.isArray(data) ? data : (data.officers || data.data || [])
       setOfficers(officersArray)
     } catch (error) {
@@ -188,6 +189,7 @@ export default function SAOVotersPage() {
       return []
     }
 
+    // FIXED: Only show active voters (this is now redundant since we're already fetching only active voters)
     return voters.filter(voter => {
       const matchesSearch = 
         voter.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -198,7 +200,8 @@ export default function SAOVotersPage() {
       const matchesDepartment = 
         selectedDepartment === "" || voter.departmentId?._id === selectedDepartment
       
-      return matchesSearch && matchesDepartment
+      // Ensure voter is active (extra safety check)
+      return matchesSearch && matchesDepartment && voter.isActive !== false
     })
   }
 
@@ -219,14 +222,7 @@ export default function SAOVotersPage() {
         name: department.degreeProgram || department.departmentName,
         count: count
       }
-    }).filter(dept => dept.count > 0) // Only show departments with voters
-  }
-
-  const getDepartmentName = (departmentId) => {
-    if (!departmentId) return "Unknown"
-    
-    const department = departments.find(dept => dept._id === departmentId)
-    return department ? (department.degreeProgram || department.departmentName) : "Unknown"
+    }).filter(dept => dept.count > 0) // Only show departments with active voters
   }
 
   if (loading) {
@@ -235,7 +231,7 @@ export default function SAOVotersPage() {
         <div className="min-h-screen flex items-center justify-center">
           <div className="text-center bg-white/10 backdrop-blur-md p-8 rounded-2xl border border-white/20">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-white mx-auto"></div>
-            <p className="mt-6 text-lg text-white font-medium">Loading voters data...</p>
+            <p className="mt-6 text-lg text-white font-medium">Loading active voters data...</p>
           </div>
         </div>
       </BackgroundWrapper>
@@ -244,7 +240,7 @@ export default function SAOVotersPage() {
 
   return (
     <BackgroundWrapper>
-      {/* Header - Matching the SAO Dashboard style */}
+      {/* Header - SAO Dashboard style */}
       <div className="bg-[#b0c8fe]/95 backdrop-blur-sm shadow-lg border-b border-[#b0c8fe]/30 px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center">
@@ -255,7 +251,7 @@ export default function SAOVotersPage() {
               <h1 className="text-xl sm:text-2xl font-bold text-[#001f65]">
                 SAO Dashboard
               </h1>
-              <p className="text-xs text-[#001f65]/70">Voter Information</p>
+              <p className="text-xs text-[#001f65]/70">Active Voter Information</p>
             </div>
           </div>
           <div className="flex items-center space-x-2 sm:space-x-4">
@@ -292,6 +288,7 @@ export default function SAOVotersPage() {
           </div>
         )}
 
+
         {/* Tabs */}
         <div className="mb-6 flex justify-center">
           <div className="flex space-x-1 bg-white/50 backdrop-blur-sm p-1 rounded-lg border border-white/20">
@@ -301,7 +298,7 @@ export default function SAOVotersPage() {
                 activeTab === "voters" ? "bg-white text-[#001f65] shadow-sm" : "text-[#001f65]/70 hover:text-[#001f65]"
               }`}
             >
-              All Voters ({allVoters.length})
+              Active Voters ({allVoters.length})
             </button>
             <button
               onClick={() => setActiveTab("registered")}
@@ -324,8 +321,7 @@ export default function SAOVotersPage() {
 
         {/* Department Filter Cards */}
         <div className="mb-6">
-          <h3 className="text-lg font-semibold text-[#001f65] mb-4">Filter by Department</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             {/* All Departments Card */}
             <div
               onClick={() => handleDepartmentCardClick("")}
@@ -372,12 +368,12 @@ export default function SAOVotersPage() {
           </div>
         </div>
 
-        {/* Search Bar - Positioned above table */}
+        {/* Search Bar */}
         <div className="mb-4 flex justify-start">
           <div className="relative w-full max-w-md">
             <input
               type="text"
-              placeholder="Search voters by name, school ID, or email..."
+              placeholder="Search active voters by name, school ID, or email..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-3 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-[#001f65] bg-white/80 backdrop-blur-sm"
@@ -454,15 +450,13 @@ export default function SAOVotersPage() {
                             Registered
                           </span>
                         ) : (
-                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                             Not Registered
                           </span>
                         )}
-                        {!voter.isActive && (
-                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                            Inactive
-                          </span>
-                        )}
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          Active
+                        </span>
                       </div>
                     </td>
                     <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
@@ -483,7 +477,7 @@ export default function SAOVotersPage() {
             
             {getFilteredVoters().length === 0 && (
               <div className="text-center py-8 text-gray-500">
-                <p>No voters found matching your criteria.</p>
+                <p>No active voters found matching your criteria.</p>
                 {(searchTerm || selectedDepartment) && (
                   <p className="text-sm mt-2">Try adjusting your search term or clearing filters.</p>
                 )}

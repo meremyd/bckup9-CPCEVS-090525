@@ -617,7 +617,7 @@ class DepartmentController {
     }
   }
 
-  // NEW: Get degree programs with optional filtering
+  //  Get degree programs with optional filtering
   static async getDegreePrograms(req, res, next) {
     try {
       const { college, departmentCode, includeStats = false } = req.query
@@ -742,7 +742,7 @@ class DepartmentController {
     }
   }
 
-  // NEW: Get unique department codes with their associated data
+  //  Get unique department codes with their associated data
   static async getDepartmentCodes(req, res, next) {
     try {
       const { includeStats = false } = req.query

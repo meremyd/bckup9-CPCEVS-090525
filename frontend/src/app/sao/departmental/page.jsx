@@ -5,11 +5,9 @@ import { useRouter } from "next/navigation"
 import { departmentalElectionsAPI } from "@/lib/api/departmentalElections"
 import { candidatesAPI } from "@/lib/api/candidates"
 import { ballotAPI } from "@/lib/api/ballots"
-import { votersAPI } from "@/lib/api/voters"
 import { departmentsAPI } from "@/lib/api/departments"
-import DepartmentalLayout from "@/components/DepartmentalLayout"
+import SAODepartmentalLayout from "@/components/SAODepartmentalLayout"
 import BackgroundWrapper from '@/components/BackgroundWrapper'
-import Swal from 'sweetalert2'
 import { 
   Home, 
   CheckCircle, 
@@ -22,21 +20,18 @@ import {
   X,
   LayoutDashboard,
   LogOut,
-  Plus,
-  Edit,
-  Trash2,
-  Save,
   AlertCircle,
   Vote,
   Building2,
   Loader2,
   ChevronRight,
-  Settings,
   UserCheck,
-  GraduationCap
+  GraduationCap,
+  Eye,
+  FileText
 } from "lucide-react"
 
-export default function DepartmentalPage() {
+export default function SAODepartmentalPage() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [elections, setElections] = useState([])
@@ -44,8 +39,6 @@ export default function DepartmentalPage() {
   const [departments, setDepartments] = useState([])
   const [selectedDepartment, setSelectedDepartment] = useState(null)
   const [selectedElection, setSelectedElection] = useState(null)
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [formLoading, setFormLoading] = useState(false)
   const [countsLoading, setCountsLoading] = useState(false)
   const [cardCounts, setCardCounts] = useState({
     candidates: 0,
@@ -53,15 +46,6 @@ export default function DepartmentalPage() {
     officers: 0,
     voterTurnout: 0
   })
-  const [formData, setFormData] = useState({
-    deptElectionId: '',
-    electionYear: new Date().getFullYear(),
-    title: '',
-    status: 'upcoming',
-    electionDate: '',
-    departmentId: ''
-  })
-  const [error, setError] = useState('')
   const router = useRouter()
 
   useEffect(() => {
@@ -77,7 +61,7 @@ export default function DepartmentalPage() {
       const parsedUser = JSON.parse(userData)
       setUser(parsedUser)
 
-      if (parsedUser.userType !== "election_committee") {
+      if (parsedUser.userType !== "sao") {
         router.push("/adminlogin")
         return
       }
@@ -143,16 +127,17 @@ export default function DepartmentalPage() {
         candidates: 0,
         position: 0,
         officers: 0,
+        ballot: 0,
+        statistics: 0,
         voterTurnout: 0
       }
 
-      // Fetch candidates - Updated to handle the actual response structure
+      // Fetch candidates
       console.log('Fetching candidates...')
       try {
         const candidatesResponse = await candidatesAPI.departmental.getByElection(deptElectionId)
         console.log('Candidates response:', candidatesResponse)
         
-        // Handle the nested data structure from the API
         if (candidatesResponse?.data?.candidates) {
           counts.candidates = Array.isArray(candidatesResponse.data.candidates) 
             ? candidatesResponse.data.candidates.length 
@@ -171,33 +156,31 @@ export default function DepartmentalPage() {
         counts.candidates = 0
       }
 
-      
-console.log('Fetching positions...')
-try {
-  const electionResponse = await departmentalElectionsAPI.getById(deptElectionId)
-  console.log('Election details response:', electionResponse)
-  
-  // The positions should be included in the election details response
-  if (electionResponse?.positions) {
-    counts.position = Array.isArray(electionResponse.positions) 
-      ? electionResponse.positions.length 
-      : 0
-  } else {
-    // If positions aren't included, we'll get them from candidates response
-    const candidatesResponse = await candidatesAPI.departmental.getByElection(deptElectionId)
-    if (candidatesResponse?.data?.positions) {
-      counts.position = Array.isArray(candidatesResponse.data.positions) 
-        ? candidatesResponse.data.positions.length 
-        : 0
-    } else {
-      counts.position = 0
-    }
-  }
-  console.log('Positions count:', counts.position)
-} catch (positionsError) {
-  console.error('Failed to fetch positions:', positionsError)
-  counts.position = 0
-}
+      // Fetch positions
+      console.log('Fetching positions...')
+      try {
+        const electionResponse = await departmentalElectionsAPI.getById(deptElectionId)
+        console.log('Election details response:', electionResponse)
+        
+        if (electionResponse?.positions) {
+          counts.position = Array.isArray(electionResponse.positions) 
+            ? electionResponse.positions.length 
+            : 0
+        } else {
+          const candidatesResponse = await candidatesAPI.departmental.getByElection(deptElectionId)
+          if (candidatesResponse?.data?.positions) {
+            counts.position = Array.isArray(candidatesResponse.data.positions) 
+              ? candidatesResponse.data.positions.length 
+              : 0
+          } else {
+            counts.position = 0
+          }
+        }
+        console.log('Positions count:', counts.position)
+      } catch (positionsError) {
+        console.error('Failed to fetch positions:', positionsError)
+        counts.position = 0
+      }
 
       // Fetch officers using the API method
       console.log('Fetching officers count...')
@@ -205,7 +188,6 @@ try {
         const officersResponse = await departmentalElectionsAPI.getOfficersCount(deptElectionId)
         console.log('Officers response:', officersResponse)
         
-        // Use the eligibleToVote count if available, otherwise use officersCount
         counts.officers = officersResponse.eligibleToVote || officersResponse.officersCount || 0
         console.log('Officers count (eligible to vote):', counts.officers)
       } catch (officersError) {
@@ -213,8 +195,9 @@ try {
         counts.officers = 0
       }
 
-    
       
+      
+
       if (counts.officers > 0 && counts.ballot >= 0) {
         counts.voterTurnout = Math.min(100, Math.round((counts.ballot / counts.officers) * 100))
       } else {
@@ -272,115 +255,6 @@ try {
     setFilteredElections(elections)
   }
 
-  const handleAddElection = () => {
-    setShowAddForm(true)
-    setFormData({
-      deptElectionId: '',
-      electionYear: new Date().getFullYear(),
-      title: '',
-      status: 'upcoming',
-      electionDate: '',
-      departmentId: selectedDepartment?._id || ''
-    })
-    setError('')
-  }
-
-  const handleFormSubmit = async (e) => {
-    e.preventDefault()
-    setFormLoading(true)
-    setError('')
-
-    try {
-      await departmentalElectionsAPI.create(formData)
-      await fetchElections()
-      setShowAddForm(false)
-      setFormData({
-        deptElectionId: '',
-        electionYear: new Date().getFullYear(),
-        title: '',
-        status: 'upcoming',
-        electionDate: '',
-        departmentId: ''
-      })
-
-      Swal.fire({
-        title: 'Success!',
-        text: 'Departmental Election created successfully',
-        icon: 'success',
-        confirmButtonText: 'OK',
-        confirmButtonColor: '#3b82f6'
-      })
-    } catch (error) {
-      setError(error.message || 'Failed to create election')
-      
-      Swal.fire({
-        title: 'Error!',
-        text: error.message || 'Failed to create election',
-        icon: 'error',
-        confirmButtonText: 'OK',
-        confirmButtonColor: '#ef4444'
-      })
-    } finally {
-      setFormLoading(false)
-    }
-  }
-
-  const handleDeleteElection = async (deptElectionId, e) => {
-    e.stopPropagation()
-    
-    const result = await Swal.fire({
-      title: 'Are you sure?',
-      text: 'This will permanently delete the election and all associated data. This action cannot be undone!',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#ef4444',
-      cancelButtonColor: '#6b7280',
-      confirmButtonText: 'Yes, delete it!',
-      cancelButtonText: 'Cancel',
-      reverseButtons: true
-    })
-
-    if (result.isConfirmed) {
-      try {
-        Swal.fire({
-          title: 'Deleting...',
-          text: 'Please wait while we delete the election',
-          allowOutsideClick: false,
-          allowEscapeKey: false,
-          showConfirmButton: false,
-          didOpen: () => {
-            Swal.showLoading()
-          }
-        })
-
-        await departmentalElectionsAPI.delete(deptElectionId)
-        await fetchElections()
-        
-        if (selectedElection && (selectedElection._id === deptElectionId || selectedElection.id === deptElectionId)) {
-          handleBackToElections()
-        }
-
-        Swal.fire({
-          title: 'Deleted!',
-          text: 'The election has been successfully deleted.',
-          icon: 'success',
-          confirmButtonText: 'OK',
-          confirmButtonColor: '#10b981'
-        })
-      } catch (error) {
-        console.error('Error deleting election:', error)
-        
-        Swal.fire({
-          title: 'Error!',
-          text: error.message || 'Failed to delete election. Please try again.',
-          icon: 'error',
-          confirmButtonText: 'OK',
-          confirmButtonColor: '#ef4444'
-        })
-      }
-    }
-  }
-
   const handleLogout = () => {
     localStorage.removeItem("token")
     localStorage.removeItem("user")
@@ -389,7 +263,7 @@ try {
   }
 
   const handleBackToDashboard = () => {
-    router.push('/ecommittee/dashboard')
+    router.push('/sao/dashboard')
   }
 
   const getStatusColor = (status) => {
@@ -420,18 +294,18 @@ try {
     )
   }
 
-  const electionManagementCards = [
+  const electionMonitoringCards = [
   { 
-    title: "Candidates",
+    title: "View Candidates",
     icon: Users,
     color: "bg-[#b0c8fe]/35",
     hoverColor: "hover:bg-[#b0c8fe]/25",
     borderColor: "border-[#b0c8fe]/45",
     shadowColor: "shadow-[#b0c8fe]/25",
     textColor: "text-[#001f65]",
-    description: "Manage election candidates",
+    description: "View election candidates",
     count: cardCounts.candidates,
-    path: `/ecommittee/departmental/candidates?deptElectionId=${selectedElection?._id || selectedElection?.id}`
+    path: `/sao/departmental/candidates?deptElectionId=${selectedElection?._id || selectedElection?.id}`
   },
   { 
     title: "Class Officers",
@@ -441,21 +315,21 @@ try {
     borderColor: "border-[#b0c8fe]/50",
     shadowColor: "shadow-[#b0c8fe]/30",
     textColor: "text-[#001f65]",
-    description: "Manage class officers",
+    description: "View class officers",
     count: cardCounts.officers,
-    path: `/ecommittee/departmental/officers?deptElectionId=${selectedElection?._id || selectedElection?.id}`
+    path: `/sao/departmental/voterTurnout?deptElectionId=${selectedElection?._id || selectedElection?.id}`
   },
   { 
-    title: "Position",
+    title: "View Position",
     icon: Clipboard,
     color: "bg-[#b0c8fe]/30",
     hoverColor: "hover:bg-[#b0c8fe]/20",
     borderColor: "border-[#b0c8fe]/40",
     shadowColor: "shadow-[#b0c8fe]/20",
     textColor: "text-[#001f65]",
-    description: "Manage election positions",
+    description: "View election positions",
     count: cardCounts.position,
-    path: `/ecommittee/departmental/position?deptElectionId=${selectedElection?._id || selectedElection?.id}`
+    path: `/sao/departmental/candidates?deptElectionId=${selectedElection?._id || selectedElection?.id}`
   },
   { 
     title: "Voter Turnout",
@@ -467,17 +341,17 @@ try {
     textColor: "text-[#001f65]",
     description: "Monitor voting activity",
     count: `${cardCounts.voterTurnout}%`,
-    path: `/ecommittee/departmental/voterTurnout?deptElectionId=${selectedElection?._id || selectedElection?.id}`
+    path: `/sao/departmental/voterTurnout?deptElectionId=${selectedElection?._id || selectedElection?.id}`
   }
 ]
 
   if (selectedElection) {
-    // Use DepartmentalLayout for election management view
+    // Use SAODepartmentalLayout for election monitoring view
     return (
-      <DepartmentalLayout
+      <SAODepartmentalLayout
         deptElectionId={selectedElection._id || selectedElection.id}
         title={selectedElection.title}
-        subtitle="Election Management"
+        subtitle="Election Monitoring"
         activeItem=""
         showBackButton={false}
       >
@@ -504,7 +378,7 @@ try {
           <div className="flex justify-center">
             <div className="w-full max-w-6xl">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6 sm:gap-8">
-                {electionManagementCards.map((card, index) => {
+                {electionMonitoringCards.map((card, index) => {
                   const IconComponent = card.icon
                   return (
                     <div
@@ -536,9 +410,9 @@ try {
 
                         {/* Action Indicator */}
                         <div className="flex items-center justify-center text-sm text-[#001f65]/60">
-                          <ChevronRight className="w-4 h-4 mr-1" />
-                          <span className="hidden sm:inline">Click to manage</span>
-                          <span className="sm:hidden">Tap to open</span>
+                          <Eye className="w-4 h-4 mr-1" />
+                          <span className="hidden sm:inline">Click to view</span>
+                          <span className="sm:hidden">Tap to view</span>
                         </div>
                       </div>
                     </div>
@@ -548,139 +422,12 @@ try {
             </div>
           </div>
         </div>
-      </DepartmentalLayout>
+      </SAODepartmentalLayout>
     )
   }
 
   return (
     <BackgroundWrapper>
-      {/* Add Election Form Modal */}
-      {showAddForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold text-gray-800">Create New Departmental Election</h3>
-                <button
-                  onClick={() => setShowAddForm(false)}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <X className="w-5 h-5 text-gray-500" />
-                </button>
-              </div>
-
-              <form onSubmit={handleFormSubmit} className="space-y-4">
-                {error && (
-                  <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-                    <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-                    <p className="text-sm text-red-700">{error}</p>
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Departmental Election ID *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.deptElectionId}
-                    onChange={(e) => setFormData(prev => ({ ...prev, deptElectionId: e.target.value }))}
-                    placeholder="e.g., DEPT2024-001"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Department *
-                  </label>
-                  <select
-                    required
-                    value={formData.departmentId}
-                    onChange={(e) => setFormData(prev => ({ ...prev, departmentId: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">Select Department</option>
-                    {departments.map((dept) => (
-                      <option key={dept._id || dept.id} value={dept._id || dept.id}>
-                        {dept.departmentCode} - {dept.degreeProgram}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Election Year *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    value={formData.electionYear}
-                    onChange={(e) => setFormData(prev => ({ ...prev, electionYear: parseInt(e.target.value) }))}
-                    min="2024"
-                    max="2030"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Election Title *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.title}
-                    onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                    placeholder="e.g., Departmental Election 2024"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Election Date *
-                  </label>
-                  <input
-                    type="datetime-local"
-                    required
-                    value={formData.electionDate}
-                    onChange={(e) => setFormData(prev => ({ ...prev, electionDate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddForm(false)}
-                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={formLoading}
-                    className="flex-1 flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {formLoading ? (
-                      <Loader2 className="animate-spin rounded-full h-4 w-4" />
-                    ) : (
-                      <>
-                        <Save className="w-4 h-4 mr-2" />
-                        Create Election
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <div className="bg-[#b0c8fe]/95 backdrop-blur-sm shadow-lg border-b border-[#b0c8fe]/30 px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between">
@@ -689,8 +436,8 @@ try {
               <GraduationCap className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-[#001f65]">Election Committee Dashboard</h1>
-              <p className="text-xs text-[#001f65]/70">Departmental Elections</p>
+              <h1 className="text-xl sm:text-2xl font-bold text-[#001f65]">Student Affairs Office</h1>
+              <p className="text-xs text-[#001f65]/70">Departmental Elections Monitoring</p>
             </div>
           </div>
           
@@ -721,6 +468,7 @@ try {
             <div className="text-center mb-6">
               <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Departmental Elections</h2>
               <p className="text-white/80">Browse elections by department</p>
+              
               {selectedDepartment && (
                 <div className="mt-4">
                   <button
@@ -775,56 +523,26 @@ try {
             <div className="flex justify-center">
               <div className="w-full max-w-6xl">
                 {filteredElections.length === 0 && !selectedDepartment ? (
-                  // Only show add election card when no elections and no department selected
+                  // No elections message
                   <div className="flex justify-center">
-                    <div
-                      onClick={handleAddElection}
-                      className="w-full max-w-xs bg-white/10 backdrop-blur-sm rounded-2xl border-2 border-dashed border-white/30 p-8 hover:bg-white/20 hover:border-white/50 transition-all duration-200 cursor-pointer group flex flex-col items-center justify-center text-center aspect-[3/4]"
-                    >
-                      <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-200">
-                        <Plus className="w-8 h-8 text-white" />
+                    <div className="w-full max-w-md bg-white/10 backdrop-blur-sm rounded-2xl border border-white/30 p-8 text-center">
+                      <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-4 mx-auto">
+                        <FileText className="w-8 h-8 text-white" />
                       </div>
-                      <h3 className="text-xl font-bold text-white mb-2">Add Election</h3>
-                      <p className="text-blue-100 text-sm">Create a new departmental election</p>
+                      <h3 className="text-xl font-bold text-white mb-2">No Elections Available</h3>
+                      <p className="text-blue-100 text-sm">There are currently no departmental elections to monitor.</p>
                     </div>
                   </div>
                 ) : filteredElections.length === 0 && selectedDepartment ? (
-                  // Show message and add button when no elections for selected department
+                  // Show message when no elections for selected department
                   <div className="text-center">
                     <div className="mb-6">
                       <h3 className="text-xl font-bold text-white mb-2">No Elections Found</h3>
                       <p className="text-blue-100">No elections found for {selectedDepartment.departmentCode} - {selectedDepartment.degreeProgram}</p>
                     </div>
-                    <div
-                      onClick={handleAddElection}
-                      className="inline-block bg-white/10 backdrop-blur-sm rounded-2xl border-2 border-dashed border-white/30 p-8 hover:bg-white/20 hover:border-white/50 transition-all duration-200 cursor-pointer group"
-                    >
-                      <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-4 mx-auto group-hover:scale-110 transition-transform duration-200">
-                        <Plus className="w-8 h-8 text-white" />
-                      </div>
-                      <h3 className="text-lg font-bold text-white mb-2">Add Election</h3>
-                      <p className="text-blue-100 text-sm">Create election for {selectedDepartment.departmentCode}</p>
-                    </div>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 justify-items-center">
-                    {/* Add Election Card */}
-                    <div
-                      onClick={handleAddElection}
-                      className="w-full max-w-xs bg-white/10 backdrop-blur-sm rounded-2xl border-2 border-dashed border-white/30 p-8 hover:bg-white/20 hover:border-white/50 transition-all duration-200 cursor-pointer group flex flex-col items-center justify-center text-center aspect-[3/4]"
-                    >
-                      <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-200">
-                        <Plus className="w-8 h-8 text-white" />
-                      </div>
-                      <h3 className="text-xl font-bold text-white mb-2">Add Election</h3>
-                      <p className="text-blue-100 text-sm">
-                        {selectedDepartment ? 
-                          `Create election for ${selectedDepartment.departmentCode}` : 
-                          'Create a new departmental election'
-                        }
-                      </p>
-                    </div>
-
                     {/* Election Cards */}
                     {filteredElections.map((election) => (
                       <div
@@ -836,10 +554,13 @@ try {
                         
                         <div className="relative z-10 flex-1 flex flex-col">
                           {/* Status Badge */}
-                          <div className="flex justify-end mb-4">
+                          <div className="flex justify-between items-start mb-4">
                             <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(election.status)}`}>
                               {election.status || 'upcoming'}
                             </span>
+                            <div className="bg-blue-500/20 text-blue-100 rounded-full p-1">
+                              <Eye className="w-3 h-3" />
+                            </div>
                           </div>
 
                           {/* Election Info */}
@@ -863,25 +584,12 @@ try {
                             </p>
                           </div>
 
-                          {/* Action Icons */}
-                          <div className="flex justify-center gap-4 mt-auto">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                router.push(`/ecommittee/departmental/status?deptElectionId=${election._id || election.id}`)
-                              }}
-                              className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
-                              title="Manage Election Status"
-                            >
-                              <Settings className="w-5 h-5 text-white" />
-                            </button>
-                            <button
-                              onClick={(e) => handleDeleteElection(election._id || election.id, e)}
-                              className="w-10 h-10 bg-red-500/30 rounded-full flex items-center justify-center hover:bg-red-500/50 transition-colors"
-                              title="Delete Election"
-                            >
-                              <Trash2 className="w-5 h-5 text-white" />
-                            </button>
+                          {/* View Indicator */}
+                          <div className="flex justify-center mt-auto">
+                            <div className="flex items-center text-blue-100 text-sm">
+                              <Eye className="w-4 h-4 mr-1" />
+                              <span>Click to monitor</span>
+                            </div>
                           </div>
                         </div>
                       </div>

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ssgElectionsAPI } from "@/lib/api/ssgElections"
 import { positionsAPI } from "@/lib/api/positions"
+import { authAPI } from "@/lib/api/auth"
 import SSGLayout from "@/components/SSGLayout"
 import Swal from 'sweetalert2'
 import { 
@@ -94,7 +95,6 @@ export default function StatisticsPage() {
     e.preventDefault()
     setAuthError('')
 
-    // Simple password check - in production, this should be more secure
     if (password === 'election_committee') {
       setIsAuthenticated(true)
       setPassword('')
@@ -324,7 +324,7 @@ export default function StatisticsPage() {
             <div className="text-center mb-6">
               <Lock className="w-12 h-12 mx-auto text-[#001f65] mb-4" />
               <h2 className="text-2xl font-bold text-[#001f65] mb-2">Restricted Access</h2>
-              <p className="text-gray-600">Enter the committee password to view statistics</p>
+              <p className="text-gray-600">Enter password to view statistics</p>
             </div>
 
             <form onSubmit={handlePasswordSubmit} className="space-y-4">

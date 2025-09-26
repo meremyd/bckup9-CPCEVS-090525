@@ -5,28 +5,23 @@ import BackgroundWrapper from '@/components/BackgroundWrapper'
 import { 
   Home, 
   Users, 
-  Clipboard, 
-  User, 
-  Vote,
   TrendingUp, 
   BarChart3,
   Menu,
   X,
   LayoutDashboard,
   LogOut,
-  Settings,
   Loader2,
   ArrowLeft,
-  AlertCircle,
-  UserCheck
+  AlertCircle
 } from "lucide-react"
 
-// Departmental Layout Component for consistent sidebar and header
-export default function DepartmentalLayout({ 
+// SAO Departmental Layout Component for consistent sidebar and header
+export default function SAODepartmentalLayout({ 
   children, 
   deptElectionId, 
-  title = "Departmental Management", 
-  subtitle = "Manage Election", 
+  title = "SAO - Departmental Election", 
+  subtitle = "View Election Data", 
   activeItem = "", 
   showBackButton = true,
   headerAction = null
@@ -52,29 +47,29 @@ export default function DepartmentalLayout({
       const parsedUser = JSON.parse(userData)
       setUser(parsedUser)
 
-      if (parsedUser.userType !== "election_committee") {
+      if (parsedUser.userType !== "sao") {
         router.push("/adminlogin")
         return
       }
 
-      console.log('DepartmentalLayout - deptElectionId:', deptElectionId)
+      console.log('SAODepartmentalLayout - deptElectionId:', deptElectionId)
 
       // Try to get election from localStorage first for better UX
       if (deptElectionId) {
         const storedElection = localStorage.getItem('selectedDepartmentalElection')
-        console.log('DepartmentalLayout - stored election:', storedElection)
+        console.log('SAODepartmentalLayout - stored election:', storedElection)
         
         if (storedElection) {
           try {
             const parsed = JSON.parse(storedElection)
-            console.log('DepartmentalLayout - parsed stored election:', parsed)
+            console.log('SAODepartmentalLayout - parsed stored election:', parsed)
             if (parsed._id === deptElectionId || parsed.id === deptElectionId) {
               setElection(parsed)
               setLoading(false)
               return
             }
           } catch (e) {
-            console.warn('DepartmentalLayout - error parsing stored election:', e)
+            console.warn('SAODepartmentalLayout - error parsing stored election:', e)
             localStorage.removeItem('selectedDepartmentalElection')
           }
         }
@@ -141,7 +136,7 @@ export default function DepartmentalLayout({
 
   const handleBackToElections = () => {
     localStorage.removeItem("selectedDepartmentalElection")
-    router.push('/ecommittee/departmental')
+    router.push('/sao/departmental')
   }
 
   const getStatusColor = (status) => {
@@ -159,12 +154,12 @@ export default function DepartmentalLayout({
     }
   }
 
-  // Sidebar items
+  // Sidebar items - SAO specific navigation
   const sidebarItems = [
     { 
       icon: LayoutDashboard, 
-      label: "Main Dashboard", 
-      path: "/ecommittee/dashboard" 
+      label: "SAO Dashboard", 
+      path: "/sao/dashboard" 
     },
     { 
       icon: Home, 
@@ -172,42 +167,23 @@ export default function DepartmentalLayout({
       onClick: handleBackToElections
     },
     { 
-      icon: Settings, 
-      label: "Status", 
-      path: `/ecommittee/departmental/status?deptElectionId=${deptElectionId}`,
-      active: activeItem === 'status'
-    },
-    { 
-      icon: Clipboard, 
-      label: "Position", 
-      path: `/ecommittee/departmental/position?deptElectionId=${deptElectionId}`,
-      active: activeItem === 'position'
-    },
-    { 
       icon: Users, 
       label: "Candidates", 
-      path: `/ecommittee/departmental/candidates?deptElectionId=${deptElectionId}`,
+      path: `/sao/departmental/candidates?deptElectionId=${deptElectionId}`,
       active: activeItem === 'candidates'
     },
     { 
-      icon: Vote, 
-      label: "Ballot", 
-      path: `/ecommittee/departmental/ballot?deptElectionId=${deptElectionId}`,
-      active: activeItem === 'ballot'
+      icon: BarChart3, 
+      label: "Results", 
+      path: `/sao/departmental/results?deptElectionId=${deptElectionId}`,
+      active: activeItem === 'results'
     },
     { 
       icon: TrendingUp, 
       label: "Voter Turnout", 
-      path: `/ecommittee/departmental/voterTurnout?deptElectionId=${deptElectionId}`,
+      path: `/sao/departmental/voterTurnout?deptElectionId=${deptElectionId}`,
       active: activeItem === 'voterTurnout'
-    },
-    { 
-      icon: BarChart3, 
-      label: "Statistics", 
-      path: `/ecommittee/departmental/statistics?deptElectionId=${deptElectionId}`,
-      active: activeItem === 'statistics'
     }
-    
   ]
 
   if (loading && deptElectionId) {
@@ -267,12 +243,12 @@ export default function DepartmentalLayout({
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         } lg:translate-x-0`}
         style={{
-          background: 'linear-gradient(135deg, #001f65 0%, #6895fd 100%)'
+          background: 'linear-gradient(135deg, #001f65 0%, #003399 100%)'
         }}>
           <div className="p-6 flex flex-col h-full">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="text-xl font-bold text-white">Election Committee</h2>
+                <h2 className="text-xl font-bold text-white">Student Affairs Office</h2>
                 <div className="flex items-center gap-2 mt-1">
                   <p className="text-sm text-white/70 truncate">{departmentalElection?.title || 'Departmental Election'}</p>
                 </div>
@@ -344,7 +320,7 @@ export default function DepartmentalLayout({
           )}
           <div className="text-center flex-1">
             <h1 className="text-lg font-bold text-[#001f65]">{title}</h1>
-            <p className="text-xs text-[#001f65]/60">{departmentalElection?.title || subtitle}</p>
+            <p className="text-xs text-[#001f65]/70">{deptElectionId?.title || subtitle}</p>
           </div>
           {showBackButton && (
             <button
@@ -371,13 +347,9 @@ export default function DepartmentalLayout({
               <div className="flex items-center">
                 <div className="w-8 h-8 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-lg flex items-center justify-center mr-3 shadow-lg">
                   {activeItem === 'candidates' && <Users className="w-5 h-5 text-white" />}
-                  {activeItem === 'status' && <Settings className="w-5 h-5 text-white" />}
-                  {activeItem === 'position' && <Clipboard className="w-5 h-5 text-white" />}
-                  {activeItem === 'officers' && <UserCheck className="w-5 h-5 text-white" />}
-                  {activeItem === 'ballot' && <Vote className="w-5 h-5 text-white" />}
-                  {activeItem === 'statistics' && <BarChart3 className="w-5 h-5 text-white" />}
+                  {activeItem === 'results' && <BarChart3 className="w-5 h-5 text-white" />}
                   {activeItem === 'voterTurnout' && <TrendingUp className="w-5 h-5 text-white" />}
-                  {!activeItem && <Settings className="w-5 h-5 text-white" />}
+                  {!activeItem && <LayoutDashboard className="w-5 h-5 text-white" />}
                 </div>
                 <div>
                   <h1 className="text-2xl font-bold text-white">{title}</h1>

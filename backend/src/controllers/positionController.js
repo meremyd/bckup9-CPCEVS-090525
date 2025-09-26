@@ -919,7 +919,7 @@ static async getSSGPositionCandidateLimits(req, res) {
   }
 }
 
-// NEW: Validate if position can be deleted based on candidate limits
+// Validate if position can be deleted based on candidate limits
 static async validateSSGPositionDeletion(req, res) {
   try {
     const { positionId } = req.params

@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { ssgElectionsAPI } from "@/lib/api/ssgElections"
 import { electionParticipationAPI } from "@/lib/api/electionParticipation"
 import { departmentsAPI } from "@/lib/api/departments"
 import { votersAPI } from "@/lib/api/voters"
@@ -10,34 +9,39 @@ import SSGLayout from "@/components/SSGLayout"
 import Swal from 'sweetalert2'
 import { 
   Users,
-  Vote,
-  UserCheck,
-  Building,
-  AlertCircle,
-  Loader2,
   Search,
-  TrendingUp,
-  TrendingDown,
-  BarChart3,
-  Percent,
+  AlertCircle,
+  CheckCircle,
+  Building2,
+  Loader2,
+  Filter,
+  UserCheck,
+  UserX,
   Clock,
-  CheckCircle2
+  RefreshCw,
+  Download,
+  TrendingUp,
+  BarChart3
 } from "lucide-react"
 
-export default function VoterTurnoutPage() {
-  const [ssgElectionData, setSSGElectionData] = useState(null)
+export default function SSGVoterTurnoutPage() {
+  const [participants, setParticipants] = useState([])
   const [departments, setDepartments] = useState([])
-  const [participationStats, setParticipationStats] = useState(null)
-  const [turnoutData, setTurnoutData] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [filteredParticipants, setFilteredParticipants] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [searchLoading, setSearchLoading] = useState(false)
   const [error, setError] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
-  const [totalStats, setTotalStats] = useState({
-    totalRegisteredVoters: 0,
-    totalParticipants: 0,
-    totalVoted: 0,
-    turnoutRate: 0
-  })
+  const [selectedDepartment, setSelectedDepartment] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [stats, setStats] = useState(null)
+  const [voterStats, setVoterStats] = useState(null)
+  
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalParticipants, setTotalParticipants] = useState(0)
+  const itemsPerPage = 20
 
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -54,7 +58,7 @@ export default function VoterTurnoutPage() {
 
     try {
       const parsedUser = JSON.parse(userData)
-      if (parsedUser.userType !== "election_committee") {
+      if (parsedUser.userType !== "election_committee" && parsedUser.userType !== "admin" && parsedUser.userType !== "sao") {
         router.push("/adminlogin")
         return
       }
@@ -65,151 +69,257 @@ export default function VoterTurnoutPage() {
     }
 
     if (ssgElectionId) {
-      fetchData()
-    }
-  }, [ssgElectionId, router])
-
-  const fetchData = async () => {
-    setLoading(true)
-    setError('')
-    
-    try {
-      await Promise.all([
-        fetchElectionData(),
+      Promise.all([
+        fetchParticipants(),
         fetchDepartments(),
-        fetchParticipationStats(),
-        fetchTurnoutData()
+        fetchStats(),
+        fetchVoterStats()
       ])
-    } catch (error) {
-      console.error("Error fetching data:", error)
-    } finally {
+    } else {
+      setError('No election ID provided')
       setLoading(false)
     }
-  }
+  }, [ssgElectionId, router, currentPage])
 
-  const fetchElectionData = async () => {
+  useEffect(() => {
+    applyFilters()
+  }, [participants, searchTerm, selectedDepartment, statusFilter])
+
+  const fetchParticipants = async () => {
     try {
-      const response = await ssgElectionsAPI.getById(ssgElectionId)
-      setSSGElectionData(response.data)
+      setError('')
+      const response = await electionParticipationAPI.getElectionParticipants(
+        ssgElectionId, 
+        'ssg',
+        {
+          page: currentPage,
+          limit: itemsPerPage
+        }
+      )
+      
+      setParticipants(response.participants || [])
+      setTotalPages(Math.ceil((response.total || 0) / itemsPerPage))
+      setTotalParticipants(response.total || 0)
+      
     } catch (error) {
-      console.error("Error fetching election data:", error)
-      handleAPIError(error, 'Failed to load election data')
+      console.error("Error fetching participants:", error)
+      handleApiError(error, "Failed to load voter participants")
     }
   }
 
   const fetchDepartments = async () => {
     try {
       const response = await departmentsAPI.getAll()
-      setDepartments(response.data || [])
+      setDepartments(response.departments || [])
     } catch (error) {
       console.error("Error fetching departments:", error)
-      handleAPIError(error, 'Failed to load departments')
     }
   }
 
-  const fetchParticipationStats = async () => {
+  const fetchStats = async () => {
     try {
-      const response = await electionParticipationAPI.ssg.getStats(ssgElectionId)
-      setParticipationStats(response.data)
-      
-      // Calculate total stats
-      const totalRegistered = response.data?.totalEligibleVoters || 0
-      const totalParticipants = response.data?.totalParticipants || 0
-      const totalVoted = response.data?.totalVoted || 0
-      const turnoutRate = totalRegistered > 0 ? ((totalVoted / totalRegistered) * 100) : 0
-      
-      setTotalStats({
-        totalRegisteredVoters: totalRegistered,
-        totalParticipants: totalParticipants,
-        totalVoted: totalVoted,
-        turnoutRate: parseFloat(turnoutRate.toFixed(2))
-      })
+      const response = await electionParticipationAPI.getElectionStats(ssgElectionId, 'ssg')
+      console.log('Election stats response:', response)
+      // Handle different response structures
+      setStats(response.data || response)
     } catch (error) {
-      console.error("Error fetching participation stats:", error)
-      handleAPIError(error, 'Failed to load participation statistics')
+      console.error("Error fetching stats:", error)
     }
   }
 
-  const fetchTurnoutData = async () => {
+  const fetchVoterStats = async () => {
     try {
-      const response = await ssgElectionsAPI.getTurnout(ssgElectionId)
-      setTurnoutData(response.data?.byDepartment || [])
+      const response = await votersAPI.getStatistics()
+      console.log('Voter stats response:', response)
+      // Handle different response structures
+      setVoterStats(response.data || response)
     } catch (error) {
-      console.error("Error fetching turnout data:", error)
-      handleAPIError(error, 'Failed to load turnout data')
+      console.error("Error fetching voter stats:", error)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const handleAPIError = (error, defaultMessage) => {
+  const handleApiError = (error, defaultMessage) => {
     let errorMessage = defaultMessage
 
-    if (error.response?.status === 429) {
-      errorMessage = "Too many requests. Please try again in a moment."
-    } else if (error.response?.status >= 500) {
-      errorMessage = "Server error. Please try again later."
+    if (error.response) {
+      const status = error.response.status
+      const message = error.response.data?.message || error.message
+
+      switch (status) {
+        case 429:
+          errorMessage = message.includes('login attempts') 
+            ? 'Too many login attempts. Please wait 15 minutes before trying again.'
+            : 'Too many requests. Please wait a moment and try again.'
+          break
+        case 403:
+          errorMessage = "You don't have permission to view this data."
+          break
+        case 404:
+          errorMessage = "Election or data not found."
+          break
+        case 500:
+          errorMessage = "Server error. Please try again later."
+          break
+        case 0:
+        case undefined:
+          errorMessage = "Network error. Please check your connection and try again."
+          break
+        default:
+          errorMessage = message || defaultMessage
+      }
     } else if (error.code === 'NETWORK_ERROR' || !navigator.onLine) {
-      errorMessage = "Network error. Please check your connection."
-    } else if (error.response?.data?.message) {
-      errorMessage = error.response.data.message
-    } else if (error.message) {
-      errorMessage = error.message
+      errorMessage = "Network error. Please check your connection and try again."
+    } else {
+      errorMessage = error.message || defaultMessage
     }
 
     setError(errorMessage)
     
-    Swal.fire({
-      icon: 'error',
-      title: 'Error',
-      text: errorMessage,
-      confirmButtonColor: '#001f65'
-    })
+    if (error.response?.status === 403 || error.response?.status === 404) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Access Error',
+        text: errorMessage,
+        confirmButtonColor: '#001f65'
+      })
+    }
   }
 
-  const refreshData = async () => {
-    await fetchData()
+  const applyFilters = () => {
+    setSearchLoading(true)
     
-    Swal.fire({
-      icon: 'success',
-      title: 'Refreshed!',
-      text: 'Data has been updated successfully.',
-      timer: 2000,
-      showConfirmButton: false,
-      toast: true,
-      position: 'top-end'
+    let filtered = [...participants]
+
+    if (selectedDepartment !== 'all') {
+      filtered = filtered.filter(participant => 
+        participant.voterId?.departmentId?._id === selectedDepartment ||
+        participant.voterId?.departmentId?.departmentCode === selectedDepartment
+      )
+    }
+
+    if (statusFilter !== 'all') {
+      switch (statusFilter) {
+        case 'confirmed':
+          filtered = filtered.filter(p => p.status === 'confirmed')
+          break
+        case 'voted':
+          filtered = filtered.filter(p => p.hasVoted === true)
+          break
+        case 'not_voted':
+          filtered = filtered.filter(p => p.hasVoted === false)
+          break
+      }
+    }
+
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase()
+      filtered = filtered.filter(participant => {
+        const voter = participant.voterId
+        if (!voter) return false
+        
+        const fullName = `${voter.firstName} ${voter.lastName}`.toLowerCase()
+        const schoolId = voter.schoolId?.toString().toLowerCase() || ''
+        const departmentCode = voter.departmentId?.departmentCode?.toLowerCase() || ''
+        const departmentName = voter.departmentId?.degreeProgram?.toLowerCase() || ''
+        
+        return fullName.includes(term) || 
+               schoolId.includes(term) || 
+               departmentCode.includes(term) ||
+               departmentName.includes(term)
+      })
+    }
+
+    setFilteredParticipants(filtered)
+    setTimeout(() => setSearchLoading(false), 300)
+  }
+
+  const handleRefresh = async () => {
+    setLoading(true)
+    setError('')
+    await Promise.all([
+      fetchParticipants(),
+      fetchStats(),
+      fetchVoterStats()
+    ])
+  }
+
+  const handleExport = () => {
+    const headers = ['School ID', 'Name', 'Department', 'Year Level', 'Status', 'Has Voted', 'Participation Date']
+    const csvData = filteredParticipants.map(participant => {
+      const voter = participant.voterId
+      return [
+        voter?.schoolId || 'N/A',
+        `${voter?.firstName || ''} ${voter?.lastName || ''}`.trim() || 'N/A',
+        voter?.departmentId?.departmentCode || 'N/A',
+        voter?.yearLevel || 'N/A',
+        participant.status || 'N/A',
+        participant.hasVoted ? 'Yes' : 'No',
+        participant.participationDate ? new Date(participant.participationDate).toLocaleDateString() : 'N/A'
+      ]
     })
+    
+    const csvContent = [headers, ...csvData].map(row => row.join(',')).join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `ssg_voter_turnout_${ssgElectionId}.csv`
+    a.click()
+    window.URL.revokeObjectURL(url)
   }
 
-  const getTurnoutColor = (rate) => {
-    if (rate >= 80) return 'text-green-600 bg-green-100'
-    if (rate >= 60) return 'text-yellow-600 bg-yellow-100'
-    if (rate >= 40) return 'text-orange-600 bg-orange-100'
-    return 'text-red-600 bg-red-100'
+  const getDepartmentColor = (index) => {
+    const colors = [
+      'bg-blue-50 border-blue-200 hover:bg-blue-100',
+      'bg-green-50 border-green-200 hover:bg-green-100',
+      'bg-purple-50 border-purple-200 hover:bg-purple-100',
+      'bg-orange-50 border-orange-200 hover:bg-orange-100',
+      'bg-pink-50 border-pink-200 hover:bg-pink-100',
+      'bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
+    ]
+    return colors[index % colors.length]
   }
 
-  const getTurnoutIcon = (rate) => {
-    if (rate >= 60) return <TrendingUp className="w-4 h-4" />
-    return <TrendingDown className="w-4 h-4" />
+  // Calculate voter turnout percentage
+  const calculateVoterTurnout = () => {
+    if (!voterStats || !stats) return 0
+    // Handle different response structures
+    const activeVoters = voterStats?.active || voterStats?.activeCount || voterStats?.totalActive || 0
+    const participantsCount = stats?.totalParticipants || stats?.confirmed || participants.length || 0
+    return activeVoters > 0 ? Math.round((participantsCount / activeVoters) * 100) : 0
   }
 
-  const filteredTurnoutData = turnoutData.filter(dept => {
-    const matchesSearch = dept.departmentName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         dept.departmentCode?.toLowerCase().includes(searchTerm.toLowerCase())
-    return matchesSearch
-  })
+  // Get display values with fallbacks
+  const getDisplayStats = () => {
+    const active = voterStats?.active || voterStats?.activeCount || voterStats?.totalActive || 0
+    const registered = voterStats?.registered || voterStats?.registeredCount || voterStats?.totalRegistered || 0
+    const participantsCount = stats?.totalParticipants || stats?.confirmed || participants.length || 0
+    
+    console.log('Display stats:', { active, registered, participantsCount, voterStats, stats })
+    
+    return {
+      active,
+      registered,
+      participants: participantsCount,
+      turnout: calculateVoterTurnout()
+    }
+  }
 
   if (!ssgElectionId) {
     return (
       <SSGLayout
         ssgElectionId={null}
         title="Voter Turnout"
-        subtitle="Election Participation Analysis"
+        subtitle="Election Participation Analytics"
         activeItem="turnout"
       >
         <div className="min-h-screen flex items-center justify-center">
           <div className="text-center bg-white/10 backdrop-blur-md p-8 rounded-2xl border border-white/20">
             <AlertCircle className="w-12 h-12 mx-auto text-red-400 mb-4" />
             <h3 className="text-xl font-bold text-white mb-2">No Election Selected</h3>
-            <p className="text-white/80 mb-6">Please select an election to view voter turnout data.</p>
+            <p className="text-white/80 mb-6">Please select an election to view voter turnout.</p>
             <button
               onClick={() => router.push('/ecommittee/ssg')}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
@@ -226,232 +336,117 @@ export default function VoterTurnoutPage() {
     <SSGLayout
       ssgElectionId={ssgElectionId}
       title="Voter Turnout"
-      subtitle="Election Participation Analysis"
+      subtitle="Election Participation Analytics"
       activeItem="turnout"
     >
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* Overview Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium text-gray-600 mb-1">Registered Voters</h3>
-                <p className="text-2xl font-bold text-[#001f65]">{totalStats.totalRegisteredVoters.toLocaleString()}</p>
-                <p className="text-xs text-gray-500 mt-1">Eligible to participate</p>
-              </div>
-              <Users className="w-10 h-10 text-[#001f65]/20" />
-            </div>
-          </div>
-
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium text-gray-600 mb-1">Participants</h3>
-                <p className="text-2xl font-bold text-blue-600">{totalStats.totalParticipants.toLocaleString()}</p>
-                <p className="text-xs text-gray-500 mt-1">Confirmed participation</p>
-              </div>
-              <UserCheck className="w-10 h-10 text-blue-600/20" />
-            </div>
-          </div>
-
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium text-gray-600 mb-1">Votes Cast</h3>
-                <p className="text-2xl font-bold text-green-600">{totalStats.totalVoted.toLocaleString()}</p>
-                <p className="text-xs text-gray-500 mt-1">Successfully voted</p>
-              </div>
-              <Vote className="w-10 h-10 text-green-600/20" />
-            </div>
-          </div>
-
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium text-gray-600 mb-1">Turnout Rate</h3>
-                <p className="text-2xl font-bold text-purple-600">{totalStats.turnoutRate}%</p>
-                <div className="flex items-center mt-1">
-                  {getTurnoutIcon(totalStats.turnoutRate)}
-                  <span className="text-xs text-gray-500 ml-1">Overall participation</span>
+        {/* Main Statistics Cards */}
+        {(stats || voterStats) && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-6">
+              <div className="flex items-center">
+                <Users className="w-10 h-10 text-[#001f65] mr-4" />
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Total Active Voters</p>
+                  <p className="text-2xl font-bold text-[#001f65]">{getDisplayStats().active}</p>
                 </div>
               </div>
-              <BarChart3 className="w-10 h-10 text-purple-600/20" />
             </div>
-          </div>
-        </div>
-
-        {/* Main Content */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-            <div>
-              <h2 className="text-xl font-bold text-[#001f65] flex items-center">
-                <Building className="w-6 h-6 mr-2" />
-                Department Turnout Analysis
-              </h2>
-              <p className="text-sm text-gray-600 mt-1">
-                Voter participation breakdown by department
-              </p>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input
-                  type="text"
-                  placeholder="Search departments..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent text-sm"
-                />
+            
+            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-6">
+              <div className="flex items-center">
+                <UserCheck className="w-10 h-10 text-green-600 mr-4" />
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Active Registered</p>
+                  <p className="text-2xl font-bold text-green-600">{getDisplayStats().registered}</p>
+                </div>
               </div>
-              
-              <button
-                onClick={refreshData}
-                disabled={loading}
-                className="flex items-center px-4 py-2 bg-[#001f65] hover:bg-[#003399] text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-              >
-                {loading ? (
-                  <Loader2 className="animate-spin rounded-full h-4 w-4 mr-2" />
-                ) : (
-                  <BarChart3 className="w-4 h-4 mr-2" />
-                )}
-                Refresh Data
-              </button>
+            </div>
+            
+            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-6">
+              <div className="flex items-center">
+                <CheckCircle className="w-10 h-10 text-blue-600 mr-4" />
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Confirmed Participants</p>
+                  <p className="text-2xl font-bold text-blue-600">{getDisplayStats().participants}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-6">
+              <div className="flex items-center">
+                <TrendingUp className="w-10 h-10 text-orange-600 mr-4" />
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Voter Turnout</p>
+                  <p className="text-2xl font-bold text-orange-600">
+                    {getDisplayStats().turnout}%
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
+        )}
 
-          {/* Loading State */}
-          {loading && (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="animate-spin rounded-full h-8 w-8 text-[#001f65]" />
-              <span className="ml-3 text-[#001f65]">Loading turnout data...</span>
+        {/* Department Filter Cards */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-bold text-white mb-4 flex items-center">
+            <BarChart3 className="w-5 h-5 mr-2" />
+            Turnout by Department
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            <div
+              onClick={() => setSelectedDepartment('all')}
+              className={`p-4 rounded-xl border-2 cursor-pointer transition-colors ${
+                selectedDepartment === 'all'
+                  ? 'bg-[#001f65] text-white border-[#001f65]'
+                  : 'bg-white/90 backdrop-blur-sm border-white/20 hover:bg-white/95'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <Building2 className="w-6 h-6 mb-2" />
+                  <h4 className="font-semibold">All Departments</h4>
+                  <p className="text-sm opacity-80">Total Participants</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-bold">{participants.length}</p>
+                  <p className="text-sm opacity-80">{getDisplayStats().turnout}%</p>
+                </div>
+              </div>
             </div>
-          )}
 
-          {/* Department Cards Grid */}
-          {!loading && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredTurnoutData.map((dept) => {
-                const turnoutRate = dept.registeredVoters > 0 
-                  ? ((dept.voted / dept.registeredVoters) * 100) 
-                  : 0
-                const participationRate = dept.registeredVoters > 0 
-                  ? ((dept.participants / dept.registeredVoters) * 100) 
-                  : 0
-
-                return (
-                  <div
-                    key={dept._id || dept.departmentCode}
-                    className="bg-gradient-to-br from-white to-gray-50 rounded-xl shadow-md border border-gray-200 p-6 hover:shadow-lg transition-all duration-200"
-                  >
-                    {/* Department Header */}
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-[#001f65] text-lg truncate">
-                          {dept.departmentName || dept.name}
-                        </h3>
-                        <p className="text-sm text-gray-600 font-mono">
-                          {dept.departmentCode || dept.code}
-                        </p>
-                      </div>
-                      <div className={`px-2 py-1 rounded-full text-xs font-medium ${getTurnoutColor(turnoutRate)}`}>
-                        {turnoutRate.toFixed(1)}%
-                      </div>
+            {departments.map((dept, index) => {
+              const deptParticipants = participants.filter(p => 
+                p.voterId?.departmentId?._id === dept._id
+              )
+              const deptVoters = voterStats?.byDepartment?.[dept._id]?.active || 0
+              const deptTurnout = deptVoters > 0 ? Math.round((deptParticipants.length / deptVoters) * 100) : 0
+              
+              return (
+                <div
+                  key={dept._id}
+                  onClick={() => setSelectedDepartment(dept._id)}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition-colors ${
+                    selectedDepartment === dept._id
+                      ? 'bg-[#001f65] text-white border-[#001f65]'
+                      : 'bg-white/90 backdrop-blur-sm border-white/20 hover:bg-white/95'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Building2 className="w-6 h-6 mb-2" />
+                      <h4 className="font-semibold">{dept.departmentCode}</h4>
+                      <p className="text-xs opacity-80">{dept.degreeProgram}</p>
                     </div>
-
-                    {/* Statistics */}
-                    <div className="space-y-3">
-                      {/* Registered Voters */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                          <Users className="w-4 h-4 text-gray-500 mr-2" />
-                          <span className="text-sm text-gray-600">Registered</span>
-                        </div>
-                        <span className="font-medium text-gray-900">
-                          {(dept.registeredVoters || 0).toLocaleString()}
-                        </span>
-                      </div>
-
-                      {/* Participants */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                          <UserCheck className="w-4 h-4 text-blue-500 mr-2" />
-                          <span className="text-sm text-gray-600">Participants</span>
-                        </div>
-                        <div className="flex items-center">
-                          <span className="font-medium text-gray-900 mr-2">
-                            {(dept.participants || 0).toLocaleString()}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            ({participationRate.toFixed(1)}%)
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Voted */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                          <CheckCircle2 className="w-4 h-4 text-green-500 mr-2" />
-                          <span className="text-sm text-gray-600">Voted</span>
-                        </div>
-                        <div className="flex items-center">
-                          <span className="font-medium text-gray-900 mr-2">
-                            {(dept.voted || 0).toLocaleString()}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            ({turnoutRate.toFixed(1)}%)
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Progress Bar */}
-                      <div className="mt-4">
-                        <div className="flex justify-between text-xs text-gray-500 mb-1">
-                          <span>Turnout Progress</span>
-                          <span>{turnoutRate.toFixed(1)}%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className={`h-2 rounded-full transition-all duration-300 ${
-                              turnoutRate >= 80 ? 'bg-green-500' :
-                              turnoutRate >= 60 ? 'bg-yellow-500' :
-                              turnoutRate >= 40 ? 'bg-orange-500' : 'bg-red-500'
-                            }`}
-                            style={{ width: `${Math.min(turnoutRate, 100)}%` }}
-                          />
-                        </div>
-                      </div>
+                    <div className="text-right">
+                      <p className="text-xl font-bold">{deptParticipants.length}</p>
+                      <p className="text-sm opacity-80">{deptTurnout}%</p>
                     </div>
                   </div>
-                )
-              })}
-            </div>
-          )}
-
-          {/* Empty State */}
-          {!loading && filteredTurnoutData.length === 0 && (
-            <div className="text-center py-12">
-              <Building className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                {searchTerm ? 'No departments match your search' : 'No turnout data available'}
-              </h3>
-              <p className="text-gray-500 mb-4">
-                {searchTerm 
-                  ? 'Try adjusting your search terms.'
-                  : 'Turnout data will appear here once voting begins.'
-                }
-              </p>
-              {searchTerm && (
-                <button
-                  onClick={() => setSearchTerm('')}
-                  className="text-[#001f65] hover:text-[#003399] font-medium"
-                >
-                  Clear search
-                </button>
-              )}
-            </div>
-          )}
+                </div>
+              )
+            })}
+          </div>
         </div>
 
         {/* Error Alert */}
@@ -463,33 +458,184 @@ export default function VoterTurnoutPage() {
               onClick={() => setError('')}
               className="ml-auto text-red-500 hover:text-red-700"
             >
-              <X className="w-4 h-4" />
+              ×
             </button>
           </div>
         )}
 
-        {/* Election Info */}
-        {ssgElectionData && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-center">
-              <Clock className="w-5 h-5 text-blue-500 mr-3 flex-shrink-0" />
-              <div>
-                <h4 className="font-medium text-blue-900">
-                  {ssgElectionData.title} - {ssgElectionData.electionYear}
-                </h4>
-                <p className="text-blue-700 text-sm">
-                  Status: <span className="font-medium capitalize">{ssgElectionData.status}</span>
-                  {ssgElectionData.startDate && (
-                    <span className="ml-2">
-                      • Starts: {new Date(ssgElectionData.startDate).toLocaleDateString()}
-                    </span>
-                  )}
-                  {ssgElectionData.endDate && (
-                    <span className="ml-2">
-                      • Ends: {new Date(ssgElectionData.endDate).toLocaleDateString()}
-                    </span>
-                  )}
-                </p>
+        {/* Participants Table with integrated search and filters */}
+        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 overflow-hidden">
+          {/* Table Header with Search and Filters */}
+          <div className="p-6 border-b border-gray-200">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              {/* Left side - Search */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="text"
+                  placeholder="Search participants..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent w-full md:w-64"
+                />
+                {searchLoading && (
+                  <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 animate-spin w-4 h-4 text-gray-400" />
+                )}
+              </div>
+
+              {/* Right side - Filters and Actions */}
+              <div className="flex items-center gap-4">
+                <div className="flex items-center">
+                  <Filter className="w-5 h-5 text-[#001f65] mr-2" />
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="confirmed">Confirmed Only</option>
+                    <option value="voted">Voted</option>
+                    <option value="not_voted">Not Voted</option>
+                  </select>
+                </div>
+                
+                <button
+                  onClick={handleRefresh}
+                  disabled={loading}
+                  className="flex items-center px-3 py-2 text-[#001f65] hover:bg-[#001f65]/10 rounded-lg transition-colors"
+                >
+                  <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
+
+                <button
+                  onClick={handleExport}
+                  className="flex items-center px-3 py-2 text-[#001f65] hover:bg-[#001f65]/10 rounded-lg transition-colors"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Export CSV
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="p-12 text-center">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#001f65]" />
+              <p className="text-gray-600">Loading voter turnout data...</p>
+            </div>
+          ) : filteredParticipants.length === 0 ? (
+            <div className="p-12 text-center">
+              <UserX className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+              <h3 className="text-lg font-semibold text-gray-600 mb-2">No Participants Found</h3>
+              <p className="text-gray-500">
+                {searchTerm || selectedDepartment !== 'all' || statusFilter !== 'all'
+                  ? 'Try adjusting your filters or search term.'
+                  : 'No voters have confirmed their participation yet.'
+                }
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-[#b0c8fe]/20">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                      School ID
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                      Name
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                      Department
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                      Year Level
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                      Voted
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                      Participation Date
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {filteredParticipants.map((participant, index) => {
+                    const voter = participant.voterId
+                    return (
+                      <tr key={participant._id || index} className="hover:bg-[#b0c8fe]/10">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {voter?.schoolId || 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {`${voter?.firstName || ''} ${voter?.lastName || ''}`.trim() || 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div>
+                            <div className="font-medium">{voter?.departmentId?.departmentCode || 'N/A'}</div>
+                            <div className="text-xs text-gray-500">{voter?.departmentId?.degreeProgram || ''}</div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {voter?.yearLevel || 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2 py-1 text-xs rounded-full font-medium ${
+                            participant.status === 'confirmed'
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {participant.status?.toUpperCase() || 'UNKNOWN'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {participant.hasVoted ? (
+                            <CheckCircle className="w-5 h-5 text-green-500" />
+                          ) : (
+                            <Clock className="w-5 h-5 text-gray-400" />
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {participant.participationDate 
+                            ? new Date(participant.participationDate).toLocaleDateString()
+                            : 'N/A'
+                          }
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                Showing page {currentPage} of {totalPages} ({totalParticipants} total participants)
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                >
+                  Next
+                </button>
               </div>
             </div>
           </div>
