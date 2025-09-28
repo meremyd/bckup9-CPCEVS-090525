@@ -3,236 +3,431 @@ const SSGElection = require("../models/SSGElection")
 const DepartmentalElection = require("../models/DepartmentalElection")
 const Voter = require("../models/Voter")
 const AuditLog = require("../models/AuditLog")
+const PDFDocument = require('pdfkit')
 
 class ElectionParticipationController {
-  // Confirm participation in an election (SSG or Departmental)
-  static async confirmParticipation(req, res, next) {
+  // Confirm participation in SSG election
+  static async confirmSSGParticipation(req, res, next) {
     try {
-      const { electionId, electionType } = req.body
+      const { ssgElectionId } = req.body
       const voterId = req.user.voterId
 
-      if (!electionId || !electionType) {
-        return res.status(400).json({ message: "Election ID and election type are required" })
+      if (!ssgElectionId) {
+        return res.status(400).json({ message: "SSG Election ID is required" })
       }
 
-      if (!['ssg', 'departmental'].includes(electionType)) {
-        return res.status(400).json({ message: "Election type must be 'ssg' or 'departmental'" })
+      // Verify SSG election exists and is available
+      const ssgElection = await SSGElection.findById(ssgElectionId)
+      if (!ssgElection) {
+        return res.status(404).json({ message: "SSG Election not found" })
       }
 
-      // Verify voter exists and get voter info
+      if (!['upcoming', 'active'].includes(ssgElection.status)) {
+        return res.status(400).json({ message: "This SSG election is not available for participation" })
+      }
+
+      // Check eligibility using model method
+      const eligibilityCheck = await ElectionParticipation.checkParticipationEligibility(
+        voterId, 
+        ssgElectionId, 
+        'ssg'
+      )
+
+      if (!eligibilityCheck.eligible) {
+        return res.status(400).json({ message: eligibilityCheck.reason })
+      }
+
+      // Create participation record
+      const participation = new ElectionParticipation({
+        voterId,
+        ssgElectionId,
+        departmentId: eligibilityCheck.voter.departmentId._id
+      })
+
+      await participation.save()
+
+      // Populate for response
+      await participation.populate([
+        { 
+          path: 'voterId', 
+          select: 'schoolId firstName middleName lastName departmentId',
+          populate: {
+            path: 'departmentId',
+            select: 'departmentCode degreeProgram college'
+          }
+        },
+        { path: 'ssgElectionId', select: 'title electionDate status electionYear' }
+      ])
+
+      await AuditLog.logVoterAction(
+        "ELECTION_PARTICIPATION",
+        eligibilityCheck.voter,
+        `Confirmed participation in SSG election: ${ssgElection.title}`,
+        req
+      )
+
+      res.status(201).json({
+        message: "SSG election participation confirmed successfully",
+        participation
+      })
+    } catch (error) {
+      if (error.code === 11000) {
+        return res.status(400).json({ message: "You have already confirmed participation in this SSG election" })
+      }
+      next(error)
+    }
+  }
+
+  // Confirm participation in Departmental election
+  static async confirmDepartmentalParticipation(req, res, next) {
+    try {
+      const { deptElectionId } = req.body
+      const voterId = req.user.voterId
+
+      if (!deptElectionId) {
+        return res.status(400).json({ message: "Departmental Election ID is required" })
+      }
+
+      // Verify departmental election exists and is available
+      const deptElection = await DepartmentalElection.findById(deptElectionId).populate('departmentId')
+      if (!deptElection) {
+        return res.status(404).json({ message: "Departmental Election not found" })
+      }
+
+      if (!['upcoming', 'active'].includes(deptElection.status)) {
+        return res.status(400).json({ message: "This departmental election is not available for participation" })
+      }
+
+      // Check eligibility using model method
+      const eligibilityCheck = await ElectionParticipation.checkParticipationEligibility(
+        voterId, 
+        deptElectionId, 
+        'departmental'
+      )
+
+      if (!eligibilityCheck.eligible) {
+        return res.status(400).json({ message: eligibilityCheck.reason })
+      }
+
+      // Create participation record
+      const participation = new ElectionParticipation({
+        voterId,
+        deptElectionId,
+        departmentId: eligibilityCheck.voter.departmentId._id
+      })
+
+      await participation.save()
+
+      // Populate for response
+      await participation.populate([
+        { 
+          path: 'voterId', 
+          select: 'schoolId firstName middleName lastName departmentId yearLevel isClassOfficer',
+          populate: {
+            path: 'departmentId',
+            select: 'departmentCode degreeProgram college'
+          }
+        },
+        { 
+          path: 'deptElectionId', 
+          select: 'title electionDate status electionYear departmentId',
+          populate: {
+            path: 'departmentId',
+            select: 'departmentCode degreeProgram college'
+          }
+        }
+      ])
+
+      await AuditLog.logVoterAction(
+        "ELECTION_PARTICIPATION",
+        eligibilityCheck.voter,
+        `Confirmed participation in Departmental election: ${deptElection.title}`,
+        req
+      )
+
+      res.status(201).json({
+        message: "Departmental election participation confirmed successfully",
+        participation
+      })
+    } catch (error) {
+      if (error.code === 11000) {
+        return res.status(400).json({ message: "You have already confirmed participation in this departmental election" })
+      }
+      next(error)
+    }
+  }
+
+  // Check voter status for SSG election
+  static async checkSSGStatus(req, res, next) {
+    try {
+      const { ssgElectionId } = req.params
+      const voterId = req.user.voterId
+
+      // Get voter info
       const voter = await Voter.findById(voterId).populate('departmentId')
       if (!voter) {
         return res.status(404).json({ message: "Voter not found" })
       }
 
-      if (!voter.isActive || !voter.isRegistered) {
-        return res.status(400).json({ message: "Only active and registered voters can participate in elections" })
-      }
-
-      // Verify election exists and is available for participation
-      let election
-      if (electionType === 'ssg') {
-        election = await SSGElection.findById(electionId)
-        if (!election) {
-          return res.status(404).json({ message: "SSG Election not found" })
-        }
-      } else {
-        election = await DepartmentalElection.findById(electionId).populate('departmentId')
-        if (!election) {
-          return res.status(404).json({ message: "Departmental Election not found" })
-        }
-
-        // For departmental elections, check if voter's department matches
-        if (voter.departmentId.college !== election.departmentId.college) {
-          return res.status(400).json({ message: "You can only participate in elections for your department/college" })
-        }
-      }
-
-      if (election.status !== "active" && election.status !== "upcoming") {
-        return res.status(400).json({ message: "Election is not available for participation" })
-      }
-
-      // Check if voter has already confirmed for this election
-      const query = { voterId }
-      if (electionType === 'ssg') {
-        query.ssgElectionId = electionId
-      } else {
-        query.deptElectionId = electionId
-      }
-
-      const existingParticipation = await ElectionParticipation.findOne(query)
-
-      if (existingParticipation) {
-        if (existingParticipation.status === "withdrawn") {
-          // Reactivate participation
-          existingParticipation.status = "confirmed"
-          existingParticipation.confirmedAt = new Date()
-          await existingParticipation.save()
-
-          await AuditLog.logVoterAction(
-            "ELECTION_PARTICIPATION",
-            voter,
-            `Reconfirmed participation in ${electionType.toUpperCase()} election: ${election.title}`,
-            req
-          )
-
-          return res.json({
-            message: "Participation reconfirmed successfully",
-            participation: existingParticipation
-          })
-        } else {
-          return res.status(400).json({ message: "You have already confirmed participation in this election" })
-        }
-      }
-
-      // Create new participation record
-      const participationData = {
+      // Check if participated
+      const participation = await ElectionParticipation.findOne({
         voterId,
-        departmentId: voter.departmentId._id,
-        status: "confirmed"
-      }
+        ssgElectionId
+      }).populate('ssgElectionId', 'title status electionDate')
 
-      if (electionType === 'ssg') {
-        participationData.ssgElectionId = electionId
-      } else {
-        participationData.deptElectionId = electionId
-      }
-
-      const participation = new ElectionParticipation(participationData)
-      await participation.save()
-
-      // Populate for response
-      await participation.populate([
-        { path: 'voterId', select: 'schoolId firstName lastName departmentId yearLevel' },
-        { path: 'departmentId', select: 'departmentCode degreeProgram college' },
-        ...(electionType === 'ssg' 
-          ? [{ path: 'ssgElectionId', select: 'title electionDate status' }]
-          : [{ path: 'deptElectionId', select: 'title electionDate status departmentId' }]
-        )
-      ])
-
-      await AuditLog.logVoterAction(
-        "ELECTION_PARTICIPATION",
-        voter,
-        `Confirmed participation in ${electionType.toUpperCase()} election: ${election.title}`,
-        req
-      )
-
-      res.status(201).json({
-        message: "Participation confirmed successfully",
-        participation
+      // Check voting eligibility
+      const canParticipate = voter.isActive && voter.isRegistered && voter.isPasswordActive
+      
+      res.json({
+        hasParticipated: !!participation,
+        hasVoted: participation?.hasVoted || false,
+        participatedAt: participation?.confirmedAt || null,
+        votedAt: participation?.votedAt || null,
+        canParticipate,
+        eligibilityMessage: canParticipate 
+          ? "You are eligible to participate in SSG elections"
+          : "You must be an active registered voter to participate in SSG elections",
+        voterInfo: {
+          isRegistered: voter.isRegistered,
+          isActive: voter.isActive,
+          isPasswordActive: voter.isPasswordActive,
+          department: voter.departmentId ? {
+            code: voter.departmentId.departmentCode,
+            program: voter.departmentId.degreeProgram,
+            college: voter.departmentId.college
+          } : null
+        },
+        election: participation?.ssgElectionId || null
       })
     } catch (error) {
       next(error)
     }
   }
 
-  // Mark voter as having voted (called when vote is cast)
-  static async markAsVoted(req, res, next) {
+  // Check voter status for Departmental election
+  static async checkDepartmentalStatus(req, res, next) {
     try {
-      const { electionId, electionType, voterId } = req.body
+      const { deptElectionId } = req.params
+      const voterId = req.user.voterId
 
-      if (!electionId || !electionType || !voterId) {
-        return res.status(400).json({ message: "Election ID, election type, and voter ID are required" })
+      // Get voter info
+      const voter = await Voter.findById(voterId).populate('departmentId')
+      if (!voter) {
+        return res.status(404).json({ message: "Voter not found" })
       }
 
-      if (!['ssg', 'departmental'].includes(electionType)) {
-        return res.status(400).json({ message: "Election type must be 'ssg' or 'departmental'" })
+      // Get departmental election info
+      const deptElection = await DepartmentalElection.findById(deptElectionId).populate('departmentId')
+      if (!deptElection) {
+        return res.status(404).json({ message: "Departmental election not found" })
       }
 
-      const query = { voterId, status: { $ne: "withdrawn" } }
-      if (electionType === 'ssg') {
-        query.ssgElectionId = electionId
+      // Check if participated
+      const participation = await ElectionParticipation.findOne({
+        voterId,
+        deptElectionId
+      }).populate({
+        path: 'deptElectionId',
+        select: 'title status electionDate departmentId',
+        populate: {
+          path: 'departmentId',
+          select: 'departmentCode degreeProgram college'
+        }
+      })
+
+      // Check eligibility
+      const isEligible = voter.isActive && 
+                        voter.isRegistered && 
+                        voter.isPasswordActive && 
+                        voter.isClassOfficer &&
+                        voter.departmentId._id.toString() === deptElection.departmentId._id.toString()
+
+      let eligibilityMessage = ""
+      if (!voter.isActive || !voter.isRegistered || !voter.isPasswordActive) {
+        eligibilityMessage = "You must be an active registered voter"
+      } else if (!voter.isClassOfficer) {
+        eligibilityMessage = "Only class officers can participate in departmental elections"
+      } else if (voter.departmentId._id.toString() !== deptElection.departmentId._id.toString()) {
+        eligibilityMessage = "You can only participate in elections for your department"
       } else {
-        query.deptElectionId = electionId
+        eligibilityMessage = "You are eligible to participate in this departmental election"
+      }
+      
+      res.json({
+        hasParticipated: !!participation,
+        hasVoted: participation?.hasVoted || false,
+        participatedAt: participation?.confirmedAt || null,
+        votedAt: participation?.votedAt || null,
+        canParticipate: isEligible,
+        eligibilityMessage,
+        voterInfo: {
+          isRegistered: voter.isRegistered,
+          isActive: voter.isActive,
+          isPasswordActive: voter.isPasswordActive,
+          isClassOfficer: voter.isClassOfficer,
+          department: voter.departmentId ? {
+            code: voter.departmentId.departmentCode,
+            program: voter.departmentId.degreeProgram,
+            college: voter.departmentId.college
+          } : null
+        },
+        election: participation?.deptElectionId || null,
+        electionDepartment: {
+          code: deptElection.departmentId.departmentCode,
+          program: deptElection.departmentId.degreeProgram,
+          college: deptElection.departmentId.college
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Generate voting receipt for SSG election
+  static async getSSGVotingReceipt(req, res, next) {
+    try {
+      const { ssgElectionId } = req.params
+      const voterId = req.user.voterId
+
+      const receipt = await ElectionParticipation.generateVotingReceipt(
+        voterId, 
+        ssgElectionId, 
+        'ssg'
+      )
+
+      if (!receipt.hasVoted) {
+        return res.status(404).json({ 
+          message: "No voting record found",
+          reason: receipt.reason 
+        })
       }
 
-      const participation = await ElectionParticipation.findOne(query)
-        .populate('voterId', 'schoolId firstName lastName')
-        .populate(electionType === 'ssg' ? 'ssgElectionId' : 'deptElectionId', 'title')
+      // Get election and voter info for receipt
+      const [ssgElection, voter] = await Promise.all([
+        SSGElection.findById(ssgElectionId, 'title electionDate electionYear'),
+        Voter.findById(voterId, 'schoolId firstName middleName lastName').populate('departmentId', 'departmentCode degreeProgram college')
+      ])
 
-      if (!participation) {
-        return res.status(404).json({ message: "Participation record not found" })
-      }
-
-      if (participation.hasVoted) {
-        return res.status(400).json({ message: "Voter has already been marked as voted" })
-      }
-
-      // Mark as voted
-      await participation.markAsVoted()
-
-      const election = participation.ssgElectionId || participation.deptElectionId
       await AuditLog.logVoterAction(
-        "VOTED",
-        participation.voterId,
-        `Voted in ${electionType.toUpperCase()} election: ${election.title}`,
+        "VOTE_RECEIPT_GENERATED",
+        voter,
+        `Generated voting receipt for SSG election: ${ssgElection.title}`,
         req
       )
 
       res.json({
-        message: "Voter marked as voted successfully",
-        participation
+        message: "Voting receipt generated successfully",
+        receipt: {
+          electionType: "SSG",
+          election: ssgElection,
+          voter: {
+            schoolId: voter.schoolId,
+            fullName: voter.fullName,
+            department: voter.departmentId
+          },
+          ...receipt
+        }
       })
     } catch (error) {
       next(error)
     }
   }
 
-  // Get all participants for an election
-  static async getElectionParticipants(req, res, next) {
+  // Generate voting receipt for Departmental election
+  static async getDepartmentalVotingReceipt(req, res, next) {
     try {
-      const { electionId } = req.params
-      const { electionType, status, hasVoted, page = 1, limit = 100, search } = req.query
+      const { deptElectionId } = req.params
+      const voterId = req.user.voterId
 
-      if (!electionId || !electionType) {
-        return res.status(400).json({ message: "Election ID and election type are required" })
+      const receipt = await ElectionParticipation.generateVotingReceipt(
+        voterId, 
+        deptElectionId, 
+        'departmental'
+      )
+
+      if (!receipt.hasVoted) {
+        return res.status(404).json({ 
+          message: "No voting record found",
+          reason: receipt.reason 
+        })
       }
 
-      if (!['ssg', 'departmental'].includes(electionType)) {
-        return res.status(400).json({ message: "Election type must be 'ssg' or 'departmental'" })
-      }
+      // Get election and voter info for receipt
+      const [deptElection, voter] = await Promise.all([
+        DepartmentalElection.findById(deptElectionId, 'title electionDate electionYear').populate('departmentId', 'departmentCode degreeProgram college'),
+        Voter.findById(voterId, 'schoolId firstName middleName lastName isClassOfficer').populate('departmentId', 'departmentCode degreeProgram college')
+      ])
 
-      // Verify election exists
-      let election
-      if (electionType === 'ssg') {
-        election = await SSGElection.findById(electionId)
-      } else {
-        election = await DepartmentalElection.findById(electionId)
-      }
+      await AuditLog.logVoterAction(
+        "VOTE_RECEIPT_GENERATED",
+        voter,
+        `Generated voting receipt for Departmental election: ${deptElection.title}`,
+        req
+      )
 
-      if (!election) {
-        return res.status(404).json({ message: `${electionType.toUpperCase()} Election not found` })
+      res.json({
+        message: "Voting receipt generated successfully",
+        receipt: {
+          electionType: "DEPARTMENTAL",
+          election: deptElection,
+          voter: {
+            schoolId: voter.schoolId,
+            fullName: voter.fullName,
+            isClassOfficer: voter.isClassOfficer,
+            department: voter.departmentId
+          },
+          ...receipt
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Get SSG election participants (Admin/Committee/SAO only)
+  static async getSSGParticipants(req, res, next) {
+    try {
+      const { ssgElectionId } = req.params
+      const { page = 1, limit = 100, search, hasVoted } = req.query
+
+      // Verify SSG election exists
+      const ssgElection = await SSGElection.findById(ssgElectionId)
+      if (!ssgElection) {
+        return res.status(404).json({ message: "SSG Election not found" })
       }
 
       // Build filter
-      const filter = {}
-      if (electionType === 'ssg') {
-        filter.ssgElectionId = electionId
-      } else {
-        filter.deptElectionId = electionId
-      }
-      
-      if (status) filter.status = status
+      const filter = { ssgElectionId }
       if (hasVoted !== undefined) filter.hasVoted = hasVoted === "true"
 
-      // Build query
       let query = ElectionParticipation.find(filter)
         .populate({
           path: 'voterId',
-          select: 'schoolId firstName middleName lastName departmentId yearLevel',
+          select: 'schoolId firstName middleName lastName departmentId sex',
           populate: {
             path: 'departmentId',
             select: 'departmentCode degreeProgram college'
           }
         })
-        .populate('departmentId', 'departmentCode degreeProgram college')
-        .populate(electionType === 'ssg' ? 'ssgElectionId' : 'deptElectionId', 'title electionDate status')
+        .populate('ssgElectionId', 'title electionDate status')
         .sort({ confirmedAt: -1 })
 
       // Apply search if provided
       if (search) {
         const searchNumber = Number(search)
+        const searchRegex = { $regex: search, $options: 'i' }
+        
+        const matchStage = {
+          $or: [
+            { 'voter.firstName': searchRegex },
+            { 'voter.middleName': searchRegex },
+            { 'voter.lastName': searchRegex },
+            { 'voter.department.departmentCode': searchRegex },
+            { 'voter.department.degreeProgram': searchRegex },
+            ...(isNaN(searchNumber) ? [] : [{ 'voter.schoolId': searchNumber }])
+          ]
+        }
+
         const participants = await ElectionParticipation.aggregate([
           { $match: filter },
           {
@@ -255,37 +450,20 @@ class ElectionParticipationController {
           { $unwind: '$voter.department' },
           {
             $lookup: {
-              from: 'departments',
-              localField: 'departmentId',
-              foreignField: '_id',
-              as: 'department'
-            }
-          },
-          { $unwind: '$department' },
-          {
-            $lookup: {
-              from: electionType === 'ssg' ? 'ssgelections' : 'departmentalelections',
-              localField: electionType === 'ssg' ? 'ssgElectionId' : 'deptElectionId',
+              from: 'ssgelections',
+              localField: 'ssgElectionId',
               foreignField: '_id',
               as: 'election'
             }
           },
           { $unwind: '$election' },
-          {
-            $match: {
-              $or: [
-                { 'voter.firstName': { $regex: search, $options: 'i' } },
-                { 'voter.lastName': { $regex: search, $options: 'i' } },
-                ...(isNaN(searchNumber) ? [] : [{ 'voter.schoolId': searchNumber }])
-              ]
-            }
-          },
+          { $match: matchStage },
           { $sort: { confirmedAt: -1 } },
           { $skip: (page - 1) * limit },
           { $limit: Number.parseInt(limit) }
         ])
 
-        const total = await ElectionParticipation.aggregate([
+        const totalSearch = await ElectionParticipation.aggregate([
           { $match: filter },
           {
             $lookup: {
@@ -297,35 +475,29 @@ class ElectionParticipationController {
           },
           { $unwind: '$voter' },
           {
-            $match: {
-              $or: [
-                { 'voter.firstName': { $regex: search, $options: 'i' } },
-                { 'voter.lastName': { $regex: search, $options: 'i' } },
-                ...(isNaN(searchNumber) ? [] : [{ 'voter.schoolId': searchNumber }])
-              ]
+            $lookup: {
+              from: 'departments',
+              localField: 'voter.departmentId',
+              foreignField: '_id',
+              as: 'voter.department'
             }
           },
+          { $unwind: '$voter.department' },
+          { $match: matchStage },
           { $count: 'total' }
         ])
 
-        await AuditLog.logUserAction(
-          "DATA_EXPORT",
-          req.user,
-          `${electionType.toUpperCase()} election participants accessed with search - Election: ${election.title}, Results: ${participants.length}`,
-          req
-        )
-
         return res.json({
           participants,
-          total: total[0]?.total || 0,
+          total: totalSearch[0]?.total || 0,
           page: Number.parseInt(page),
           limit: Number.parseInt(limit),
           election: {
-            _id: election._id,
-            title: election.title,
-            electionDate: election.electionDate,
-            status: election.status,
-            type: electionType.toUpperCase()
+            _id: ssgElection._id,
+            title: ssgElection.title,
+            electionDate: ssgElection.electionDate,
+            status: ssgElection.status,
+            type: "SSG"
           }
         })
       }
@@ -338,7 +510,7 @@ class ElectionParticipationController {
       await AuditLog.logUserAction(
         "DATA_EXPORT",
         req.user,
-        `${electionType.toUpperCase()} election participants accessed - Election: ${election.title}, Results: ${participants.length}`,
+        `SSG election participants accessed - Election: ${ssgElection.title}, Results: ${participants.length}`,
         req
       )
 
@@ -348,11 +520,11 @@ class ElectionParticipationController {
         page: Number.parseInt(page),
         limit: Number.parseInt(limit),
         election: {
-          _id: election._id,
-          title: election.title,
-          electionDate: election.electionDate,
-          status: election.status,
-          type: electionType.toUpperCase()
+          _id: ssgElection._id,
+          title: ssgElection.title,
+          electionDate: ssgElection.electionDate,
+          status: ssgElection.status,
+          type: "SSG"
         }
       })
     } catch (error) {
@@ -360,225 +532,444 @@ class ElectionParticipationController {
     }
   }
 
-  // Get participation statistics for an election
-  static async getElectionStats(req, res, next) {
+  // Get Departmental election participants (Admin/Committee/SAO only)
+  static async getDepartmentalParticipants(req, res, next) {
     try {
-      const { electionId } = req.params
-      const { electionType } = req.query
+      const { deptElectionId } = req.params
+      const { page = 1, limit = 100, search, hasVoted } = req.query
 
-      if (!electionId || !electionType) {
-        return res.status(400).json({ message: "Election ID and election type are required" })
+      // Verify departmental election exists
+      const deptElection = await DepartmentalElection.findById(deptElectionId).populate('departmentId')
+      if (!deptElection) {
+        return res.status(404).json({ message: "Departmental Election not found" })
       }
 
-      if (!['ssg', 'departmental'].includes(electionType)) {
-        return res.status(400).json({ message: "Election type must be 'ssg' or 'departmental'" })
+      // Build filter
+      const filter = { deptElectionId }
+      if (hasVoted !== undefined) filter.hasVoted = hasVoted === "true"
+
+      let query = ElectionParticipation.find(filter)
+        .populate({
+          path: 'voterId',
+          select: 'schoolId firstName middleName lastName departmentId yearLevel isClassOfficer',
+          populate: {
+            path: 'departmentId',
+            select: 'departmentCode degreeProgram college'
+          }
+        })
+        .populate({
+          path: 'deptElectionId',
+          select: 'title electionDate status departmentId',
+          populate: {
+            path: 'departmentId',
+            select: 'departmentCode degreeProgram college'
+          }
+        })
+        .sort({ confirmedAt: -1 })
+
+      // Apply search if provided
+      if (search) {
+        const searchNumber = Number(search)
+        const searchRegex = { $regex: search, $options: 'i' }
+        
+        const matchStage = {
+          $or: [
+            { 'voter.firstName': searchRegex },
+            { 'voter.middleName': searchRegex },
+            { 'voter.lastName': searchRegex },
+            { 'voter.department.departmentCode': searchRegex },
+            { 'voter.department.degreeProgram': searchRegex },
+            ...(isNaN(searchNumber) ? [] : [{ 'voter.schoolId': searchNumber }])
+          ]
+        }
+
+        const participants = await ElectionParticipation.aggregate([
+          { $match: filter },
+          {
+            $lookup: {
+              from: 'voters',
+              localField: 'voterId',
+              foreignField: '_id',
+              as: 'voter'
+            }
+          },
+          { $unwind: '$voter' },
+          {
+            $lookup: {
+              from: 'departments',
+              localField: 'voter.departmentId',
+              foreignField: '_id',
+              as: 'voter.department'
+            }
+          },
+          { $unwind: '$voter.department' },
+          {
+            $lookup: {
+              from: 'departmentalelections',
+              localField: 'deptElectionId',
+              foreignField: '_id',
+              as: 'election'
+            }
+          },
+          { $unwind: '$election' },
+          {
+            $lookup: {
+              from: 'departments',
+              localField: 'election.departmentId',
+              foreignField: '_id',
+              as: 'election.department'
+            }
+          },
+          { $unwind: '$election.department' },
+          { $match: matchStage },
+          { $sort: { confirmedAt: -1 } },
+          { $skip: (page - 1) * limit },
+          { $limit: Number.parseInt(limit) }
+        ])
+
+        const totalSearch = await ElectionParticipation.aggregate([
+          { $match: filter },
+          {
+            $lookup: {
+              from: 'voters',
+              localField: 'voterId',
+              foreignField: '_id',
+              as: 'voter'
+            }
+          },
+          { $unwind: '$voter' },
+          {
+            $lookup: {
+              from: 'departments',
+              localField: 'voter.departmentId',
+              foreignField: '_id',
+              as: 'voter.department'
+            }
+          },
+          { $unwind: '$voter.department' },
+          { $match: matchStage },
+          { $count: 'total' }
+        ])
+
+        return res.json({
+          participants,
+          total: totalSearch[0]?.total || 0,
+          page: Number.parseInt(page),
+          limit: Number.parseInt(limit),
+          election: {
+            _id: deptElection._id,
+            title: deptElection.title,
+            electionDate: deptElection.electionDate,
+            status: deptElection.status,
+            type: "DEPARTMENTAL",
+            department: deptElection.departmentId
+          }
+        })
       }
 
-      // Verify election exists
-      let election
-      if (electionType === 'ssg') {
-        election = await SSGElection.findById(electionId)
-      } else {
-        election = await DepartmentalElection.findById(electionId)
-      }
-
-      if (!election) {
-        return res.status(404).json({ message: `${electionType.toUpperCase()} Election not found` })
-      }
-
-      const stats = await ElectionParticipation.getElectionStats(electionId, electionType)
-      
-      // Calculate participation rate
-      const participationRate = stats.totalConfirmed > 0 
-        ? Math.round((stats.totalVoted / stats.totalConfirmed) * 100) 
-        : 0
+      // Regular query without search
+      const skip = (page - 1) * limit
+      const participants = await query.skip(skip).limit(Number.parseInt(limit))
+      const total = await ElectionParticipation.countDocuments(filter)
 
       await AuditLog.logUserAction(
         "DATA_EXPORT",
         req.user,
-        `${electionType.toUpperCase()} election participation stats accessed - Election: ${election.title}`,
+        `Departmental election participants accessed - Election: ${deptElection.title}, Results: ${participants.length}`,
         req
       )
 
       res.json({
-        electionId,
-        electionTitle: election.title,
-        electionType: electionType.toUpperCase(),
-        ...stats,
-        participationRate
+        participants,
+        total,
+        page: Number.parseInt(page),
+        limit: Number.parseInt(limit),
+        election: {
+          _id: deptElection._id,
+          title: deptElection.title,
+          electionDate: deptElection.electionDate,
+          status: deptElection.status,
+          type: "DEPARTMENTAL",
+          department: deptElection.departmentId
+        }
       })
     } catch (error) {
       next(error)
     }
   }
 
-  // Get voter's participation history
-  static async getVoterHistory(req, res, next) {
+  // Get SSG election statistics (Admin/Committee/SAO only)
+  static async getSSGStatistics(req, res, next) {
     try {
-      const { voterId } = req.params
+      const { ssgElectionId } = req.params
 
-      if (!voterId) {
-        return res.status(400).json({ message: "Voter ID is required" })
+      // Verify SSG election exists
+      const ssgElection = await SSGElection.findById(ssgElectionId)
+      if (!ssgElection) {
+        return res.status(404).json({ message: "SSG Election not found" })
       }
 
-      const voter = await Voter.findById(voterId)
-      if (!voter) {
-        return res.status(404).json({ message: "Voter not found" })
-      }
+      const stats = await ElectionParticipation.getElectionStatistics(ssgElectionId, 'ssg')
 
-      const history = await ElectionParticipation.find({ voterId })
-        .populate('ssgElectionId', 'title electionDate status electionYear')
-        .populate('deptElectionId', 'title electionDate status electionYear')
-        .populate('departmentId', 'departmentCode degreeProgram college')
-        .sort({ confirmedAt: -1 })
-
-      // Format history with election type
-      const formattedHistory = history.map(participation => ({
-        ...participation.toObject(),
-        electionType: participation.ssgElectionId ? 'SSG' : 'DEPARTMENTAL',
-        election: participation.ssgElectionId || participation.deptElectionId
-      }))
-
-      await AuditLog.logVoterAction(
+      await AuditLog.logUserAction(
         "DATA_EXPORT",
-        voter,
-        `Voter participation history accessed - ${history.length} elections`,
+        req.user,
+        `SSG election participation stats accessed - Election: ${ssgElection.title}`,
         req
       )
 
       res.json({
-        voterId,
-        voterName: voter.fullName,
-        schoolId: voter.schoolId,
-        participationHistory: formattedHistory
+        electionId: ssgElectionId,
+        electionTitle: ssgElection.title,
+        electionType: "SSG",
+        electionDate: ssgElection.electionDate,
+        electionStatus: ssgElection.status,
+        ...stats
       })
     } catch (error) {
       next(error)
     }
   }
 
-  // Withdraw from election
-  static async withdrawParticipation(req, res, next) {
+  // Get Departmental election statistics (Admin/Committee/SAO only)
+  static async getDepartmentalStatistics(req, res, next) {
     try {
-      const { electionId, electionType } = req.body
-      const voterId = req.user.voterId
+      const { deptElectionId } = req.params
 
-      if (!electionId || !electionType) {
-        return res.status(400).json({ message: "Election ID and election type are required" })
+      // Verify departmental election exists
+      const deptElection = await DepartmentalElection.findById(deptElectionId).populate('departmentId')
+      if (!deptElection) {
+        return res.status(404).json({ message: "Departmental Election not found" })
       }
 
-      if (!['ssg', 'departmental'].includes(electionType)) {
-        return res.status(400).json({ message: "Election type must be 'ssg' or 'departmental'" })
-      }
+      const stats = await ElectionParticipation.getElectionStatistics(deptElectionId, 'departmental')
 
-      const query = { voterId, status: { $ne: "withdrawn" } }
-      if (electionType === 'ssg') {
-        query.ssgElectionId = electionId
-      } else {
-        query.deptElectionId = electionId
-      }
-
-      const participation = await ElectionParticipation.findOne(query)
-        .populate('voterId', 'schoolId firstName lastName')
-        .populate(electionType === 'ssg' ? 'ssgElectionId' : 'deptElectionId', 'title')
-
-      if (!participation) {
-        return res.status(404).json({ message: "Active participation record not found" })
-      }
-
-      if (participation.hasVoted) {
-        return res.status(400).json({ message: "Cannot withdraw after voting" })
-      }
-
-      // Withdraw participation
-      await participation.withdraw()
-
-      const election = participation.ssgElectionId || participation.deptElectionId
-      await AuditLog.logVoterAction(
-        "ELECTION_PARTICIPATION",
-        participation.voterId,
-        `Withdrew from ${electionType.toUpperCase()} election: ${election.title}`,
+      await AuditLog.logUserAction(
+        "DATA_EXPORT",
+        req.user,
+        `Departmental election participation stats accessed - Election: ${deptElection.title}`,
         req
       )
 
       res.json({
-        message: "Participation withdrawn successfully",
-        participation
+        electionId: deptElectionId,
+        electionTitle: deptElection.title,
+        electionType: "DEPARTMENTAL",
+        electionDate: deptElection.electionDate,
+        electionStatus: deptElection.status,
+        department: deptElection.departmentId,
+        ...stats
       })
     } catch (error) {
       next(error)
     }
   }
 
-  // Check voter's status for a specific election
-  static async checkVoterStatus(req, res, next) {
-    try {
-      const { electionId } = req.params
-      const { electionType } = req.query
-      const voterId = req.user.voterId
 
-      if (!electionId || !electionType) {
-        return res.status(400).json({ message: "Election ID and election type are required" })
-      }
+// Export SSG election participants as PDF
+static async exportSSGParticipantsPDF(req, res, next) {
+  try {
+    const { ssgElectionId } = req.params
+    const { hasVoted } = req.query
 
-      if (!['ssg', 'departmental'].includes(electionType)) {
-        return res.status(400).json({ message: "Election type must be 'ssg' or 'departmental'" })
-      }
+    // Verify SSG election exists
+    const ssgElection = await SSGElection.findById(ssgElectionId)
+    if (!ssgElection) {
+      return res.status(404).json({ message: "SSG Election not found" })
+    }
 
-      // Get voter info for eligibility check
-      const voter = await Voter.findById(voterId).populate('departmentId')
-      if (!voter) {
-        return res.status(404).json({ message: "Voter not found" })
-      }
+    // Build filter
+    const filter = { ssgElectionId }
+    if (hasVoted !== undefined) filter.hasVoted = hasVoted === "true"
 
-      // Check voting eligibility
-      let canVote = false
-      let eligibilityMessage = ""
-
-      if (electionType === 'ssg') {
-        canVote = voter.isRegistered && voter.isPasswordActive
-        eligibilityMessage = canVote 
-          ? "You are eligible to vote in this SSG election"
-          : "You must be a registered voter to participate in SSG elections"
-      } else {
-        canVote = voter.isRegistered && voter.isPasswordActive && voter.isClassOfficer
-        if (canVote) {
-          eligibilityMessage = "You are eligible to vote in this departmental election"
-        } else if (!voter.isRegistered || !voter.isPasswordActive) {
-          eligibilityMessage = "You must be a registered voter to participate in departmental elections"
-        } else {
-          eligibilityMessage = "Only class officers can vote in departmental elections. You can view statistics and results."
-        }
-      }
-
-      const query = { voterId }
-      if (electionType === 'ssg') {
-        query.ssgElectionId = electionId
-      } else {
-        query.deptElectionId = electionId
-      }
-
-      const participation = await ElectionParticipation.findOne(query)
-        .populate(electionType === 'ssg' ? 'ssgElectionId' : 'deptElectionId', 'title status electionDate')
-
-      res.json({
-        hasConfirmed: !!participation,
-        hasVoted: participation?.hasVoted || false,
-        status: participation?.status || "not_confirmed",
-        confirmedAt: participation?.confirmedAt || null,
-        votedAt: participation?.votedAt || null,
-        canVote,
-        eligibilityMessage,
-        voterInfo: {
-          isRegistered: voter.isRegistered,
-          isClassOfficer: voter.isClassOfficer,
-          isPasswordActive: voter.isPasswordActive
+    const participants = await ElectionParticipation.find(filter)
+      .populate({
+        path: 'voterId',
+        select: 'schoolId firstName middleName lastName departmentId sex',
+        populate: {
+          path: 'departmentId',
+          select: 'departmentCode degreeProgram college'
         }
       })
-    } catch (error) {
-      next(error)
-    }
+      .populate('ssgElectionId', 'title electionDate status')
+      .sort({ confirmedAt: -1 })
+
+    // Create PDF
+    const doc = new PDFDocument()
+    
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="SSG_Participants_${ssgElection.title.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf"`)
+    
+    doc.pipe(res)
+
+    // PDF Content
+    doc.fontSize(16).text(`SSG Election Participants Report`, { align: 'center' })
+    doc.moveDown()
+    doc.fontSize(12).text(`Election: ${ssgElection.title}`)
+    doc.text(`Date: ${new Date(ssgElection.electionDate).toLocaleDateString()}`)
+    doc.text(`Status: ${ssgElection.status.toUpperCase()}`)
+    doc.text(`Generated: ${new Date().toLocaleString()}`)
+    doc.text(`Total Participants: ${participants.length}`)
+    doc.moveDown()
+
+    // Table headers
+    const startX = 50
+    let currentY = doc.y
+    doc.fontSize(10)
+    doc.text('School ID', startX, currentY, { width: 70 })
+    doc.text('Full Name', startX + 75, currentY, { width: 120 })
+    doc.text('Department', startX + 200, currentY, { width: 80 })
+    doc.text('Sex', startX + 285, currentY, { width: 40 })
+    doc.text('Participated', startX + 330, currentY, { width: 60 })
+    doc.text('Voted', startX + 395, currentY, { width: 40 })
+    
+    currentY += 20
+    doc.moveTo(startX, currentY).lineTo(550, currentY).stroke()
+    currentY += 10
+
+    // Participant data
+    participants.forEach((participant, index) => {
+      if (currentY > 750) { // New page if needed
+        doc.addPage()
+        currentY = 50
+      }
+
+      const voter = participant.voterId
+      const fullName = voter.middleName ? 
+        `${voter.firstName} ${voter.middleName} ${voter.lastName}` : 
+        `${voter.firstName} ${voter.lastName}`
+
+      doc.text(voter.schoolId.toString(), startX, currentY, { width: 70 })
+      doc.text(fullName, startX + 75, currentY, { width: 120 })
+      doc.text(voter.departmentId.departmentCode, startX + 200, currentY, { width: 80 })
+      doc.text(voter.sex || 'N/A', startX + 285, currentY, { width: 40 })
+      doc.text(new Date(participant.confirmedAt).toLocaleDateString(), startX + 330, currentY, { width: 60 })
+      doc.text(participant.hasVoted ? 'Yes' : 'No', startX + 395, currentY, { width: 40 })
+      
+      currentY += 15
+    })
+
+    doc.end()
+
+    await AuditLog.logUserAction(
+      "DATA_EXPORT",
+      req.user,
+      `SSG election participants exported to PDF - Election: ${ssgElection.title}, Count: ${participants.length}`,
+      req
+    )
+
+  } catch (error) {
+    next(error)
   }
+}
+
+// Export Departmental election participants as PDF
+static async exportDepartmentalParticipantsPDF(req, res, next) {
+  try {
+    const { deptElectionId } = req.params
+    const { hasVoted } = req.query
+
+    // Verify departmental election exists
+    const deptElection = await DepartmentalElection.findById(deptElectionId).populate('departmentId')
+    if (!deptElection) {
+      return res.status(404).json({ message: "Departmental Election not found" })
+    }
+
+    // Build filter
+    const filter = { deptElectionId }
+    if (hasVoted !== undefined) filter.hasVoted = hasVoted === "true"
+
+    const participants = await ElectionParticipation.find(filter)
+      .populate({
+        path: 'voterId',
+        select: 'schoolId firstName middleName lastName departmentId yearLevel isClassOfficer',
+        populate: {
+          path: 'departmentId',
+          select: 'departmentCode degreeProgram college'
+        }
+      })
+      .populate({
+        path: 'deptElectionId',
+        select: 'title electionDate status departmentId',
+        populate: {
+          path: 'departmentId',
+          select: 'departmentCode degreeProgram college'
+        }
+      })
+      .sort({ confirmedAt: -1 })
+
+    // Create PDF
+    const doc = new PDFDocument()
+    
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="Departmental_Participants_${deptElection.title.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf"`)
+    
+    doc.pipe(res)
+
+    // PDF Content
+    doc.fontSize(16).text(`Departmental Election Participants Report`, { align: 'center' })
+    doc.moveDown()
+    doc.fontSize(12).text(`Election: ${deptElection.title}`)
+    doc.text(`Department: ${deptElection.departmentId.departmentCode} - ${deptElection.departmentId.degreeProgram}`)
+    doc.text(`Date: ${new Date(deptElection.electionDate).toLocaleDateString()}`)
+    doc.text(`Status: ${deptElection.status.toUpperCase()}`)
+    doc.text(`Generated: ${new Date().toLocaleString()}`)
+    doc.text(`Total Participants: ${participants.length}`)
+    doc.moveDown()
+
+    // Table headers
+    const startX = 50
+    let currentY = doc.y
+    doc.fontSize(10)
+    doc.text('School ID', startX, currentY, { width: 70 })
+    doc.text('Full Name', startX + 75, currentY, { width: 120 })
+    doc.text('Year Level', startX + 200, currentY, { width: 60 })
+    doc.text('Class Officer', startX + 265, currentY, { width: 70 })
+    doc.text('Participated', startX + 340, currentY, { width: 60 })
+    doc.text('Voted', startX + 405, currentY, { width: 40 })
+    
+    currentY += 20
+    doc.moveTo(startX, currentY).lineTo(550, currentY).stroke()
+    currentY += 10
+
+    // Participant data
+    participants.forEach((participant, index) => {
+      if (currentY > 750) { // New page if needed
+        doc.addPage()
+        currentY = 50
+      }
+
+      const voter = participant.voterId
+      const fullName = voter.middleName ? 
+        `${voter.firstName} ${voter.middleName} ${voter.lastName}` : 
+        `${voter.firstName} ${voter.lastName}`
+
+      doc.text(voter.schoolId.toString(), startX, currentY, { width: 70 })
+      doc.text(fullName, startX + 75, currentY, { width: 120 })
+      doc.text(voter.yearLevel.toString(), startX + 200, currentY, { width: 60 })
+      doc.text(voter.isClassOfficer ? 'Yes' : 'No', startX + 265, currentY, { width: 70 })
+      doc.text(new Date(participant.confirmedAt).toLocaleDateString(), startX + 340, currentY, { width: 60 })
+      doc.text(participant.hasVoted ? 'Yes' : 'No', startX + 405, currentY, { width: 40 })
+      
+      currentY += 15
+    })
+
+    doc.end()
+
+    await AuditLog.logUserAction(
+      "DATA_EXPORT",
+      req.user,
+      `Departmental election participants exported to PDF - Election: ${deptElection.title}, Count: ${participants.length}`,
+      req
+    )
+
+  } catch (error) {
+    next(error)
+  }
+}
+
 }
 
 module.exports = ElectionParticipationController

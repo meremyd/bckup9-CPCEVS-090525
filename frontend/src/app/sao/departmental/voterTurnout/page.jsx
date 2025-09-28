@@ -3,9 +3,8 @@
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { electionParticipationAPI } from "@/lib/api/electionParticipation"
-import { departmentsAPI } from "@/lib/api/departments"
-import { votersAPI } from "@/lib/api/voters"
-import SSGLayout from "@/components/SSGLayout"
+import { departmentalElectionsAPI } from "@/lib/api/departmentalElections"
+import SAODepartmentalLayout from "@/components/SAODepartmentalLayout"
 import Swal from 'sweetalert2'
 import { 
   Users,
@@ -14,27 +13,28 @@ import {
   CheckCircle,
   Building2,
   Loader2,
-  Filter,
   UserCheck,
   UserX,
   Clock,
   RefreshCw,
-  Download
+  Download,
+  TrendingUp,
+  BarChart3,
+  Shield
 } from "lucide-react"
 
-export default function SSGVoterParticipantsPage() {
+export default function SAODepartmentalVoterTurnoutPage() {
   const [participants, setParticipants] = useState([])
-  const [departments, setDepartments] = useState([])
+  const [election, setElection] = useState(null)
   const [filteredParticipants, setFilteredParticipants] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchLoading, setSearchLoading] = useState(false)
   const [error, setError] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedDepartment, setSelectedDepartment] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [stats, setStats] = useState(null)
   const [voterStats, setVoterStats] = useState(null)
-  
+
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -43,7 +43,7 @@ export default function SSGVoterParticipantsPage() {
 
   const router = useRouter()
   const searchParams = useSearchParams()
-  const ssgElectionId = searchParams.get('ssgElectionId')
+  const deptElectionId = searchParams.get('deptElectionId')
 
   useEffect(() => {
     const token = localStorage.getItem("token")
@@ -56,7 +56,9 @@ export default function SSGVoterParticipantsPage() {
 
     try {
       const parsedUser = JSON.parse(userData)
-      if (parsedUser.userType !== "election_committee" && parsedUser.userType !== "admin" && parsedUser.userType !== "sao") {
+      const userType = parsedUser.userType || parsedUser.role
+      
+      if (!["sao"].includes(userType)) {
         router.push("/adminlogin")
         return
       }
@@ -64,12 +66,12 @@ export default function SSGVoterParticipantsPage() {
       console.error("Error parsing user data:", parseError)
       router.push("/adminlogin")
       return
-    }
+    }    
 
-    if (ssgElectionId) {
+    if (deptElectionId) {
       Promise.all([
+        fetchElection(),
         fetchParticipants(),
-        fetchDepartments(),
         fetchStats(),
         fetchVoterStats()
       ])
@@ -77,18 +79,27 @@ export default function SSGVoterParticipantsPage() {
       setError('No election ID provided')
       setLoading(false)
     }
-  }, [ssgElectionId, router, currentPage])
+  }, [deptElectionId, router, currentPage])
 
   useEffect(() => {
     applyFilters()
-  }, [participants, searchTerm, selectedDepartment, statusFilter])
+  }, [participants, searchTerm, statusFilter])
+
+  const fetchElection = async () => {
+    try {
+      const response = await departmentalElectionsAPI.getById(deptElectionId)
+      setElection(response.election || response)
+    } catch (error) {
+      console.error("Error fetching election:", error)
+      // Don't set error here as this is not critical for the page to function
+    }
+  }
 
   const fetchParticipants = async () => {
     try {
       setError('')
-      const response = await electionParticipationAPI.getElectionParticipants(
-        ssgElectionId, 
-        'ssg',
+      const response = await electionParticipationAPI.getDepartmentalParticipants(
+        deptElectionId,
         {
           page: currentPage,
           limit: itemsPerPage
@@ -105,30 +116,39 @@ export default function SSGVoterParticipantsPage() {
     }
   }
 
-  const fetchDepartments = async () => {
-    try {
-      const response = await departmentsAPI.getAll()
-      setDepartments(response.departments || [])
-    } catch (error) {
-      console.error("Error fetching departments:", error)
-    }
-  }
-
   const fetchStats = async () => {
     try {
-      const response = await electionParticipationAPI.getElectionStats(ssgElectionId, 'ssg')
+      const response = await electionParticipationAPI.getDepartmentalStatistics(deptElectionId)
+      console.log('Election stats response:', response)
       setStats(response)
     } catch (error) {
       console.error("Error fetching stats:", error)
+      // Set default stats if API fails
+      setStats({
+        totalEligibleVoters: 0,
+        totalParticipants: participants.length || 0,
+        totalVoted: 0,
+        participationRate: 0,
+        voterTurnoutRate: 0
+      })
     }
   }
 
   const fetchVoterStats = async () => {
     try {
-      const response = await votersAPI.getStatistics()
-      setVoterStats(response)
+      if (!deptElectionId) {
+        setLoading(false)
+        return
+      }
+
+      // Try to get officers count for this specific department election
+      const response = await departmentalElectionsAPI.getOfficersCount(deptElectionId)
+      console.log('Department officers response:', response)
+      setVoterStats(response.data || response)
     } catch (error) {
       console.error("Error fetching voter stats:", error)
+      // Set default voter stats if API fails
+      setVoterStats({ totalOfficers: 0 })
     } finally {
       setLoading(false)
     }
@@ -186,13 +206,6 @@ export default function SSGVoterParticipantsPage() {
     
     let filtered = [...participants]
 
-    if (selectedDepartment !== 'all') {
-      filtered = filtered.filter(participant => 
-        participant.voterId?.departmentId?._id === selectedDepartment ||
-        participant.voterId?.departmentId?.departmentCode === selectedDepartment
-      )
-    }
-
     if (statusFilter !== 'all') {
       switch (statusFilter) {
         case 'confirmed':
@@ -215,13 +228,8 @@ export default function SSGVoterParticipantsPage() {
         
         const fullName = `${voter.firstName} ${voter.lastName}`.toLowerCase()
         const schoolId = voter.schoolId?.toString().toLowerCase() || ''
-        const departmentCode = voter.departmentId?.departmentCode?.toLowerCase() || ''
-        const departmentName = voter.departmentId?.degreeProgram?.toLowerCase() || ''
         
-        return fullName.includes(term) || 
-               schoolId.includes(term) || 
-               departmentCode.includes(term) ||
-               departmentName.includes(term)
+        return fullName.includes(term) || schoolId.includes(term)
       })
     }
 
@@ -233,182 +241,157 @@ export default function SSGVoterParticipantsPage() {
     setLoading(true)
     setError('')
     await Promise.all([
+      fetchElection(),
       fetchParticipants(),
       fetchStats(),
       fetchVoterStats()
     ])
   }
 
-  const handleExport = () => {
-    const headers = ['School ID', 'Name', 'Department', 'Year Level', 'Status', 'Has Voted', 'Participation Date']
-    const csvData = filteredParticipants.map(participant => {
-      const voter = participant.voterId
-      return [
-        voter?.schoolId || 'N/A',
-        `${voter?.firstName || ''} ${voter?.lastName || ''}`.trim() || 'N/A',
-        voter?.departmentId?.departmentCode || 'N/A',
-        voter?.yearLevel || 'N/A',
-        participant.status || 'N/A',
-        participant.hasVoted ? 'Yes' : 'No',
-        participant.participationDate ? new Date(participant.participationDate).toLocaleDateString() : 'N/A'
-      ]
-    })
+  const handleExportPDF = async () => {
+    try {
+      const blob = await electionParticipationAPI.exportDepartmentalParticipantsPDF(deptElectionId, {
+        hasVoted: statusFilter === 'voted' ? true : statusFilter === 'not_voted' ? false : undefined
+      })
+      
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Departmental_Participants_${election?.title?.replace(/[^a-zA-Z0-9]/g, '_') || deptElectionId}_${new Date().toISOString().split('T')[0]}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+      
+      Swal.fire({
+        icon: 'success',
+        title: 'Export Successful',
+        text: 'Departmental participants PDF has been downloaded',
+        confirmButtonColor: '#001f65',
+        timer: 2000,
+        showConfirmButton: false
+      })
+    } catch (error) {
+      console.error('Error exporting PDF:', error)
+      Swal.fire({
+        icon: 'error',
+        title: 'Export Failed',
+        text: 'Failed to export participants to PDF',
+        confirmButtonColor: '#001f65'
+      })
+    }
+  }
+
+  // Get display values with fallbacks using the new stats structure
+  const getDisplayStats = () => {
+    const totalEligibleOfficers = stats?.totalEligibleVoters || 0
+    const participantsCount = stats?.totalParticipants || participants.length || 0
+    const votedCount = stats?.totalVoted || 0
+    const participationRate = stats?.participationRate || 0
+    const voterTurnoutRate = stats?.voterTurnoutRate || 0
     
-    const csvContent = [headers, ...csvData].map(row => row.join(',')).join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv' })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `ssg_participants_${ssgElectionId}.csv`
-    a.click()
-    window.URL.revokeObjectURL(url)
+    console.log('Display stats:', { totalEligibleOfficers, participantsCount, votedCount, participationRate, voterTurnoutRate, stats })
+    
+    return {
+      totalEligibleOfficers,
+      participants: participantsCount,
+      voted: votedCount,
+      participationRate,
+      voterTurnoutRate
+    }
   }
 
-  const getDepartmentColor = (index) => {
-    const colors = [
-      'bg-blue-500/20 text-blue-700 border-blue-300 hover:bg-blue-500/30',
-      'bg-green-500/20 text-green-700 border-green-300 hover:bg-green-500/30',
-      'bg-purple-500/20 text-purple-700 border-purple-300 hover:bg-purple-500/30',
-      'bg-orange-500/20 text-orange-700 border-orange-300 hover:bg-orange-500/30',
-      'bg-pink-500/20 text-pink-700 border-pink-300 hover:bg-pink-500/30',
-      'bg-indigo-500/20 text-indigo-700 border-indigo-300 hover:bg-indigo-500/30'
-    ]
-    return colors[index % colors.length]
-  }
-
-  // Calculate voter turnout percentage
-  const calculateVoterTurnout = () => {
-    if (!voterStats || !stats) return 0
-    const totalVoters = voterStats.total || 0
-    const participantsCount = stats.totalParticipants || 0
-    return totalVoters > 0 ? Math.round((participantsCount / totalVoters) * 100) : 0
-  }
-
-  if (!ssgElectionId) {
+  if (!deptElectionId) {
     return (
-      <SSGLayout
-        ssgElectionId={null}
-        title="Voter Participants"
-        subtitle="Election Participation Management"
-        activeItem="participants"
+      <SAODepartmentalLayout
+        deptElectionId={null}
+        title="Voter Turnout"
+        subtitle="Election Participation Analytics"
+        activeItem="voterTurnout"
       >
         <div className="min-h-screen flex items-center justify-center">
           <div className="text-center bg-white/10 backdrop-blur-md p-8 rounded-2xl border border-white/20">
             <AlertCircle className="w-12 h-12 mx-auto text-red-400 mb-4" />
             <h3 className="text-xl font-bold text-white mb-2">No Election Selected</h3>
-            <p className="text-white/80 mb-6">Please select an election to view participants.</p>
+            <p className="text-white/80 mb-6">Please select an election to view voter turnout.</p>
             <button
-              onClick={() => router.push('/ecommittee/ssg')}
+              onClick={() => router.push('/sao/departmental')}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
             >
               Back to Elections
             </button>
           </div>
         </div>
-      </SSGLayout>
+      </SAODepartmentalLayout>
     )
   }
 
   return (
-    <SSGLayout
-      ssgElectionId={ssgElectionId}
-      title="Voter Participants"
-      subtitle="Election Participation Management"
-      activeItem="participants"
+    <SAODepartmentalLayout
+      deptElectionId={deptElectionId}
+      title="Voter Turnout"
+      subtitle="Election Participation Analytics"
+      activeItem="voterTurnout"
     >
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* Statistics Cards - Only 4 cards */}
-        {(stats || voterStats) && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-4">
+        {/* Main Statistics Cards */}
+        {stats && (
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-6">
               <div className="flex items-center">
-                <Users className="w-8 h-8 text-[#001f65] mr-3" />
+                <Shield className="w-10 h-10 text-[#001f65] mr-4" />
                 <div>
-                  <p className="text-sm text-gray-600">Total Voters</p>
-                  <p className="text-xl font-bold text-[#001f65]">{voterStats?.total || 0}</p>
+                  <p className="text-sm text-gray-600 mb-1">Eligible Officers</p>
+                  <p className="text-2xl font-bold text-[#001f65]">{getDisplayStats().totalEligibleOfficers}</p>
                 </div>
               </div>
             </div>
             
-            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-4">
+            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-6">
               <div className="flex items-center">
-                <UserCheck className="w-8 h-8 text-green-600 mr-3" />
+                <UserCheck className="w-10 h-10 text-green-600 mr-4" />
                 <div>
-                  <p className="text-sm text-gray-600">Registered Voters</p>
-                  <p className="text-xl font-bold text-green-600">{voterStats?.registered || 0}</p>
+                  <p className="text-sm text-gray-600 mb-1">Participants</p>
+                  <p className="text-2xl font-bold text-green-600">{getDisplayStats().participants}</p>
                 </div>
               </div>
             </div>
             
-            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-4">
+            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-6">
               <div className="flex items-center">
-                <CheckCircle className="w-8 h-8 text-blue-600 mr-3" />
+                <CheckCircle className="w-10 h-10 text-blue-600 mr-4" />
                 <div>
-                  <p className="text-sm text-gray-600">Participants</p>
-                  <p className="text-xl font-bold text-blue-600">{stats?.totalParticipants || 0}</p>
+                  <p className="text-sm text-gray-600 mb-1">Voted</p>
+                  <p className="text-2xl font-bold text-blue-600">{getDisplayStats().voted}</p>
                 </div>
               </div>
             </div>
             
-            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-4">
+            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-6">
               <div className="flex items-center">
-                <Clock className="w-8 h-8 text-orange-600 mr-3" />
+                <TrendingUp className="w-10 h-10 text-orange-600 mr-4" />
                 <div>
-                  <p className="text-sm text-gray-600">Voter Turnout</p>
-                  <p className="text-xl font-bold text-orange-600">
-                    {calculateVoterTurnout()}%
+                  <p className="text-sm text-gray-600 mb-1">Participation Rate</p>
+                  <p className="text-2xl font-bold text-orange-600">
+                    {getDisplayStats().participationRate}%
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-6">
+              <div className="flex items-center">
+                <BarChart3 className="w-10 h-10 text-purple-600 mr-4" />
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Voter Turnout</p>
+                  <p className="text-2xl font-bold text-purple-600">
+                    {getDisplayStats().voterTurnoutRate}%
                   </p>
                 </div>
               </div>
             </div>
           </div>
         )}
-
-        {/* Department Filter Cards */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-          <h3 className="text-lg font-bold text-[#001f65] mb-4">Filter by Department</h3>
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={() => setSelectedDepartment('all')}
-              className={`px-4 py-2 rounded-full border font-medium transition-colors ${
-                selectedDepartment === 'all'
-                  ? 'bg-[#001f65] text-white border-[#001f65]'
-                  : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-              }`}
-            >
-              All Departments
-            </button>
-            {departments.map((dept, index) => {
-              const participantCount = participants.filter(p => 
-                p.voterId?.departmentId?._id === dept._id
-              ).length
-              
-              return (
-                <button
-                  key={dept._id}
-                  onClick={() => setSelectedDepartment(dept._id)}
-                  className={`px-4 py-2 rounded-full border font-medium transition-colors relative ${
-                    selectedDepartment === dept._id
-                      ? 'bg-[#001f65] text-white border-[#001f65]'
-                      : getDepartmentColor(index)
-                  }`}
-                >
-                  <Building2 className="w-4 h-4 inline mr-2" />
-                  {dept.departmentCode}
-                  {participantCount > 0 && (
-                    <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
-                      selectedDepartment === dept._id
-                        ? 'bg-white text-[#001f65]'
-                        : 'bg-white/80 text-gray-700'
-                    }`}>
-                      {participantCount}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </div>
 
         {/* Error Alert */}
         {error && (
@@ -447,7 +430,6 @@ export default function SSGVoterParticipantsPage() {
               {/* Right side - Filters and Actions */}
               <div className="flex items-center gap-4">
                 <div className="flex items-center">
-                  <Filter className="w-5 h-5 text-[#001f65] mr-2" />
                   <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value)}
@@ -470,11 +452,11 @@ export default function SSGVoterParticipantsPage() {
                 </button>
 
                 <button
-                  onClick={handleExport}
+                  onClick={handleExportPDF}
                   className="flex items-center px-3 py-2 text-[#001f65] hover:bg-[#001f65]/10 rounded-lg transition-colors"
                 >
                   <Download className="w-4 h-4 mr-2" />
-                  Export CSV
+                  Export PDF
                 </button>
               </div>
             </div>
@@ -483,16 +465,16 @@ export default function SSGVoterParticipantsPage() {
           {loading ? (
             <div className="p-12 text-center">
               <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#001f65]" />
-              <p className="text-gray-600">Loading participants...</p>
+              <p className="text-gray-600">Loading voter turnout data...</p>
             </div>
           ) : filteredParticipants.length === 0 ? (
             <div className="p-12 text-center">
               <UserX className="w-12 h-12 mx-auto mb-4 text-gray-400" />
               <h3 className="text-lg font-semibold text-gray-600 mb-2">No Participants Found</h3>
               <p className="text-gray-500">
-                {searchTerm || selectedDepartment !== 'all' || statusFilter !== 'all'
+                {searchTerm || statusFilter !== 'all'
                   ? 'Try adjusting your filters or search term.'
-                  : 'No voters have confirmed their participation yet.'
+                  : 'No officers have confirmed their participation yet.'
                 }
               </p>
             </div>
@@ -506,9 +488,6 @@ export default function SSGVoterParticipantsPage() {
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
                       Name
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
-                      Department
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
                       Year Level
@@ -527,6 +506,7 @@ export default function SSGVoterParticipantsPage() {
                 <tbody className="divide-y divide-gray-200">
                   {filteredParticipants.map((participant, index) => {
                     const voter = participant.voterId
+                    
                     return (
                       <tr key={participant._id || index} className="hover:bg-[#b0c8fe]/10">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -536,13 +516,7 @@ export default function SSGVoterParticipantsPage() {
                           {`${voter?.firstName || ''} ${voter?.lastName || ''}`.trim() || 'N/A'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          <div>
-                            <div className="font-medium">{voter?.departmentId?.departmentCode || 'N/A'}</div>
-                            <div className="text-xs text-gray-500">{voter?.departmentId?.degreeProgram || ''}</div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {voter?.yearLevel || 'N/A'}
+                          {voter?.yearLevel ? `${voter.yearLevel}${['st', 'nd', 'rd', 'th'][voter.yearLevel - 1]} Year` : 'N/A'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-2 py-1 text-xs rounded-full font-medium ${
@@ -561,8 +535,8 @@ export default function SSGVoterParticipantsPage() {
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {participant.participationDate 
-                            ? new Date(participant.participationDate).toLocaleDateString()
+                          {participant.confirmedAt 
+                            ? new Date(participant.confirmedAt).toLocaleDateString()
                             : 'N/A'
                           }
                         </td>
@@ -602,6 +576,6 @@ export default function SSGVoterParticipantsPage() {
           </div>
         )}
       </div>
-    </SSGLayout>
+    </SAODepartmentalLayout>
   )
 }

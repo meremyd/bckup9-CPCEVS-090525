@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ssgElectionsAPI } from "@/lib/api/ssgElections"
-import { positionsAPI } from "@/lib/api/positions"
-import { authAPI } from "@/lib/api/auth"
+import { ballotAPI } from "@/lib/api/ballots"
+import { electionParticipationAPI } from "@/lib/api/electionParticipation"
+import { candidatesAPI } from "@/lib/api/candidates"
 import SSGLayout from "@/components/SSGLayout"
 import Swal from 'sweetalert2'
 import { 
@@ -45,11 +46,12 @@ export default function StatisticsPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [authError, setAuthError] = useState('')
   const [ssgElectionData, setSSGElectionData] = useState(null)
-  const [statisticsData, setStatisticsData] = useState(null)
+  const [participationStats, setParticipationStats] = useState(null)
+  const [ballotStats, setBallotStats] = useState(null)
+  const [candidatesData, setCandidatesData] = useState(null)
   const [resultsData, setResultsData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [showResults, setShowResults] = useState(false)
 
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -95,7 +97,7 @@ export default function StatisticsPage() {
     e.preventDefault()
     setAuthError('')
 
-    if (password === 'election_committee') {
+    if (password === 'P@ssword') {
       setIsAuthenticated(true)
       setPassword('')
     } else {
@@ -116,8 +118,10 @@ export default function StatisticsPage() {
     try {
       await Promise.all([
         fetchElectionData(),
-        fetchStatistics(),
-        fetchResults()
+        fetchParticipationStats(),
+        fetchBallotStats(),
+        fetchCandidatesData(),
+        fetchResultsData()
       ])
     } catch (error) {
       console.error("Error fetching data:", error)
@@ -136,23 +140,43 @@ export default function StatisticsPage() {
     }
   }
 
-  const fetchStatistics = async () => {
+  const fetchParticipationStats = async () => {
     try {
-      const response = await ssgElectionsAPI.getStatistics(ssgElectionId)
-      setStatisticsData(response.data)
+      const response = await electionParticipationAPI.getSSGStatistics(ssgElectionId)
+      setParticipationStats(response.data)
     } catch (error) {
-      console.error("Error fetching statistics:", error)
-      handleAPIError(error, 'Failed to load statistics')
+      console.error("Error fetching participation statistics:", error)
+      handleAPIError(error, 'Failed to load participation statistics')
     }
   }
 
-  const fetchResults = async () => {
+  const fetchBallotStats = async () => {
+    try {
+      const response = await ballotAPI.getSelectedSSGElectionBallotStatistics(ssgElectionId)
+      setBallotStats(response.data)
+    } catch (error) {
+      console.error("Error fetching ballot statistics:", error)
+      handleAPIError(error, 'Failed to load ballot statistics')
+    }
+  }
+
+  const fetchCandidatesData = async () => {
+    try {
+      const response = await candidatesAPI.ssg.getByElection(ssgElectionId)
+      setCandidatesData(response.data)
+    } catch (error) {
+      console.error("Error fetching candidates data:", error)
+      handleAPIError(error, 'Failed to load candidates data')
+    }
+  }
+
+  const fetchResultsData = async () => {
     try {
       const response = await ssgElectionsAPI.getResults(ssgElectionId)
       setResultsData(response.data)
     } catch (error) {
       console.error("Error fetching results:", error)
-      handleAPIError(error, 'Failed to load results')
+      // Don't show error for results as they might not be available yet
     }
   }
 
@@ -237,6 +261,42 @@ export default function StatisticsPage() {
     })
   }
 
+  // Calculate statistics from available data
+  const getStatistics = () => {
+    const stats = {
+      totalVotes: 0,
+      turnoutRate: 0,
+      totalCandidates: 0,
+      totalPositions: 0,
+      totalBallots: 0,
+      submittedBallots: 0,
+      activeBallots: 0,
+      expiredBallots: 0
+    }
+
+    // From participation stats
+    if (participationStats) {
+      stats.totalVotes = participationStats.totalVoted || 0
+      stats.turnoutRate = participationStats.turnoutPercentage || 0
+    }
+
+    // From ballot stats
+    if (ballotStats) {
+      stats.totalBallots = ballotStats.total || 0
+      stats.submittedBallots = ballotStats.submitted || 0
+      stats.activeBallots = ballotStats.active || 0
+      stats.expiredBallots = ballotStats.expired || 0
+    }
+
+    // From candidates data
+    if (candidatesData) {
+      stats.totalCandidates = candidatesData.data?.candidates?.length || 0
+      stats.totalPositions = candidatesData.data?.positions?.length || 0
+    }
+
+    return stats
+  }
+
   // Transform data for charts
   const getPresidentData = () => {
     if (!resultsData?.positionResults) return []
@@ -291,6 +351,18 @@ export default function StatisticsPage() {
     }))
   }
 
+  // Get ballot status distribution for pie chart
+  const getBallotStatusData = () => {
+    if (!ballotStats) return []
+
+    return [
+      { name: 'Submitted', value: ballotStats.submitted || 0, color: '#059669' },
+      { name: 'Active', value: ballotStats.active || 0, color: '#0066ff' },
+      { name: 'Expired', value: ballotStats.expired || 0, color: '#dc2626' },
+      { name: 'Not Started', value: (ballotStats.total || 0) - (ballotStats.submitted || 0) - (ballotStats.active || 0) - (ballotStats.expired || 0), color: '#6b7280' }
+    ].filter(item => item.value > 0)
+  }
+
   // Custom tooltip for charts
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
@@ -302,7 +374,7 @@ export default function StatisticsPage() {
             <p className="text-sm text-gray-600">{data.partylist}</p>
           )}
           <p className="text-[#001f65] font-medium">
-            {payload[0].value?.toLocaleString()} votes ({data.percentage?.toFixed(1)}%)
+            {payload[0].value?.toLocaleString()} votes {data.percentage && `(${data.percentage.toFixed(1)}%)`}
           </p>
         </div>
       )
@@ -391,9 +463,11 @@ export default function StatisticsPage() {
     )
   }
 
+  const statistics = getStatistics()
   const presidentData = getPresidentData()
   const vicePresidentData = getVicePresidentData()
   const senatorData = getSenatorData()
+  const ballotStatusData = getBallotStatusData()
 
   return (
     <SSGLayout
@@ -437,61 +511,59 @@ export default function StatisticsPage() {
         </div>
 
         {/* Overview Cards */}
-        {statisticsData && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600 mb-1">Total Votes</h3>
-                  <p className="text-2xl font-bold text-[#001f65]">
-                    {statisticsData.totalVotes?.toLocaleString() || 0}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">Ballots submitted</p>
-                </div>
-                <Users className="w-10 h-10 text-[#001f65]/20" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-gray-600 mb-1">Total Votes</h3>
+                <p className="text-2xl font-bold text-[#001f65]">
+                  {statistics.totalVotes.toLocaleString()}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Ballots submitted</p>
               </div>
-            </div>
-
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600 mb-1">Turnout Rate</h3>
-                  <p className="text-2xl font-bold text-green-600">
-                    {statisticsData.turnoutRate?.toFixed(1) || 0}%
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">Voter participation</p>
-                </div>
-                <TrendingUp className="w-10 h-10 text-green-600/20" />
-              </div>
-            </div>
-
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600 mb-1">Total Candidates</h3>
-                  <p className="text-2xl font-bold text-blue-600">
-                    {statisticsData.totalCandidates || 0}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">Running for positions</p>
-                </div>
-                <Award className="w-10 h-10 text-blue-600/20" />
-              </div>
-            </div>
-
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600 mb-1">Active Positions</h3>
-                  <p className="text-2xl font-bold text-purple-600">
-                    {statisticsData.totalPositions || 0}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">Available positions</p>
-                </div>
-                <BarChart3 className="w-10 h-10 text-purple-600/20" />
-              </div>
+              <Users className="w-10 h-10 text-[#001f65]/20" />
             </div>
           </div>
-        )}
+
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-gray-600 mb-1">Turnout Rate</h3>
+                <p className="text-2xl font-bold text-green-600">
+                  {statistics.turnoutRate.toFixed(1)}%
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Voter participation</p>
+              </div>
+              <TrendingUp className="w-10 h-10 text-green-600/20" />
+            </div>
+          </div>
+
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-gray-600 mb-1">Total Candidates</h3>
+                <p className="text-2xl font-bold text-blue-600">
+                  {statistics.totalCandidates}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Running for positions</p>
+              </div>
+              <Award className="w-10 h-10 text-blue-600/20" />
+            </div>
+          </div>
+
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-gray-600 mb-1">Total Ballots</h3>
+                <p className="text-2xl font-bold text-purple-600">
+                  {statistics.totalBallots}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Submitted: {statistics.submittedBallots}</p>
+              </div>
+              <BarChart3 className="w-10 h-10 text-purple-600/20" />
+            </div>
+          </div>
+        </div>
 
         {/* Loading State */}
         {loading && (
@@ -504,6 +576,35 @@ export default function StatisticsPage() {
         {/* Charts Section */}
         {!loading && (
           <div className="space-y-6">
+            {/* Ballot Status Distribution */}
+            {ballotStatusData.length > 0 && (
+              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+                <div className="flex items-center mb-4">
+                  <BarChart3 className="w-6 h-6 text-[#001f65] mr-2" />
+                  <h3 className="text-lg font-bold text-[#001f65]">Ballot Status Distribution</h3>
+                </div>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={ballotStatusData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({name, value}) => `${name} (${value})`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {ballotStatusData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
             {/* President and Vice President - Pie Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* President Chart */}
@@ -565,43 +666,11 @@ export default function StatisticsPage() {
               )}
             </div>
 
-            {/* Senators - Line Chart */}
+            {/* Senators - Bar Chart */}
             {senatorData.length > 0 && (
               <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
                 <div className="flex items-center mb-4">
                   <Users className="w-6 h-6 text-green-600 mr-2" />
-                  <h3 className="text-lg font-bold text-[#001f65]">Senators</h3>
-                </div>
-                <ResponsiveContainer width="100%" height={400}>
-                  <LineChart data={senatorData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis 
-                      dataKey="name" 
-                      angle={-45}
-                      textAnchor="end"
-                      height={100}
-                      interval={0}
-                    />
-                    <YAxis />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Line 
-                      type="monotone" 
-                      dataKey="votes" 
-                      stroke="#059669" 
-                      strokeWidth={3}
-                      dot={{ fill: '#059669', strokeWidth: 2, r: 6 }}
-                      activeDot={{ r: 8, stroke: '#059669', strokeWidth: 2 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-
-            {/* Alternative: Senators as Bar Chart if preferred */}
-            {senatorData.length > 0 && (
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-                <div className="flex items-center mb-4">
-                  <BarChart3 className="w-6 h-6 text-purple-600 mr-2" />
                   <h3 className="text-lg font-bold text-[#001f65]">Senators - Vote Distribution</h3>
                 </div>
                 <ResponsiveContainer width="100%" height={400}>
@@ -616,7 +685,7 @@ export default function StatisticsPage() {
                     />
                     <YAxis />
                     <Tooltip content={<CustomTooltip />} />
-                    <Bar dataKey="votes" fill="#7c3aed" />
+                    <Bar dataKey="votes" fill="#059669" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -625,7 +694,7 @@ export default function StatisticsPage() {
         )}
 
         {/* No Data State */}
-        {!loading && (!presidentData.length && !vicePresidentData.length && !senatorData.length) && (
+        {!loading && (!presidentData.length && !vicePresidentData.length && !senatorData.length && !ballotStatusData.length) && (
           <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-12 text-center">
             <BarChart3 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-xl font-bold text-gray-900 mb-2">No Statistical Data Available</h3>
@@ -665,19 +734,95 @@ export default function StatisticsPage() {
                   Election Status: <span className="capitalize">{ssgElectionData.status}</span>
                 </h4>
                 <p className="text-blue-700 text-sm">
-                  {ssgElectionData.startDate && (
-                    <span>
-                      Started: {new Date(ssgElectionData.startDate).toLocaleDateString()}
-                    </span>
-                  )}
-                  {ssgElectionData.endDate && (
+                  Election Date: {new Date(ssgElectionData.electionDate).toLocaleDateString()}
+                  {ssgElectionData.ballotOpenTime && ssgElectionData.ballotCloseTime && (
                     <span className="ml-4">
-                      Ends: {new Date(ssgElectionData.endDate).toLocaleDateString()}
+                      Voting Hours: {ssgElectionData.ballotOpenTime} - {ssgElectionData.ballotCloseTime}
                     </span>
                   )}
                 </p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Additional Statistics Cards */}
+        {(participationStats || ballotStats) && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Participation Summary */}
+            {participationStats && (
+              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+                <h3 className="text-lg font-semibold text-[#001f65] mb-4">Participation Summary</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Total Eligible:</span>
+                    <span className="font-medium">{participationStats.totalEligible?.toLocaleString() || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Confirmed:</span>
+                    <span className="font-medium text-blue-600">{participationStats.totalConfirmed?.toLocaleString() || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Voted:</span>
+                    <span className="font-medium text-green-600">{participationStats.totalVoted?.toLocaleString() || 0}</span>
+                  </div>
+                  <div className="flex justify-between border-t pt-2">
+                    <span className="text-gray-600">Turnout:</span>
+                    <span className="font-bold text-[#001f65]">{participationStats.turnoutPercentage?.toFixed(1) || 0}%</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Ballot Summary */}
+            {ballotStats && (
+              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+                <h3 className="text-lg font-semibold text-[#001f65] mb-4">Ballot Summary</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Total Ballots:</span>
+                    <span className="font-medium">{ballotStats.total?.toLocaleString() || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Submitted:</span>
+                    <span className="font-medium text-green-600">{ballotStats.submitted?.toLocaleString() || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Active:</span>
+                    <span className="font-medium text-blue-600">{ballotStats.active?.toLocaleString() || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Expired:</span>
+                    <span className="font-medium text-red-600">{ballotStats.expired?.toLocaleString() || 0}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Election Summary */}
+            {candidatesData && (
+              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+                <h3 className="text-lg font-semibold text-[#001f65] mb-4">Election Summary</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Positions:</span>
+                    <span className="font-medium">{candidatesData.data?.positions?.length || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Candidates:</span>
+                    <span className="font-medium text-blue-600">{candidatesData.data?.candidates?.length || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Partylists:</span>
+                    <span className="font-medium text-purple-600">{candidatesData.data?.partylists?.length || 0}</span>
+                  </div>
+                  <div className="flex justify-between border-t pt-2">
+                    <span className="text-gray-600">Election Year:</span>
+                    <span className="font-bold text-[#001f65]">{ssgElectionData?.electionYear || 'N/A'}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

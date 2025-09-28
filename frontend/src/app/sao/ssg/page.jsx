@@ -160,7 +160,7 @@ export default function SAOSSGPage() {
         
         ssgElectionsAPI.getVoterParticipants(ssgElectionId, { limit: 1 }).catch(error => {
           console.error('Failed to fetch participants:', error)
-          return { data: [], summary: { totalRegisteredVoters: 0 } }
+          return { data: { summary: { totalParticipants: 0 } } }
         }),
         
         ssgElectionsAPI.getVoterTurnout(ssgElectionId).catch(error => {
@@ -199,9 +199,9 @@ export default function SAOSSGPage() {
         counts.partylists = partylistsResponse.data.partylists.length
       }
 
-      counts.participants = extractCount(participantsResponse, ['totalRegisteredVoters', 'totalItems', 'total', 'count'])
-      if (participantsResponse?.data?.summary?.totalRegisteredVoters) {
-        counts.participants = participantsResponse.data.summary.totalRegisteredVoters
+      counts.participants = extractCount(participantsResponse, ['totalParticipants', 'totalItems', 'total', 'count'])
+      if (participantsResponse?.data?.summary?.totalParticipants) {
+        counts.participants = participantsResponse.data.summary.totalParticipants
       }
 
       if (turnoutResponse?.data?.overall?.turnoutPercentage) {

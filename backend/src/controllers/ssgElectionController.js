@@ -8,6 +8,7 @@ const Vote = require("../models/Vote")
 const AuditLog = require("../models/AuditLog")
 const Voter = require("../models/Voter")
 const Department = require("../models/Department")
+const ElectionParticipation = require("../models/ElectionParticipation")
 
 class SSGElectionController {
   // Get all SSG elections with enhanced filtering and pagination
@@ -1667,58 +1668,49 @@ static async getSSGElectionVoterParticipants(req, res, next) {
       return next(error)
     }
 
-    // Build filter for eligible voters (all registered voters for SSG)
-    const voterFilter = { isActive: true, isRegistered: true }
-    if (departmentId) voterFilter.departmentId = departmentId
-    if (yearLevel) voterFilter.yearLevel = parseInt(yearLevel)
+    // Build filter for election participants only
+    const participantFilter = { ssgElectionId: id }
+    if (hasVoted !== undefined) {
+      participantFilter.hasVoted = hasVoted === 'true'
+    }
 
     // Pagination
     const skip = (page - 1) * limit
     const limitNum = Math.min(Number.parseInt(limit), 100)
 
-    // Get voters with ballot information
-    const voters = await Voter.find(voterFilter)
-      .populate("departmentId", "departmentCode degreeProgram college")
-      .sort({ lastName: 1, firstName: 1 })
+    // Get participants with voter information
+    const participants = await ElectionParticipation.find(participantFilter)
+      .populate({
+        path: "voterId",
+        select: "firstName middleName lastName schoolId departmentId yearLevel",
+        populate: {
+          path: "departmentId",
+          select: "departmentCode degreeProgram college"
+        }
+      })
+      .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limitNum)
       .lean()
 
-    // Get ballot information for these voters
-    const voterIds = voters.map(v => v._id)
-    const ballots = await Ballot.find({
-      ssgElectionId: id,
-      voterId: { $in: voterIds }
-    }).lean()
+    // Apply additional filters
+    let filteredParticipants = participants
+    if (departmentId) {
+      filteredParticipants = participants.filter(p => 
+        p.voterId?.departmentId?._id?.toString() === departmentId
+      )
+    }
+    if (yearLevel) {
+      filteredParticipants = participants.filter(p => 
+        p.voterId?.yearLevel === parseInt(yearLevel)
+      )
+    }
 
-    // Create ballot lookup map
-    const ballotMap = ballots.reduce((acc, ballot) => {
-      acc[ballot.voterId.toString()] = ballot
-      return acc
-    }, {})
-
-    // Enhance voters with voting status
-    const participantData = voters.map(voter => {
-      const ballot = ballotMap[voter._id.toString()]
-      return {
-        ...voter,
-        hasVoted: ballot ? ballot.isSubmitted : false,
-        votedAt: ballot ? ballot.submittedAt : null,
-        ballotStatus: ballot ? (ballot.isSubmitted ? 'submitted' : 'started') : 'not_started'
-      }
-    })
-
-    // Apply hasVoted filter if specified
-    const filteredParticipants = hasVoted !== undefined 
-      ? participantData.filter(p => p.hasVoted === (hasVoted === 'true'))
-      : participantData
-
-    const total = await Voter.countDocuments(voterFilter)
+    const total = await ElectionParticipation.countDocuments(participantFilter)
     const totalPages = Math.ceil(total / limitNum)
 
-    // Get summary statistics
-    const totalRegisteredVoters = await Voter.countDocuments({ isActive: true, isRegistered: true })
-    const totalVoted = await Ballot.countDocuments({ ssgElectionId: id, isSubmitted: true })
+    // Get summary statistics from participation
+    const participationStats = await ElectionParticipation.getElectionStatistics(id, 'ssg')
 
     await AuditLog.logUserAction(
       "SYSTEM_ACCESS",
@@ -1738,10 +1730,10 @@ static async getSSGElectionVoterParticipants(req, res, next) {
         },
         participants: filteredParticipants,
         summary: {
-          totalRegisteredVoters,
-          totalVoted,
-          totalNotVoted: totalRegisteredVoters - totalVoted,
-          turnoutPercentage: totalRegisteredVoters > 0 ? ((totalVoted / totalRegisteredVoters) * 100).toFixed(2) : 0
+          totalParticipants: participationStats.totalParticipants,
+          totalVoted: participationStats.totalVoted,
+          totalNotVoted: participationStats.participantsNotVoted,
+          turnoutPercentage: participationStats.voterTurnoutRate
         },
         pagination: {
           currentPage: parseInt(page),
@@ -1793,119 +1785,94 @@ static async getSSGElectionVoterTurnout(req, res, next) {
     }
 
     // Overall turnout statistics
-    const totalRegisteredVoters = await Voter.countDocuments({ isActive: true, isRegistered: true })
-    const totalVoted = await Ballot.countDocuments({ ssgElectionId: id, isSubmitted: true })
-    const totalNotVoted = totalRegisteredVoters - totalVoted
+    const participationStats = await ElectionParticipation.getElectionStatistics(id, 'ssg')
+    const totalParticipants = participationStats.totalParticipants
+    const totalVoted = participationStats.totalVoted
+    const totalNotVoted = participationStats.participantsNotVoted
 
     // Turnout by department
-    const turnoutByDepartment = await Voter.aggregate([
-      { $match: { isActive: true, isRegistered: true } },
-      {
-        $lookup: {
-          from: "ballots",
-          let: { voterId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ["$voterId", "$$voterId"] },
-                    { $eq: ["$ssgElectionId", new mongoose.Types.ObjectId(id)] },
-                    { $eq: ["$isSubmitted", true] }
-                  ]
-                }
-              }
-            }
-          ],
-          as: "ballot"
-        }
+    const turnoutByDepartment = await ElectionParticipation.aggregate([
+  { $match: { ssgElectionId: new mongoose.Types.ObjectId(id) } },
+  {
+    $lookup: {
+      from: "voters",
+      localField: "voterId",
+      foreignField: "_id",
+      as: "voter"
+    }
+  },
+  { $unwind: "$voter" },
+  {
+    $lookup: {
+      from: "departments",
+      localField: "voter.departmentId",
+      foreignField: "_id",
+      as: "department"
+    }
+  },
+  { $unwind: "$department" },
+  {
+    $group: {
+      _id: {
+        departmentId: "$voter.departmentId",
+        departmentCode: "$department.departmentCode",
+        degreeProgram: "$department.degreeProgram",
+        college: "$department.college"
       },
-      {
-        $lookup: {
-          from: "departments",
-          localField: "departmentId",
-          foreignField: "_id",
-          as: "department"
-        }
-      },
-      { $unwind: "$department" },
-      {
-        $group: {
-          _id: {
-            departmentId: "$departmentId",
-            departmentCode: "$department.departmentCode",
-            degreeProgram: "$department.degreeProgram",
-            college: "$department.college"
-          },
-          totalVoters: { $sum: 1 },
-          votedCount: {
-            $sum: {
-              $cond: [{ $gt: [{ $size: "$ballot" }, 0] }, 1, 0]
-            }
-          }
-        }
-      },
-      {
-        $addFields: {
-          notVotedCount: { $subtract: ["$totalVoters", "$votedCount"] },
-          turnoutPercentage: {
-            $round: [
-              { $multiply: [{ $divide: ["$votedCount", "$totalVoters"] }, 100] },
-              2
-            ]
-          }
-        }
-      },
-      { $sort: { "_id.departmentCode": 1 } }
-    ])
+      totalParticipants: { $sum: 1 },
+      votedCount: {
+        $sum: { $cond: ["$hasVoted", 1, 0] }
+      }
+    }
+  },
+  {
+    $addFields: {
+      notVotedCount: { $subtract: ["$totalParticipants", "$votedCount"] },
+      turnoutPercentage: {
+        $round: [
+          { $multiply: [{ $divide: ["$votedCount", "$totalParticipants"] }, 100] },
+          2
+        ]
+      }
+    }
+  },
+  { $sort: { "_id.departmentCode": 1 } }
+])
 
     // Turnout by year level
-    const turnoutByYearLevel = await Voter.aggregate([
-      { $match: { isActive: true, isRegistered: true } },
-      {
-        $lookup: {
-          from: "ballots",
-          let: { voterId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ["$voterId", "$$voterId"] },
-                    { $eq: ["$ssgElectionId", new mongoose.Types.ObjectId(id)] },
-                    { $eq: ["$isSubmitted", true] }
-                  ]
-                }
-              }
-            }
-          ],
-          as: "ballot"
-        }
-      },
-      {
-        $group: {
-          _id: "$yearLevel",
-          totalVoters: { $sum: 1 },
-          votedCount: {
-            $sum: {
-              $cond: [{ $gt: [{ $size: "$ballot" }, 0] }, 1, 0]
-            }
-          }
-        }
-      },
-      {
-        $addFields: {
-          notVotedCount: { $subtract: ["$totalVoters", "$votedCount"] },
-          turnoutPercentage: {
-            $round: [
-              { $multiply: [{ $divide: ["$votedCount", "$totalVoters"] }, 100] },
-              2
-            ]
-          }
-        }
-      },
-      { $sort: { "_id": 1 } }
-    ])
+    const turnoutByYearLevel = await ElectionParticipation.aggregate([
+  { $match: { ssgElectionId: new mongoose.Types.ObjectId(id) } },
+  {
+    $lookup: {
+      from: "voters",
+      localField: "voterId",
+      foreignField: "_id",
+      as: "voter"
+    }
+  },
+  { $unwind: "$voter" },
+  {
+    $group: {
+      _id: "$voter.yearLevel",
+      totalParticipants: { $sum: 1 },
+      votedCount: {
+        $sum: { $cond: ["$hasVoted", 1, 0] }
+      }
+    }
+  },
+  {
+    $addFields: {
+      notVotedCount: { $subtract: ["$totalParticipants", "$votedCount"] },
+      turnoutPercentage: {
+        $round: [
+          { $multiply: [{ $divide: ["$votedCount", "$totalParticipants"] }, 100] },
+        2
+        ]
+      }
+    }
+  },
+  { $sort: { "_id": 1 } }
+])
 
     // Voting timeline (hourly breakdown)
     const votingTimeline = await Ballot.aggregate([
@@ -1927,7 +1894,7 @@ static async getSSGElectionVoterTurnout(req, res, next) {
     await AuditLog.logUserAction(
       "SYSTEM_ACCESS",
       req.user,
-      `Accessed SSG election voter turnout - ${election.title} - ${totalVoted}/${totalRegisteredVoters} voted`,
+      `Accessed SSG election voter turnout - ${election.title} - ${totalVoted}/${totalParticipants} voted`,
       req
     )
 
@@ -1942,10 +1909,11 @@ static async getSSGElectionVoterTurnout(req, res, next) {
           electionDate: election.electionDate
         },
         overall: {
-          totalRegisteredVoters,
+          totalRegisteredVoters: participationStats.totalParticipants,
+          totalParticipants,
           totalVoted,
           totalNotVoted,
-          turnoutPercentage: totalRegisteredVoters > 0 ? ((totalVoted / totalRegisteredVoters) * 100).toFixed(2) : 0
+          turnoutPercentage: totalParticipants > 0 ? ((totalVoted / totalParticipants) * 100).toFixed(2) : 0
         },
         turnoutByDepartment,
         turnoutByYearLevel,

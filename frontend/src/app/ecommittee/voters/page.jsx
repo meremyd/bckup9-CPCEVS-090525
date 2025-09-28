@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Building2, Users, LogOut, Search, X } from "lucide-react"
+import { Building2, Users, LogOut, Search, X, Check, Edit2 } from "lucide-react"
 import { votersAPI } from '@/lib/api/voters'
 import { departmentsAPI } from '@/lib/api/departments'
 import { getUserFromToken, logout } from '../../../lib/auth'
@@ -20,6 +20,8 @@ export default function ElectionCommitteeVotersPage() {
   const [activeTab, setActiveTab] = useState("voters")
   const [toggleLoading, setToggleLoading] = useState({})
   const [user, setUser] = useState(null)
+  const [editingYearLevel, setEditingYearLevel] = useState({})
+  const [yearLevelUpdating, setYearLevelUpdating] = useState({})
   const router = useRouter()
 
   useEffect(() => {
@@ -188,6 +190,68 @@ export default function ElectionCommitteeVotersPage() {
     } finally {
       setToggleLoading(prev => ({ ...prev, [voterId]: false }))
     }
+  }
+
+  const handleYearLevelEdit = (voterId, currentYearLevel) => {
+    setEditingYearLevel(prev => ({
+      ...prev,
+      [voterId]: currentYearLevel || ""
+    }))
+  }
+
+  const handleYearLevelSave = async (voterId) => {
+    const newYearLevel = editingYearLevel[voterId]
+    
+    if (!newYearLevel || ![1, 2, 3, 4].includes(parseInt(newYearLevel))) {
+      setError("Year level must be 1, 2, 3, or 4")
+      setTimeout(() => setError(""), 3000)
+      return
+    }
+
+    try {
+      setYearLevelUpdating(prev => ({ ...prev, [voterId]: true }))
+      
+      await votersAPI.updateYearLevel(voterId, parseInt(newYearLevel))
+      
+      // Update the voter in all relevant lists
+      const updateVoterInList = (voters) => 
+        voters.map(voter => 
+          voter._id === voterId 
+            ? { ...voter, yearLevel: parseInt(newYearLevel) }
+            : voter
+        )
+
+      setAllVoters(prev => updateVoterInList(prev))
+      setRegisteredVoters(prev => updateVoterInList(prev))
+      setOfficers(prev => updateVoterInList(prev))
+      
+      // Clear editing state
+      setEditingYearLevel(prev => {
+        const newState = { ...prev }
+        delete newState[voterId]
+        return newState
+      })
+      
+      // Clear any existing errors
+      setError("")
+      
+    } catch (error) {
+      console.error("Update year level error:", error)
+      setError(error.message || "Failed to update year level")
+      
+      // Clear error after 3 seconds
+      setTimeout(() => setError(""), 3000)
+    } finally {
+      setYearLevelUpdating(prev => ({ ...prev, [voterId]: false }))
+    }
+  }
+
+  const handleYearLevelCancel = (voterId) => {
+    setEditingYearLevel(prev => {
+      const newState = { ...prev }
+      delete newState[voterId]
+      return newState
+    })
   }
 
   const handleDepartmentCardClick = (departmentId) => {
@@ -471,7 +535,53 @@ export default function ElectionCommitteeVotersPage() {
                       </div>
                     </td>
                     <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900">
-                      {voter.yearLevel || "N/A"}
+                      {editingYearLevel[voter._id] !== undefined ? (
+                        <div className="flex items-center space-x-2">
+                          <select
+                            value={editingYearLevel[voter._id]}
+                            onChange={(e) => setEditingYearLevel(prev => ({
+                              ...prev,
+                              [voter._id]: e.target.value
+                            }))}
+                            className="px-2 py-1 border rounded text-xs focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-[#001f65]"
+                            disabled={yearLevelUpdating[voter._id]}
+                          >
+                            <option value="">Select</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                          </select>
+                          <button
+                            onClick={() => handleYearLevelSave(voter._id)}
+                            disabled={yearLevelUpdating[voter._id]}
+                            className="p-1 text-green-600 hover:text-green-800 disabled:opacity-50"
+                          >
+                            {yearLevelUpdating[voter._id] ? (
+                              <div className="animate-spin rounded-full h-3 w-3 border-b border-current"></div>
+                            ) : (
+                              <Check className="w-3 h-3" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => handleYearLevelCancel(voter._id)}
+                            disabled={yearLevelUpdating[voter._id]}
+                            className="p-1 text-red-600 hover:text-red-800 disabled:opacity-50"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center space-x-2">
+                          <span>{voter.yearLevel || "N/A"}</span>
+                          <button
+                            onClick={() => handleYearLevelEdit(voter._id, voter.yearLevel)}
+                            className="p-1 text-[#001f65] hover:text-[#001f65]/80"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col gap-1">

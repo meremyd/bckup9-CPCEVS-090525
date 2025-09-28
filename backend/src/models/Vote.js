@@ -6,7 +6,7 @@ const voteSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Ballot",
       required: true,
-      index: true // Add index for better query performance
+      index: true 
     },
     candidateId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -20,7 +20,6 @@ const voteSchema = new mongoose.Schema(
       required: true,
       index: true 
     },
-    // Add election references for easier querying
     deptElectionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "DepartmentalElection",
@@ -36,14 +35,13 @@ const voteSchema = new mongoose.Schema(
     voteTimestamp: {
       type: Date,
       default: Date.now,
-      index: true // Index for time-based queries
+      index: true 
     },
-    // Optional: Add vote verification hash (for enhanced security)
     voteHash: {
       type: String,
       default: null,
       index: true,
-      sparse: true // Only index non-null values
+      sparse: true 
     }
   },
   {
@@ -52,11 +50,11 @@ const voteSchema = new mongoose.Schema(
 )
 
 // Compound indexes for preventing duplicate votes and improving performance
-voteSchema.index({ ballotId: 1, positionId: 1 }, { unique: true }) // Prevent multiple votes for same position in same ballot
-voteSchema.index({ deptElectionId: 1, candidateId: 1 }) // For candidate vote counting
-voteSchema.index({ ssgElectionId: 1, candidateId: 1 }) // For candidate vote counting
-voteSchema.index({ deptElectionId: 1, positionId: 1 }) // For position-based analytics
-voteSchema.index({ ssgElectionId: 1, positionId: 1 }) // For position-based analytics
+voteSchema.index({ ballotId: 1, positionId: 1 }, { unique: true }) 
+voteSchema.index({ deptElectionId: 1, candidateId: 1 })
+voteSchema.index({ ssgElectionId: 1, candidateId: 1 }) 
+voteSchema.index({ deptElectionId: 1, positionId: 1 }) 
+voteSchema.index({ ssgElectionId: 1, positionId: 1 }) 
 
 // Pre-save middleware to auto-populate election references from candidate
 voteSchema.pre('save', async function(next) {

@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { electionParticipationAPI } from "@/lib/api/electionParticipation"
-import { departmentalElectionsAPI } from "@/lib/api/departmentalElections"
-import DepartmentalLayout from "@/components/DepartmentalLayout"
+import { ssgElectionsAPI } from "@/lib/api/ssgElections"
+import { departmentsAPI } from "@/lib/api/departments"
+import SAOSSGLayout from "@/components/SAOSSGLayout"
 import Swal from 'sweetalert2'
 import { 
   Users,
@@ -13,6 +14,7 @@ import {
   CheckCircle,
   Building2,
   Loader2,
+  Filter,
   UserCheck,
   UserX,
   Clock,
@@ -20,22 +22,21 @@ import {
   Download,
   TrendingUp,
   BarChart3,
-  Shield,
-
+  Shield
 } from "lucide-react"
 
-export default function DepartmentalVoterTurnoutPage() {
+export default function SAOSSGVoterTurnoutPage() {
   const [participants, setParticipants] = useState([])
   const [election, setElection] = useState(null)
+  const [departments, setDepartments] = useState([])
   const [filteredParticipants, setFilteredParticipants] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchLoading, setSearchLoading] = useState(false)
   const [error, setError] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedDepartment, setSelectedDepartment] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [stats, setStats] = useState(null)
-  const [voterStats, setVoterStats] = useState(null)
-
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
@@ -45,7 +46,7 @@ export default function DepartmentalVoterTurnoutPage() {
 
   const router = useRouter()
   const searchParams = useSearchParams()
-  const deptElectionId = searchParams.get('deptElectionId')
+  const ssgElectionId = searchParams.get('ssgElectionId')
 
   useEffect(() => {
     const token = localStorage.getItem("token")
@@ -60,7 +61,7 @@ export default function DepartmentalVoterTurnoutPage() {
       const parsedUser = JSON.parse(userData)
       const userType = parsedUser.userType || parsedUser.role
       
-      if (!["election_committee", "admin", "sao"].includes(userType)) {
+      if (!["sao"].includes(userType)) {
         router.push("/adminlogin")
         return
       }
@@ -68,40 +69,39 @@ export default function DepartmentalVoterTurnoutPage() {
       console.error("Error parsing user data:", parseError)
       router.push("/adminlogin")
       return
-    }    
+    }
 
-    if (deptElectionId) {
+    if (ssgElectionId) {
       Promise.all([
         fetchElection(),
         fetchParticipants(),
-        fetchStats(),
-        fetchVoterStats()
+        fetchDepartments(),
+        fetchStats()
       ])
     } else {
       setError('No election ID provided')
       setLoading(false)
     }
-  }, [deptElectionId, router, currentPage])
+  }, [ssgElectionId, router, currentPage])
 
   useEffect(() => {
     applyFilters()
-  }, [participants, searchTerm, statusFilter])
+  }, [participants, searchTerm, selectedDepartment, statusFilter])
 
   const fetchElection = async () => {
     try {
-      const response = await departmentalElectionsAPI.getById(deptElectionId)
+      const response = await ssgElectionsAPI.getById(ssgElectionId)
       setElection(response.election || response)
     } catch (error) {
       console.error("Error fetching election:", error)
-      // Don't set error here as this is not critical for the page to function
     }
   }
 
   const fetchParticipants = async () => {
     try {
       setError('')
-      const response = await electionParticipationAPI.getDepartmentalParticipants(
-        deptElectionId,
+      const response = await electionParticipationAPI.getSSGParticipants(
+        ssgElectionId,
         {
           page: currentPage,
           limit: itemsPerPage
@@ -118,39 +118,22 @@ export default function DepartmentalVoterTurnoutPage() {
     }
   }
 
+  const fetchDepartments = async () => {
+    try {
+      const response = await departmentsAPI.getAll()
+      setDepartments(response.departments || [])
+    } catch (error) {
+      console.error("Error fetching departments:", error)
+    }
+  }
+
   const fetchStats = async () => {
     try {
-      const response = await electionParticipationAPI.getDepartmentalStatistics(deptElectionId)
+      const response = await electionParticipationAPI.getSSGStatistics(ssgElectionId)
       console.log('Election stats response:', response)
       setStats(response)
     } catch (error) {
       console.error("Error fetching stats:", error)
-      // Set default stats if API fails
-      setStats({
-        totalEligibleVoters: 0,
-        totalParticipants: participants.length || 0,
-        totalVoted: 0,
-        participationRate: 0,
-        voterTurnoutRate: 0
-      })
-    }
-  }
-
-  const fetchVoterStats = async () => {
-    try {
-      if (!deptElectionId) {
-        setLoading(false)
-        return
-      }
-
-      // Try to get officers count for this specific department election
-      const response = await departmentalElectionsAPI.getOfficersCount(deptElectionId)
-      console.log('Department officers response:', response)
-      setVoterStats(response.data || response)
-    } catch (error) {
-      console.error("Error fetching voter stats:", error)
-      // Set default voter stats if API fails
-      setVoterStats({ totalOfficers: 0 })
     } finally {
       setLoading(false)
     }
@@ -208,6 +191,13 @@ export default function DepartmentalVoterTurnoutPage() {
     
     let filtered = [...participants]
 
+    if (selectedDepartment !== 'all') {
+      filtered = filtered.filter(participant => 
+        participant.voterId?.departmentId?._id === selectedDepartment ||
+        participant.voterId?.departmentId?.departmentCode === selectedDepartment
+      )
+    }
+
     if (statusFilter !== 'all') {
       switch (statusFilter) {
         case 'confirmed':
@@ -230,8 +220,13 @@ export default function DepartmentalVoterTurnoutPage() {
         
         const fullName = `${voter.firstName} ${voter.lastName}`.toLowerCase()
         const schoolId = voter.schoolId?.toString().toLowerCase() || ''
+        const departmentCode = voter.departmentId?.departmentCode?.toLowerCase() || ''
+        const departmentName = voter.departmentId?.degreeProgram?.toLowerCase() || ''
         
-        return fullName.includes(term) || schoolId.includes(term)
+        return fullName.includes(term) || 
+               schoolId.includes(term) || 
+               departmentCode.includes(term) ||
+               departmentName.includes(term)
       })
     }
 
@@ -245,21 +240,20 @@ export default function DepartmentalVoterTurnoutPage() {
     await Promise.all([
       fetchElection(),
       fetchParticipants(),
-      fetchStats(),
-      fetchVoterStats()
+      fetchStats()
     ])
   }
 
   const handleExportPDF = async () => {
     try {
-      const blob = await electionParticipationAPI.exportDepartmentalParticipantsPDF(deptElectionId, {
+      const blob = await electionParticipationAPI.exportSSGParticipantsPDF(ssgElectionId, {
         hasVoted: statusFilter === 'voted' ? true : statusFilter === 'not_voted' ? false : undefined
       })
       
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `Departmental_Participants_${election?.title?.replace(/[^a-zA-Z0-9]/g, '_') || deptElectionId}_${new Date().toISOString().split('T')[0]}.pdf`
+      a.download = `SSG_Participants_${election?.title?.replace(/[^a-zA-Z0-9]/g, '_') || ssgElectionId}_${new Date().toISOString().split('T')[0]}.pdf`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -268,7 +262,7 @@ export default function DepartmentalVoterTurnoutPage() {
       Swal.fire({
         icon: 'success',
         title: 'Export Successful',
-        text: 'Departmental participants PDF has been downloaded',
+        text: 'SSG participants PDF has been downloaded',
         confirmButtonColor: '#001f65',
         timer: 2000,
         showConfirmButton: false
@@ -284,22 +278,18 @@ export default function DepartmentalVoterTurnoutPage() {
     }
   }
 
-  
-
- 
-
   // Get display values with fallbacks using the new stats structure
   const getDisplayStats = () => {
-    const totalEligibleOfficers = stats?.totalEligibleVoters || 0
+    const totalEligibleVoters = stats?.totalEligibleVoters || 0
     const participantsCount = stats?.totalParticipants || participants.length || 0
     const votedCount = stats?.totalVoted || 0
     const participationRate = stats?.participationRate || 0
     const voterTurnoutRate = stats?.voterTurnoutRate || 0
     
-    console.log('Display stats:', { totalEligibleOfficers, participantsCount, votedCount, participationRate, voterTurnoutRate, stats })
+    console.log('Display stats:', { totalEligibleVoters, participantsCount, votedCount, participationRate, voterTurnoutRate, stats })
     
     return {
-      totalEligibleOfficers,
+      totalEligibleVoters,
       participants: participantsCount,
       voted: votedCount,
       participationRate,
@@ -307,14 +297,13 @@ export default function DepartmentalVoterTurnoutPage() {
     }
   }
 
-
-  if (!deptElectionId) {
+  if (!ssgElectionId) {
     return (
-      <DepartmentalLayout
-        deptElectionId={null}
+      <SAOSSGLayout
+        ssgElectionId={null}
         title="Voter Turnout"
         subtitle="Election Participation Analytics"
-        activeItem="turnout"
+        activeItem="voterTurnout"
       >
         <div className="min-h-screen flex items-center justify-center">
           <div className="text-center bg-white/10 backdrop-blur-md p-8 rounded-2xl border border-white/20">
@@ -322,27 +311,25 @@ export default function DepartmentalVoterTurnoutPage() {
             <h3 className="text-xl font-bold text-white mb-2">No Election Selected</h3>
             <p className="text-white/80 mb-6">Please select an election to view voter turnout.</p>
             <button
-              onClick={() => router.push('/ecommittee/departmental')}
+              onClick={() => router.push('/sao/ssg')}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
             >
               Back to Elections
             </button>
           </div>
         </div>
-      </DepartmentalLayout>
+      </SAOSSGLayout>
     )
   }
 
   return (
-    <DepartmentalLayout
-      deptElectionId={deptElectionId}
+    <SAOSSGLayout
+      ssgElectionId={ssgElectionId}
       title="Voter Turnout"
       subtitle="Election Participation Analytics"
-      activeItem="turnout"
+      activeItem="voterTurnout"
     >
       <div className="max-w-7xl mx-auto space-y-6">
-        
-
         {/* Main Statistics Cards */}
         {stats && (
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
@@ -350,8 +337,8 @@ export default function DepartmentalVoterTurnoutPage() {
               <div className="flex items-center">
                 <Shield className="w-10 h-10 text-[#001f65] mr-4" />
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Eligible Officers</p>
-                  <p className="text-2xl font-bold text-[#001f65]">{getDisplayStats().totalEligibleOfficers}</p>
+                  <p className="text-sm text-gray-600 mb-1">Eligible Voters</p>
+                  <p className="text-2xl font-bold text-[#001f65]">{getDisplayStats().totalEligibleVoters}</p>
                 </div>
               </div>
             </div>
@@ -401,6 +388,63 @@ export default function DepartmentalVoterTurnoutPage() {
             </div>
           </div>
         )}
+
+        {/* Department Filter Cards */}
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            <div
+              onClick={() => setSelectedDepartment('all')}
+              className={`p-4 rounded-xl border-2 cursor-pointer transition-colors ${
+                selectedDepartment === 'all'
+                  ? 'bg-[#001f65] text-white border-[#001f65]'
+                  : 'bg-white/90 backdrop-blur-sm border-white/20 hover:bg-white/95'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <Building2 className="w-6 h-6 mb-2" />
+                  <h4 className="font-semibold">All Departments</h4>
+                  <p className="text-sm opacity-80">Total Participants</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-bold">{participants.length}</p>
+                  <p className="text-sm opacity-80">{getDisplayStats().participationRate}%</p>
+                </div>
+              </div>
+            </div>
+
+            {departments.map((dept, index) => {
+              const deptParticipants = participants.filter(p => 
+                p.voterId?.departmentId?._id === dept._id
+              )
+              const deptParticipation = participants.length > 0 ? Math.round((deptParticipants.length / participants.length) * 100) : 0
+              
+              return (
+                <div
+                  key={dept._id}
+                  onClick={() => setSelectedDepartment(dept._id)}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition-colors ${
+                    selectedDepartment === dept._id
+                      ? 'bg-[#001f65] text-white border-[#001f65]'
+                      : 'bg-white/90 backdrop-blur-sm border-white/20 hover:bg-white/95'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Building2 className="w-6 h-6 mb-2" />
+                      <h4 className="font-semibold">{dept.departmentCode}</h4>
+                      <p className="text-xs opacity-80">{dept.degreeProgram}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xl font-bold">{deptParticipants.length}</p>
+                      <p className="text-sm opacity-80">{deptParticipation}%</p>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
 
         {/* Error Alert */}
         {error && (
@@ -481,9 +525,9 @@ export default function DepartmentalVoterTurnoutPage() {
               <UserX className="w-12 h-12 mx-auto mb-4 text-gray-400" />
               <h3 className="text-lg font-semibold text-gray-600 mb-2">No Participants Found</h3>
               <p className="text-gray-500">
-                {searchTerm || statusFilter !== 'all'
+                {searchTerm || selectedDepartment !== 'all' || statusFilter !== 'all'
                   ? 'Try adjusting your filters or search term.'
-                  : 'No officers have confirmed their participation yet.'
+                  : 'No voters have confirmed their participation yet.'
                 }
               </p>
             </div>
@@ -499,7 +543,10 @@ export default function DepartmentalVoterTurnoutPage() {
                       Name
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
-                      Year Level
+                      Department
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                      Sex
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
                       Status
@@ -515,7 +562,6 @@ export default function DepartmentalVoterTurnoutPage() {
                 <tbody className="divide-y divide-gray-200">
                   {filteredParticipants.map((participant, index) => {
                     const voter = participant.voterId
-                    
                     return (
                       <tr key={participant._id || index} className="hover:bg-[#b0c8fe]/10">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -525,7 +571,13 @@ export default function DepartmentalVoterTurnoutPage() {
                           {`${voter?.firstName || ''} ${voter?.lastName || ''}`.trim() || 'N/A'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {voter?.yearLevel ? `${voter.yearLevel}${['st', 'nd', 'rd', 'th'][voter.yearLevel - 1]} Year` : 'N/A'}
+                          <div>
+                            <div className="font-medium">{voter?.departmentId?.departmentCode || 'N/A'}</div>
+                            <div className="text-xs text-gray-500">{voter?.departmentId?.degreeProgram || ''}</div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {voter?.sex || 'N/A'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-2 py-1 text-xs rounded-full font-medium ${
@@ -585,6 +637,6 @@ export default function DepartmentalVoterTurnoutPage() {
           </div>
         )}
       </div>
-    </DepartmentalLayout>
+    </SAOSSGLayout>
   )
 }

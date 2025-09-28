@@ -2147,7 +2147,7 @@ static async getActiveOfficersByDepartmentCode(req, res, next) {
       const { yearLevel } = req.body
 
       // Check if user has permission (should be handled by middleware, but double-check)
-      if (!req.user || !["admin", "election_committee"].includes(req.user.role)) {
+      if (!req.user || !["admin", "election_committee"].includes(req.user.userType)) {
         const error = new Error("Only admin or election committee members can update year levels")
         error.statusCode = 403
         return next(error)
@@ -2156,7 +2156,7 @@ static async getActiveOfficersByDepartmentCode(req, res, next) {
       const voter = await Voter.findById(id).populate("departmentId")
       if (!voter) {
         await AuditLog.logUserAction(
-          "UPDATE_YEAR_LEVEL",
+          "UPDATE_VOTER",
           { username: req.user?.username },
           `Failed to update year level - Voter ID ${id} not found`,
           req
@@ -2185,7 +2185,7 @@ static async getActiveOfficersByDepartmentCode(req, res, next) {
       await voter.save()
 
       await AuditLog.logVoterAction(
-        "UPDATE_YEAR_LEVEL",
+        "UPDATE_VOTER",
         voter,
         `Year level updated - ${voter.firstName} ${voter.lastName} (${voter.schoolId}) from ${oldYearLevel} to ${yearLevelNumber} by ${req.user.username}`,
         req
