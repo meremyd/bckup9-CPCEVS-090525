@@ -423,7 +423,7 @@ class DepartmentalElectionController {
 
     // Get election results
     const results = await Vote.getElectionResults(id, 'departmental')
-    const participationStats = await ElectionParticipation.getElectionStats(id, 'departmental')
+    const participationStats = await ElectionParticipation.getElectionStatistics(id, 'departmental')
 
     // Get winners for each position
     const winners = results.reduce((acc, result) => {
@@ -1452,6 +1452,369 @@ static async checkVoterEligibilityForDepartmentalElection(req, res, next) {
         status: election.status
       },
       eligibility
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+static async getAllDepartmentalElectionsForVoters(req, res, next) {
+  try {
+    const { status, page = 1, limit = 50 } = req.query
+    
+    // Get voter info
+    const voter = await Voter.findById(req.user.voterId).populate('departmentId')
+    if (!voter) {
+      const error = new Error("Voter not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Filter elections for voter's department only
+    const filter = { 
+      departmentId: voter.departmentId._id
+    }
+    if (status && status !== '') {
+      filter.status = status
+    }
+    
+    const skip = (page - 1) * limit
+    const limitNum = Math.min(Number.parseInt(limit), 100)
+
+    const elections = await DepartmentalElection.find(filter)
+      .populate("departmentId", "departmentCode degreeProgram college")
+      .sort({ electionDate: -1 })
+      .skip(skip)
+      .limit(limitNum)
+
+    const total = await DepartmentalElection.countDocuments(filter)
+
+    await AuditLog.logVoterAction(
+      "SYSTEM_ACCESS",
+      voter,
+      `Departmental elections accessed - ${elections.length} elections for ${voter.departmentId.departmentCode}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        elections,
+        voterDepartment: voter.departmentId,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(total / limitNum),
+          totalItems: total,
+          itemsPerPage: limitNum
+        }
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+static async getDepartmentalElectionForVoters(req, res, next) {
+  try {
+    const { id } = req.params
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await DepartmentalElection.findById(id)
+      .populate("departmentId", "departmentCode degreeProgram college")
+      .select('title deptElectionId status electionDate description')
+
+    if (!election) {
+      const error = new Error("Departmental election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Get basic counts
+    const totalPositions = await Position.countDocuments({ deptElectionId: id, isActive: true })
+    const totalCandidates = await Candidate.countDocuments({ deptElectionId: id, isActive: true })
+
+    await AuditLog.logVoterAction(
+      "SYSTEM_ACCESS",
+      { _id: req.user.voterId, schoolId: req.user.schoolId },
+      `Departmental election accessed - ${election.title}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election,
+        summary: {
+          totalPositions,
+          totalCandidates
+        }
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+static async getDepartmentalElectionResultsForVoters(req, res, next) {
+  try {
+    const { id } = req.params
+    const voterId = req.user.voterId
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    // Get voter info
+    const voter = await Voter.findById(voterId).populate('departmentId')
+    if (!voter) {
+      const error = new Error("Voter not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Verify election exists
+    const election = await DepartmentalElection.findById(id).populate('departmentId')
+    if (!election) {
+      const error = new Error("Departmental election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    let canViewResults = false
+    let accessReason = ''
+
+    // Check if voter can view results
+    const isFromSameDepartment = voter.departmentId._id.equals(election.departmentId._id)
+    
+    if (!voter.isRegistered || !voter.isPasswordActive) {
+      canViewResults = false
+      accessReason = "You must be a registered voter with an active password"
+    } else if (!isFromSameDepartment) {
+      canViewResults = false
+      accessReason = `This election is for ${election.departmentId.departmentCode} department. You belong to ${voter.departmentId.departmentCode} department.`
+    } else {
+      canViewResults = true
+      accessReason = "You can view results as a student from this department"
+    }
+
+    if (!canViewResults) {
+      const error = new Error(accessReason)
+      error.statusCode = 403
+      return next(error)
+    }
+
+    // Get election results using existing method logic
+    const results = await Vote.getElectionResults(id, 'departmental')
+    const participationStats = await ElectionParticipation.getElectionStatistics(id, 'departmental')
+
+    // Get winners for each position
+    const winners = results.reduce((acc, result) => {
+      const positionId = result._id.positionId.toString()
+      if (!acc[positionId] || result.voteCount > acc[positionId].voteCount) {
+        acc[positionId] = {
+          candidateId: result._id.candidateId,
+          candidate: result.candidate[0],
+          position: result.position[0],
+          voteCount: result.voteCount
+        }
+      }
+      return acc
+    }, {})
+
+    await AuditLog.logVoterAction(
+      "SYSTEM_ACCESS",
+      voter,
+      `Viewed departmental election results: ${election.title}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election: {
+          id: election._id,
+          title: election.title,
+          deptElectionId: election.deptElectionId,
+          department: election.departmentId,
+          status: election.status,
+          electionDate: election.electionDate,
+          type: 'DEPARTMENTAL'
+        },
+        results,
+        winners: Object.values(winners),
+        participationStats,
+        accessInfo: {
+          canViewResults,
+          accessReason,
+          userRole: 'voter'
+        }
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+static async getDepartmentalElectionStatisticsForVoters(req, res, next) {
+  try {
+    const { id } = req.params
+    const voterId = req.user.voterId
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    // Get voter info
+    const voter = await Voter.findById(voterId).populate('departmentId')
+    if (!voter) {
+      const error = new Error("Voter not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Verify election exists
+    const election = await DepartmentalElection.findById(id).populate('departmentId')
+    if (!election) {
+      const error = new Error("Departmental election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    let canViewStatistics = false
+    let accessReason = ''
+
+    // Check if voter can view statistics
+    const isFromSameDepartment = voter.departmentId._id.equals(election.departmentId._id)
+    
+    if (!voter.isRegistered || !voter.isPasswordActive) {
+      canViewStatistics = false
+      accessReason = "You must be a registered voter with an active password"
+    } else if (!isFromSameDepartment) {
+      canViewStatistics = false
+      accessReason = `Statistics are only available to students from ${election.departmentId.departmentCode} department`
+    } else {
+      canViewStatistics = true
+      accessReason = voter.isClassOfficer ? 
+        "You can view statistics as a class officer from this department" :
+        "You can view statistics as a student from this department"
+    }
+
+    if (!canViewStatistics) {
+      const error = new Error(accessReason)
+      error.statusCode = 403
+      return next(error)
+    }
+
+    // Get basic statistics
+    const totalPositions = await Position.countDocuments({ deptElectionId: id, isActive: true })
+    const totalCandidates = await Candidate.countDocuments({ deptElectionId: id, isActive: true })
+    const participationStats = await ElectionParticipation.getElectionStatistics(id, 'departmental')
+
+    // Get candidates by position with vote counts (similar to existing getDepartmentalElectionStatistics)
+    const candidatesByPosition = await Candidate.aggregate([
+      { $match: { deptElectionId: new mongoose.Types.ObjectId(id), isActive: true } },
+      {
+        $lookup: {
+          from: "positions",
+          localField: "positionId",
+          foreignField: "_id",
+          as: "position"
+        }
+      },
+      { $unwind: "$position" },
+      {
+        $lookup: {
+          from: "voters",
+          localField: "voterId",
+          foreignField: "_id",
+          as: "voter"
+        }
+      },
+      { $unwind: "$voter" },
+      {
+        $lookup: {
+          from: "votes",
+          localField: "_id",
+          foreignField: "candidateId",
+          as: "votes"
+        }
+      },
+      {
+        $group: {
+          _id: {
+            positionId: "$positionId",
+            positionName: "$position.positionName",
+            positionOrder: "$position.positionOrder"
+          },
+          candidates: {
+            $push: {
+              candidateId: "$_id",
+              candidateNumber: "$candidateNumber",
+              name: {
+                $concat: [
+                  "$voter.firstName",
+                  " ",
+                  { $ifNull: ["$voter.middleName", ""] },
+                  " ",
+                  "$voter.lastName"
+                ]
+              },
+              voteCount: { $size: "$votes" }
+            }
+          },
+          totalCandidates: { $sum: 1 },
+          totalVotes: { $sum: { $size: "$votes" } }
+        }
+      },
+      { $sort: { "_id.positionOrder": 1 } }
+    ])
+
+    const overview = {
+      totalPositions,
+      totalCandidates,
+      ...participationStats,
+      status: election.status,
+      electionDate: election.electionDate,
+      department: election.departmentId,
+      electionType: "departmental"
+    }
+
+    await AuditLog.logVoterAction(
+      "SYSTEM_ACCESS",
+      voter,
+      `Viewed departmental election statistics: ${election.title}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        overview,
+        candidatesByPosition,
+        election: {
+          id: election._id,
+          title: election.title,
+          deptElectionId: election.deptElectionId,
+          department: election.departmentId,
+          status: election.status,
+          electionDate: election.electionDate,
+          type: 'DEPARTMENTAL'
+        },
+        accessInfo: {
+          canViewStatistics,
+          accessReason,
+          userRole: 'voter'
+        }
+      }
     })
   } catch (error) {
     next(error)

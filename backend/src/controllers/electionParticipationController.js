@@ -970,6 +970,226 @@ static async exportDepartmentalParticipantsPDF(req, res, next) {
   }
 }
 
+// Get voter's voting status for SSG election
+static async getSSGVotingStatus(req, res, next) {
+  try {
+    const { ssgElectionId } = req.params
+    const voterId = req.user.voterId
+
+    const receipt = await ElectionParticipation.generateVotingReceipt(
+      voterId, 
+      ssgElectionId, 
+      'ssg'
+    )
+
+    // Get election info
+    const ssgElection = await SSGElection.findById(ssgElectionId, 'title electionDate status')
+    if (!ssgElection) {
+      return res.status(404).json({ message: "SSG Election not found" })
+    }
+
+    res.json({
+      electionId: ssgElectionId,
+      electionTitle: ssgElection.title,
+      electionType: "SSG",
+      hasVoted: receipt.hasVoted,
+      votingStatus: receipt.hasVoted ? 'voted' : 'not_voted',
+      submittedAt: receipt.submittedAt || null,
+      totalVotes: receipt.totalVotes || 0,
+      reason: receipt.reason || null
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// Get voter's voting status for Departmental election
+static async getDepartmentalVotingStatus(req, res, next) {
+  try {
+    const { deptElectionId } = req.params
+    const voterId = req.user.voterId
+
+    const receipt = await ElectionParticipation.generateVotingReceipt(
+      voterId, 
+      deptElectionId, 
+      'departmental'
+    )
+
+    // Get election info
+    const deptElection = await DepartmentalElection.findById(deptElectionId, 'title electionDate status')
+      .populate('departmentId', 'departmentCode degreeProgram')
+    if (!deptElection) {
+      return res.status(404).json({ message: "Departmental Election not found" })
+    }
+
+    res.json({
+      electionId: deptElectionId,
+      electionTitle: deptElection.title,
+      electionType: "DEPARTMENTAL",
+      department: deptElection.departmentId,
+      hasVoted: receipt.hasVoted,
+      votingStatus: receipt.hasVoted ? 'voted' : 'not_voted',
+      submittedAt: receipt.submittedAt || null,
+      totalVotes: receipt.totalVotes || 0,
+      reason: receipt.reason || null
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// Export SSG voting receipt as PDF (voter only)
+static async exportSSGVotingReceiptPDF(req, res, next) {
+  try {
+    const { ssgElectionId } = req.params
+    const voterId = req.user.voterId
+
+    const receipt = await ElectionParticipation.generateVotingReceipt(
+      voterId, 
+      ssgElectionId, 
+      'ssg'
+    )
+
+    if (!receipt.hasVoted) {
+      return res.status(404).json({ 
+        message: "No voting record found",
+        reason: receipt.reason 
+      })
+    }
+
+    // Get election and voter info for receipt
+    const [ssgElection, voter] = await Promise.all([
+      SSGElection.findById(ssgElectionId, 'title electionDate electionYear'),
+      Voter.findById(voterId, 'schoolId firstName middleName lastName').populate('departmentId', 'departmentCode degreeProgram college')
+    ])
+
+    // Create PDF
+    const doc = new PDFDocument()
+    
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="SSG_Voting_Receipt_${voter.schoolId}_${ssgElection.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`)
+    
+    doc.pipe(res)
+
+    // PDF Content
+    doc.fontSize(16).text(`SSG Election Voting Receipt`, { align: 'center' })
+    doc.moveDown()
+    doc.fontSize(12).text(`Election: ${ssgElection.title}`)
+    doc.text(`Election Year: ${ssgElection.electionYear}`)
+    doc.text(`Election Date: ${new Date(ssgElection.electionDate).toLocaleDateString()}`)
+    doc.moveDown()
+    doc.text(`Voter Information:`)
+    doc.text(`School ID: ${voter.schoolId}`)
+    doc.text(`Name: ${voter.fullName}`)
+    doc.text(`Department: ${voter.departmentId.departmentCode} - ${voter.departmentId.degreeProgram}`)
+    doc.text(`College: ${voter.departmentId.college}`)
+    doc.moveDown()
+    doc.text(`Voting Details:`)
+    doc.text(`Ballot Token: ${receipt.ballotToken}`)
+    doc.text(`Submitted At: ${new Date(receipt.submittedAt).toLocaleString()}`)
+    doc.text(`Total Votes Cast: ${receipt.totalVotes}`)
+    doc.moveDown()
+    doc.text(`Vote Summary:`)
+    
+    receipt.voteDetails.forEach((vote, index) => {
+      doc.text(`${index + 1}. ${vote.position}: #${vote.candidateNumber} - ${vote.candidateName}`)
+    })
+    
+    doc.moveDown()
+    doc.fontSize(10).text(`This is an official voting receipt generated on ${new Date().toLocaleString()}`, { align: 'center' })
+
+    doc.end()
+
+    await AuditLog.logVoterAction(
+      "VOTE_RECEIPT_PDF_EXPORT",
+      voter,
+      `Exported SSG voting receipt as PDF: ${ssgElection.title}`,
+      req
+    )
+
+  } catch (error) {
+    next(error)
+  }
+}
+
+// Export Departmental voting receipt as PDF (voter only)
+static async exportDepartmentalVotingReceiptPDF(req, res, next) {
+  try {
+    const { deptElectionId } = req.params
+    const voterId = req.user.voterId
+
+    const receipt = await ElectionParticipation.generateVotingReceipt(
+      voterId, 
+      deptElectionId, 
+      'departmental'
+    )
+
+    if (!receipt.hasVoted) {
+      return res.status(404).json({ 
+        message: "No voting record found",
+        reason: receipt.reason 
+      })
+    }
+
+    // Get election and voter info for receipt
+    const [deptElection, voter] = await Promise.all([
+      DepartmentalElection.findById(deptElectionId, 'title electionDate electionYear').populate('departmentId', 'departmentCode degreeProgram college'),
+      Voter.findById(voterId, 'schoolId firstName middleName lastName isClassOfficer').populate('departmentId', 'departmentCode degreeProgram college')
+    ])
+
+    // Create PDF
+    const doc = new PDFDocument()
+    
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="Departmental_Voting_Receipt_${voter.schoolId}_${deptElection.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`)
+    
+    doc.pipe(res)
+
+    // PDF Content
+    doc.fontSize(16).text(`Departmental Election Voting Receipt`, { align: 'center' })
+    doc.moveDown()
+    doc.fontSize(12).text(`Election: ${deptElection.title}`)
+    doc.text(`Election Year: ${deptElection.electionYear}`)
+    doc.text(`Election Date: ${new Date(deptElection.electionDate).toLocaleDateString()}`)
+    doc.text(`Department: ${deptElection.departmentId.departmentCode} - ${deptElection.departmentId.degreeProgram}`)
+    doc.moveDown()
+    doc.text(`Voter Information:`)
+    doc.text(`School ID: ${voter.schoolId}`)
+    doc.text(`Name: ${voter.fullName}`)
+    doc.text(`Class Officer: ${voter.isClassOfficer ? 'Yes' : 'No'}`)
+    doc.text(`Department: ${voter.departmentId.departmentCode} - ${voter.departmentId.degreeProgram}`)
+    doc.text(`College: ${voter.departmentId.college}`)
+    doc.moveDown()
+    doc.text(`Voting Details:`)
+    doc.text(`Ballot Token: ${receipt.ballotToken}`)
+    doc.text(`Submitted At: ${new Date(receipt.submittedAt).toLocaleString()}`)
+    doc.text(`Total Votes Cast: ${receipt.totalVotes}`)
+    doc.moveDown()
+    doc.text(`Vote Summary:`)
+    
+    receipt.voteDetails.forEach((vote, index) => {
+      doc.text(`${index + 1}. ${vote.position}: #${vote.candidateNumber} - ${vote.candidateName}`)
+    })
+    
+    doc.moveDown()
+    doc.fontSize(10).text(`This is an official voting receipt generated on ${new Date().toLocaleString()}`, { align: 'center' })
+
+    doc.end()
+
+    await AuditLog.logVoterAction(
+      "VOTE_RECEIPT_PDF_EXPORT",
+      voter,
+      `Exported Departmental voting receipt as PDF: ${deptElection.title}`,
+      req
+    )
+
+  } catch (error) {
+    next(error)
+  }
+}
+
 }
 
 module.exports = ElectionParticipationController

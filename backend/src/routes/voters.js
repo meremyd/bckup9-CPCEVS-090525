@@ -1,6 +1,6 @@
 const express = require("express")
 const voterController = require("../controllers/voterController")
-const { authMiddleware, authorizeRoles, voterAuthMiddleware, authorizeStaffAndVoters } = require("../middleware/authMiddleware")
+const { authMiddleware, authorizeRoles, voterAuthMiddleware } = require("../middleware/authMiddleware")
 const router = express.Router()
 
 router.get("/lookup/:schoolId", voterController.lookupVoter)
@@ -18,7 +18,7 @@ router.get("/export/registered", authorizeRoles("admin", "election_committee", "
 
 router.get("/active/registered", authorizeRoles("admin", "election_committee", "sao"), voterController.getActiveRegisteredVoters)
 router.get("/active/officers", authorizeRoles("admin", "election_committee", "sao"), voterController.getActiveOfficers)
-router.get("/active", authorizeStaffAndVoters("admin", "election_committee", "sao"), voterController.getActiveVoters)
+router.get("/active", authorizeRoles("admin", "election_committee", "sao"), voterController.getActiveVoters)
 
 router.get("/department/:departmentId/officers", authorizeRoles("admin", "election_committee", "sao"), voterController.getDepartmentalOfficers)
 router.get("/department-code/:departmentCode/active", authorizeRoles("admin", "election_committee", "sao"), voterController.getActiveVotersByDepartmentCode)

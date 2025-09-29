@@ -1,25 +1,35 @@
 const express = require("express")
-const votingController = require("../controllers/votingController")
-const { authMiddleware, voterAuthMiddleware, authorizeStaffAndVoters } = require("../middleware/authMiddleware")
+const VotingController = require("../controllers/votingController")
+const { authMiddleware, voterAuthMiddleware, authorizeRoles } = require("../middleware/authMiddleware")
 const router = express.Router()
 
-// VOTER-ONLY ROUTES (use voterAuthMiddleware for consistency)
-// SSG Election routes
-router.get("/ssg-elections/active", voterAuthMiddleware, votingController.getActiveSSGElections)
-router.post("/ssg-election/cast-vote", voterAuthMiddleware, votingController.castSSGVote)
-router.get("/ssg-votes/my-votes", voterAuthMiddleware, votingController.getMySSGVotes)
-router.get("/ssg-voting-status", voterAuthMiddleware, votingController.getSSGVotingStatus)
+router.use('/voter', voterAuthMiddleware)
+router.get("/voter/ssg-elections/active", VotingController.getActiveSSGElections)
+router.post("/voter/ssg-elections/vote", VotingController.castSSGVote)
+router.get("/voter/ssg-elections/status", VotingController.getSSGVotingStatus)
+router.get("/voter/ssg-elections/my-votes", VotingController.getMySSGVotes)
+router.get("/voter/departmental-elections/active", VotingController.getActiveDepartmentalElections)
+router.post("/voter/departmental-elections/vote", VotingController.castDepartmentalVote)
+router.get("/voter/departmental-elections/status", VotingController.getDepartmentalVotingStatus)
+router.get("/voter/departmental-elections/my-votes", VotingController.getMyDepartmentalVotes)
+router.get("/voter/ssg-elections/:id/live-results", VotingController.getSSGElectionLiveResultsForVoter)
+router.get("/voter/departmental-elections/:id/live-results", VotingController.getDepartmentalElectionLiveResultsForVoter)
 
-// Departmental Election routes
-router.get("/departmental-elections/active", voterAuthMiddleware, votingController.getActiveDepartmentalElections)
-router.post("/departmental-election/cast-vote", voterAuthMiddleware, votingController.castDepartmentalVote)
-router.get("/departmental-votes/my-votes", voterAuthMiddleware, votingController.getMyDepartmentalVotes)
-router.get("/departmental-voting-status", voterAuthMiddleware, votingController.getDepartmentalVotingStatus)
 
-// STAFF AND VOTER ROUTES (viewing election details)
-router.get("/ssg-election/:id/details", authMiddleware, authorizeStaffAndVoters("election_committee", "sao"), votingController.getSSGElectionDetails)
-router.get("/ssg-election/:id/candidates", authMiddleware, authorizeStaffAndVoters("election_committee", "sao"), votingController.getSSGElectionCandidates)
-router.get("/departmental-election/:id/details", authMiddleware, authorizeStaffAndVoters("election_committee", "sao"), votingController.getDepartmentalElectionDetails)
-router.get("/departmental-election/:id/candidates", authMiddleware, authorizeStaffAndVoters("election_committee", "sao"), votingController.getDepartmentalElectionCandidates)
+router.use('/user', authMiddleware)
+router.get("/user/ssg-elections/:id/details", authorizeRoles("election_committee", "sao"), VotingController.getSSGElectionDetails)
+router.get("/user/ssg-elections/:id/candidates", authorizeRoles("election_committee", "sao"), VotingController.getSSGElectionCandidates)
+router.get("/user/departmental-elections/:id/details", authorizeRoles("election_committee", "sao"), VotingController.getDepartmentalElectionDetails)
+router.get("/user/departmental-elections/:id/candidates", authorizeRoles("election_committee", "sao"), VotingController.getDepartmentalElectionCandidates)
+router.get("/user/ssg-elections/:id/live-results", authorizeRoles("election_committee", "sao"), VotingController.getSSGElectionLiveResults)
+router.get("/user/departmental-elections/:id/live-results", authorizeRoles("election_committee", "sao"), VotingController.getDepartmentalElectionLiveResults)
+
+router.get("/", authMiddleware, (req, res) => {
+  if (req.user.userType === 'voter') {
+    res.redirect('/voting/voter/')
+  } else {
+    res.redirect('/voting/user/')
+  }
+})
 
 module.exports = router

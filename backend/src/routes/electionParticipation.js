@@ -3,25 +3,24 @@ const router = express.Router()
 const ElectionParticipationController = require("../controllers/electionParticipationController")
 const { voterAuthMiddleware, authMiddleware, authorizeRoles } = require("../middleware/authMiddleware")
 
-// Voter routes (require voter authentication)
-// Confirm participation in elections
-router.post("/confirm/ssg", voterAuthMiddleware, ElectionParticipationController.confirmSSGParticipation)
-router.post("/confirm/departmental", voterAuthMiddleware, ElectionParticipationController.confirmDepartmentalParticipation)
+router.use('/voter', voterAuthMiddleware)
+router.post("/voter/confirm/ssg", ElectionParticipationController.confirmSSGParticipation)
+router.post("/voter/confirm/departmental", ElectionParticipationController.confirmDepartmentalParticipation)
+router.get("/voter/status/ssg/:ssgElectionId", ElectionParticipationController.checkSSGStatus)
+router.get("/voter/status/departmental/:deptElectionId", ElectionParticipationController.checkDepartmentalStatus)
+router.get("/voter/voting-status/ssg/:ssgElectionId", ElectionParticipationController.getSSGVotingStatus)
+router.get("/voter/voting-status/departmental/:deptElectionId", ElectionParticipationController.getDepartmentalVotingStatus)
+router.get("/voter/receipt/ssg/:ssgElectionId", ElectionParticipationController.getSSGVotingReceipt)
+router.get("/voter/receipt/departmental/:deptElectionId", ElectionParticipationController.getDepartmentalVotingReceipt)
+router.get("/voter/receipt/ssg/:ssgElectionId/pdf", ElectionParticipationController.exportSSGVotingReceiptPDF)
+router.get("/voter/receipt/departmental/:deptElectionId/pdf", ElectionParticipationController.exportDepartmentalVotingReceiptPDF)
 
-// Check voter status in elections
-router.get("/status/ssg/:ssgElectionId", voterAuthMiddleware, ElectionParticipationController.checkSSGStatus)
-router.get("/status/departmental/:deptElectionId", voterAuthMiddleware, ElectionParticipationController.checkDepartmentalStatus)
-
-// Generate voting receipts
-router.get("/receipt/ssg/:ssgElectionId", voterAuthMiddleware, ElectionParticipationController.getSSGVotingReceipt)
-router.get("/receipt/departmental/:deptElectionId", voterAuthMiddleware, ElectionParticipationController.getDepartmentalVotingReceipt)
-
-// Admin/Committee/SAO routes (require staff authentication)
-router.get("/participants/ssg/:ssgElectionId", authMiddleware, authorizeRoles("election_committee", "sao"), ElectionParticipationController.getSSGParticipants)
-router.get("/participants/departmental/:deptElectionId", authMiddleware, authorizeRoles("election_committee", "sao"), ElectionParticipationController.getDepartmentalParticipants)
-router.get("/statistics/ssg/:ssgElectionId", authMiddleware, authorizeRoles("election_committee", "sao"), ElectionParticipationController.getSSGStatistics)
-router.get("/statistics/departmental/:deptElectionId", authMiddleware, authorizeRoles("election_committee", "sao"), ElectionParticipationController.getDepartmentalStatistics)
-router.get("/export/ssg/:ssgElectionId/pdf", authMiddleware, authorizeRoles("election_committee", "sao"), ElectionParticipationController.exportSSGParticipantsPDF)
-router.get("/export/departmental/:deptElectionId/pdf", authMiddleware, authorizeRoles("election_committee", "sao"), ElectionParticipationController.exportDepartmentalParticipantsPDF)
+router.use('/user', authMiddleware)
+router.get("/user/participants/ssg/:ssgElectionId", authorizeRoles("election_committee", "sao"), ElectionParticipationController.getSSGParticipants)
+router.get("/user/participants/departmental/:deptElectionId", authorizeRoles("election_committee", "sao"), ElectionParticipationController.getDepartmentalParticipants)
+router.get("/user/statistics/ssg/:ssgElectionId", authorizeRoles("election_committee", "sao"), ElectionParticipationController.getSSGStatistics)
+router.get("/user/statistics/departmental/:deptElectionId", authorizeRoles("election_committee", "sao"), ElectionParticipationController.getDepartmentalStatistics)
+router.get("/user/export/ssg/:ssgElectionId/pdf", authorizeRoles("election_committee", "sao"), ElectionParticipationController.exportSSGParticipantsPDF)
+router.get("/user/export/departmental/:deptElectionId/pdf", authorizeRoles("election_committee", "sao"), ElectionParticipationController.exportDepartmentalParticipantsPDF)
 
 module.exports = router

@@ -41,16 +41,6 @@ const authorizeRoles = (...roles) => {
   }
 }
 
-// middleware specifically for voter-only routes
-const voterOnly = (req, res, next) => {
-  if (!req.user || req.user.userType !== "voter") {
-    return res.status(403).json({ 
-      message: "Forbidden: This resource is only accessible to voters" 
-    })
-  }
-  next()
-}
-
 // middleware that allows both staff and voters
 const authorizeStaffAndVoters = (...staffRoles) => {
   return (req, res, next) => {
@@ -106,7 +96,6 @@ const voterAuthMiddleware = async (req, res, next) => {
 module.exports = { 
   authMiddleware, 
   authorizeRoles, 
-  voterOnly,
   authorizeStaffAndVoters, 
   voterAuthMiddleware 
 }

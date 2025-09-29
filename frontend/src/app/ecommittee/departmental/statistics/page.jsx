@@ -3,7 +3,9 @@
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { departmentalElectionsAPI } from "@/lib/api/departmentalElections"
-import { positionsAPI } from "@/lib/api/positions"
+import { ballotAPI } from "@/lib/api/ballots"
+import { electionParticipationAPI } from "@/lib/api/electionParticipation"
+import { candidatesAPI } from "@/lib/api/candidates"
 import DepartmentalLayout from "@/components/DepartmentalLayout"
 import Swal from 'sweetalert2'
 import { 
@@ -28,6 +30,9 @@ import {
   Award,
   AlertCircle,
   Loader2,
+  Lock,
+  Eye,
+  EyeOff,
   Trophy,
   Medal,
   Crown,
@@ -39,8 +44,14 @@ import {
 } from "lucide-react"
 
 export default function DepartmentalStatisticsPage() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [authError, setAuthError] = useState('')
   const [departmentalElectionData, setDepartmentalElectionData] = useState(null)
-  const [statisticsData, setStatisticsData] = useState(null)
+  const [participationStats, setParticipationStats] = useState(null)
+  const [ballotStats, setBallotStats] = useState(null)
+  const [candidatesData, setCandidatesData] = useState(null)
   const [resultsData, setResultsData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -77,11 +88,31 @@ export default function DepartmentalStatisticsPage() {
       router.push("/adminlogin")
       return
     }
+  }, [router])
 
-    if (deptElectionId) {
+  useEffect(() => {
+    if (isAuthenticated && deptElectionId) {
       fetchData()
     }
-  }, [deptElectionId, router])
+  }, [isAuthenticated, deptElectionId])
+
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault()
+    setAuthError('')
+
+    if (password === 'P@ssword') {
+      setIsAuthenticated(true)
+      setPassword('')
+    } else {
+      setAuthError('Invalid password. Access denied.')
+      Swal.fire({
+        icon: 'error',
+        title: 'Access Denied',
+        text: 'Invalid password. Please try again.',
+        confirmButtonColor: '#dc2626'
+      })
+    }
+  }
 
   const fetchData = async () => {
     setLoading(true)
@@ -90,8 +121,9 @@ export default function DepartmentalStatisticsPage() {
     try {
       await Promise.all([
         fetchElectionData(),
-        fetchStatistics(),
-        fetchResults()
+        fetchParticipationStats(),
+        fetchCandidatesData(),
+        fetchResultsData()
       ])
     } catch (error) {
       console.error("Error fetching data:", error)
@@ -110,23 +142,33 @@ export default function DepartmentalStatisticsPage() {
     }
   }
 
-  const fetchStatistics = async () => {
+  const fetchParticipationStats = async () => {
     try {
-      const response = await departmentalElectionsAPI.getStatistics(deptElectionId)
-      setStatisticsData(response.data)
+      const response = await electionParticipationAPI.getDepartmentalStatistics(deptElectionId)
+      setParticipationStats(response.data)
     } catch (error) {
-      console.error("Error fetching statistics:", error)
-      handleAPIError(error, 'Failed to load statistics')
+      console.error("Error fetching participation statistics:", error)
+      handleAPIError(error, 'Failed to load participation statistics')
     }
   }
 
-  const fetchResults = async () => {
+  const fetchCandidatesData = async () => {
+    try {
+      const response = await candidatesAPI.departmental.getByElection(deptElectionId)
+      setCandidatesData(response.data)
+    } catch (error) {
+      console.error("Error fetching candidates data:", error)
+      handleAPIError(error, 'Failed to load candidates data')
+    }
+  }
+
+  const fetchResultsData = async () => {
     try {
       const response = await departmentalElectionsAPI.getResults(deptElectionId)
       setResultsData(response.data)
     } catch (error) {
       console.error("Error fetching results:", error)
-      handleAPIError(error, 'Failed to load results')
+      // Don't show error for results as they might not be available yet
     }
   }
 
@@ -187,7 +229,7 @@ export default function DepartmentalStatisticsPage() {
                 <span class="font-semibold text-gray-900">${winner.candidateName}</span>
               </div>
               <div class="text-sm text-gray-600 ml-5">
-                ${winner.department ? `${winner.department} • ` : ''}
+                ${winner.departmentName ? `${winner.departmentName} • ` : ''}
                 ${winner.voteCount?.toLocaleString() || 0} votes
                 ${winner.votePercentage ? ` (${winner.votePercentage.toFixed(1)}%)` : ''}
               </div>
@@ -211,7 +253,34 @@ export default function DepartmentalStatisticsPage() {
     })
   }
 
-  // Get position data for charts - departmental elections typically have different positions
+  // Calculate statistics from available data
+  const getStatistics = () => {
+    const stats = {
+      totalVotes: 0,
+      turnoutRate: 0,
+      totalCandidates: 0,
+      totalPositions: 0,
+      totalOfficers: 0,
+      eligibleOfficers: 0
+    }
+
+    // From participation stats
+    if (participationStats) {
+      stats.totalVotes = participationStats.totalVoted || 0
+      stats.turnoutRate = participationStats.turnoutPercentage || 0
+      stats.eligibleOfficers = participationStats.totalEligible || 0
+    }
+
+    // From candidates data
+    if (candidatesData) {
+      stats.totalCandidates = candidatesData.data?.candidates?.length || 0
+      stats.totalPositions = candidatesData.data?.positions?.length || 0
+    }
+
+    return stats
+  }
+
+  // Transform data for charts - departmental positions
   const getPresidentData = () => {
     if (!resultsData?.positionResults) return []
     
@@ -226,7 +295,7 @@ export default function DepartmentalStatisticsPage() {
       name: candidate.candidateName,
       votes: candidate.voteCount || 0,
       percentage: candidate.votePercentage || 0,
-      department: candidate.department || 'Unknown'
+      department: candidate.departmentName || 'Department'
     }))
   }
 
@@ -243,7 +312,7 @@ export default function DepartmentalStatisticsPage() {
       name: candidate.candidateName,
       votes: candidate.voteCount || 0,
       percentage: candidate.votePercentage || 0,
-      department: candidate.department || 'Unknown'
+      department: candidate.departmentName || 'Department'
     }))
   }
 
@@ -260,7 +329,7 @@ export default function DepartmentalStatisticsPage() {
       name: candidate.candidateName,
       votes: candidate.voteCount || 0,
       percentage: candidate.votePercentage || 0,
-      department: candidate.department || 'Unknown',
+      department: candidate.departmentName || 'Department',
       rank: index + 1
     }))
   }
@@ -278,29 +347,64 @@ export default function DepartmentalStatisticsPage() {
       name: candidate.candidateName,
       votes: candidate.voteCount || 0,
       percentage: candidate.votePercentage || 0,
-      department: candidate.department || 'Unknown',
+      department: candidate.departmentName || 'Department',
       rank: index + 1
     }))
   }
 
-  const getRepresentativeData = () => {
+  const getOtherPositionsData = () => {
     if (!resultsData?.positionResults) return []
     
-    const repPosition = resultsData.positionResults.find(
-      pos => pos.positionName?.toLowerCase().includes('representative') ||
-             pos.positionName?.toLowerCase().includes('auditor') ||
-             pos.positionName?.toLowerCase().includes('pro')
+    // Get all positions that aren't president, vice president, secretary, or treasurer
+    const otherPositions = resultsData.positionResults.filter(
+      pos => {
+        const name = pos.positionName?.toLowerCase() || ''
+        return !name.includes('president') && 
+               !name.includes('secretary') && 
+               !name.includes('treasurer')
+      }
     )
     
-    if (!repPosition?.candidates) return []
+    const allCandidates = []
+    otherPositions.forEach(position => {
+      if (position.candidates) {
+        position.candidates.forEach((candidate, index) => {
+          allCandidates.push({
+            name: `${candidate.candidateName} (${position.positionName})`,
+            votes: candidate.voteCount || 0,
+            percentage: candidate.votePercentage || 0,
+            position: position.positionName,
+            department: candidate.departmentName || 'Department',
+            rank: index + 1
+          })
+        })
+      }
+    })
     
-    return repPosition.candidates.map((candidate, index) => ({
-      name: candidate.candidateName,
-      votes: candidate.voteCount || 0,
-      percentage: candidate.votePercentage || 0,
-      department: candidate.department || 'Unknown',
-      rank: index + 1
-    }))
+    return allCandidates
+  }
+
+  // Get participation distribution for pie chart
+  const getParticipationData = () => {
+    if (!participationStats) return []
+
+    return [
+      { 
+        name: 'Voted', 
+        value: participationStats.totalVoted || 0, 
+        color: '#059669' 
+      },
+      { 
+        name: 'Confirmed but Not Voted', 
+        value: (participationStats.totalConfirmed || 0) - (participationStats.totalVoted || 0), 
+        color: '#0066ff' 
+      },
+      { 
+        name: 'Not Confirmed', 
+        value: (participationStats.totalEligible || 0) - (participationStats.totalConfirmed || 0), 
+        color: '#6b7280' 
+      }
+    ].filter(item => item.value > 0)
   }
 
   // Custom tooltip for charts
@@ -313,13 +417,72 @@ export default function DepartmentalStatisticsPage() {
           {data.department && (
             <p className="text-sm text-gray-600">{data.department}</p>
           )}
+          {data.position && (
+            <p className="text-sm text-gray-600">{data.position}</p>
+          )}
           <p className="text-[#001f65] font-medium">
-            {payload[0].value?.toLocaleString()} votes ({data.percentage?.toFixed(1)}%)
+            {payload[0].value?.toLocaleString()} votes {data.percentage && `(${data.percentage.toFixed(1)}%)`}
           </p>
         </div>
       )
     }
     return null
+  }
+
+  // Authentication screen
+  if (!isAuthenticated) {
+    return (
+      <DepartmentalLayout
+        deptElectionId={deptElectionId}
+        title="Departmental Election Statistics"
+        subtitle="Statistical Analysis & Results"
+        activeItem="statistics"
+      >
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-8 w-full max-w-md">
+            <div className="text-center mb-6">
+              <Lock className="w-12 h-12 mx-auto text-[#001f65] mb-4" />
+              <h2 className="text-2xl font-bold text-[#001f65] mb-2">Restricted Access</h2>
+              <p className="text-gray-600">Enter password to view statistics</p>
+            </div>
+
+            <form onSubmit={handlePasswordSubmit} className="space-y-4">
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="   "
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent pr-12"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
+
+              {authError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center">
+                  <AlertCircle className="w-5 h-5 text-red-500 mr-2 flex-shrink-0" />
+                  <p className="text-red-700 text-sm">{authError}</p>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="w-full bg-[#001f65] hover:bg-[#003399] text-white font-medium py-3 px-4 rounded-lg transition-colors"
+              >
+                Access Statistics
+              </button>
+            </form>
+          </div>
+        </div>
+      </DepartmentalLayout>
+    )
   }
 
   if (!deptElectionId) {
@@ -347,11 +510,13 @@ export default function DepartmentalStatisticsPage() {
     )
   }
 
+  const statistics = getStatistics()
   const presidentData = getPresidentData()
   const vicePresidentData = getVicePresidentData()
   const secretaryData = getSecretaryData()
   const treasurerData = getTreasurerData()
-  const representativeData = getRepresentativeData()
+  const otherPositionsData = getOtherPositionsData()
+  const participationData = getParticipationData()
 
   return (
     <DepartmentalLayout
@@ -364,15 +529,7 @@ export default function DepartmentalStatisticsPage() {
         {/* Header with Results Button */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-white mb-2">Departmental Election Statistics</h2>
-            <p className="text-white/80">
-              {departmentalElectionData?.title} - {departmentalElectionData?.electionYear}
-            </p>
-            {departmentalElectionData?.department && (
-              <p className="text-white/60 text-sm">
-                Department: {departmentalElectionData.department.departmentName}
-              </p>
-            )}
+            
           </div>
 
           <div className="flex gap-2">
@@ -400,61 +557,59 @@ export default function DepartmentalStatisticsPage() {
         </div>
 
         {/* Overview Cards */}
-        {statisticsData && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600 mb-1">Total Votes</h3>
-                  <p className="text-2xl font-bold text-[#001f65]">
-                    {statisticsData.totalVotes?.toLocaleString() || 0}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">Ballots submitted</p>
-                </div>
-                <UserCheck className="w-10 h-10 text-[#001f65]/20" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-gray-600 mb-1">Total Votes</h3>
+                <p className="text-2xl font-bold text-[#001f65]">
+                  {statistics.totalVotes.toLocaleString()}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Officers voted</p>
               </div>
-            </div>
-
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600 mb-1">Turnout Rate</h3>
-                  <p className="text-2xl font-bold text-green-600">
-                    {statisticsData.turnoutRate?.toFixed(1) || 0}%
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">Class officer participation</p>
-                </div>
-                <TrendingUp className="w-10 h-10 text-green-600/20" />
-              </div>
-            </div>
-
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600 mb-1">Total Candidates</h3>
-                  <p className="text-2xl font-bold text-blue-600">
-                    {statisticsData.totalCandidates || 0}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">Running for positions</p>
-                </div>
-                <GraduationCap className="w-10 h-10 text-blue-600/20" />
-              </div>
-            </div>
-
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600 mb-1">Active Positions</h3>
-                  <p className="text-2xl font-bold text-purple-600">
-                    {statisticsData.totalPositions || 0}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">Available positions</p>
-                </div>
-                <Building className="w-10 h-10 text-purple-600/20" />
-              </div>
+              <UserCheck className="w-10 h-10 text-[#001f65]/20" />
             </div>
           </div>
-        )}
+
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-gray-600 mb-1">Turnout Rate</h3>
+                <p className="text-2xl font-bold text-green-600">
+                  {statistics.turnoutRate.toFixed(1)}%
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Officer participation</p>
+              </div>
+              <TrendingUp className="w-10 h-10 text-green-600/20" />
+            </div>
+          </div>
+
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-gray-600 mb-1">Total Candidates</h3>
+                <p className="text-2xl font-bold text-blue-600">
+                  {statistics.totalCandidates}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Running for positions</p>
+              </div>
+              <GraduationCap className="w-10 h-10 text-blue-600/20" />
+            </div>
+          </div>
+
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-gray-600 mb-1">Eligible Officers</h3>
+                <p className="text-2xl font-bold text-purple-600">
+                  {statistics.eligibleOfficers}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Can participate</p>
+              </div>
+              <Building className="w-10 h-10 text-purple-600/20" />
+            </div>
+          </div>
+        </div>
 
         {/* Loading State */}
         {loading && (
@@ -467,6 +622,35 @@ export default function DepartmentalStatisticsPage() {
         {/* Charts Section */}
         {!loading && (
           <div className="space-y-6">
+            {/* Participation Distribution */}
+            {participationData.length > 0 && (
+              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+                <div className="flex items-center mb-4">
+                  <Users className="w-6 h-6 text-[#001f65] mr-2" />
+                  <h3 className="text-lg font-bold text-[#001f65]">Officer Participation Distribution</h3>
+                </div>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={participationData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({name, value}) => `${name} (${value})`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {participationData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
             {/* President and Vice President - Pie Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* President Chart */}
@@ -534,7 +718,7 @@ export default function DepartmentalStatisticsPage() {
               {secretaryData.length > 0 && (
                 <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
                   <div className="flex items-center mb-4">
-                    <Users className="w-6 h-6 text-green-600 mr-2" />
+                    <Award className="w-6 h-6 text-green-600 mr-2" />
                     <h3 className="text-lg font-bold text-[#001f65]">Secretary</h3>
                   </div>
                   <ResponsiveContainer width="100%" height={300}>
@@ -566,7 +750,7 @@ export default function DepartmentalStatisticsPage() {
               {treasurerData.length > 0 && (
                 <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
                   <div className="flex items-center mb-4">
-                    <Award className="w-6 h-6 text-purple-600 mr-2" />
+                    <BarChart3 className="w-6 h-6 text-purple-600 mr-2" />
                     <h3 className="text-lg font-bold text-[#001f65]">Treasurer</h3>
                   </div>
                   <ResponsiveContainer width="100%" height={300}>
@@ -595,22 +779,23 @@ export default function DepartmentalStatisticsPage() {
               )}
             </div>
 
-            {/* Representatives/Other Positions - Bar Chart */}
-            {representativeData.length > 0 && (
+            {/* Other Positions - Bar Chart */}
+            {otherPositionsData.length > 0 && (
               <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
                 <div className="flex items-center mb-4">
-                  <BarChart3 className="w-6 h-6 text-orange-600 mr-2" />
+                  <Users className="w-6 h-6 text-orange-600 mr-2" />
                   <h3 className="text-lg font-bold text-[#001f65]">Other Positions - Vote Distribution</h3>
                 </div>
                 <ResponsiveContainer width="100%" height={400}>
-                  <BarChart data={representativeData}>
+                  <BarChart data={otherPositionsData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis 
                       dataKey="name" 
                       angle={-45}
                       textAnchor="end"
-                      height={100}
+                      height={120}
                       interval={0}
+                      tick={{ fontSize: 12 }}
                     />
                     <YAxis />
                     <Tooltip content={<CustomTooltip />} />
@@ -623,7 +808,7 @@ export default function DepartmentalStatisticsPage() {
         )}
 
         {/* No Data State */}
-        {!loading && (!presidentData.length && !vicePresidentData.length && !secretaryData.length && !treasurerData.length && !representativeData.length) && (
+        {!loading && (!presidentData.length && !vicePresidentData.length && !secretaryData.length && !treasurerData.length && !otherPositionsData.length && !participationData.length) && (
           <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-12 text-center">
             <BarChart3 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-xl font-bold text-gray-900 mb-2">No Statistical Data Available</h3>
@@ -663,22 +848,68 @@ export default function DepartmentalStatisticsPage() {
                   Election Status: <span className="capitalize">{departmentalElectionData.status}</span>
                 </h4>
                 <p className="text-blue-700 text-sm">
-                  {departmentalElectionData.department && (
-                    <span>Department: {departmentalElectionData.department.departmentName} • </span>
-                  )}
-                  {departmentalElectionData.startDate && (
-                    <span>
-                      Started: {new Date(departmentalElectionData.startDate).toLocaleDateString()}
-                    </span>
-                  )}
-                  {departmentalElectionData.endDate && (
+                  Election Date: {new Date(departmentalElectionData.electionDate).toLocaleDateString()}
+                  {departmentalElectionData.departmentId && (
                     <span className="ml-4">
-                      Ends: {new Date(departmentalElectionData.endDate).toLocaleDateString()}
+                      Department: {departmentalElectionData.departmentId.departmentCode}
                     </span>
                   )}
                 </p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Additional Statistics Cards */}
+        {(participationStats || candidatesData) && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Participation Summary */}
+            {participationStats && (
+              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+                <h3 className="text-lg font-semibold text-[#001f65] mb-4">Participation Summary</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Eligible Officers:</span>
+                    <span className="font-medium">{participationStats.totalEligible?.toLocaleString() || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Confirmed:</span>
+                    <span className="font-medium text-blue-600">{participationStats.totalConfirmed?.toLocaleString() || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Voted:</span>
+                    <span className="font-medium text-green-600">{participationStats.totalVoted?.toLocaleString() || 0}</span>
+                  </div>
+                  <div className="flex justify-between border-t pt-2">
+                    <span className="text-gray-600">Turnout:</span>
+                    <span className="font-bold text-[#001f65]">{participationStats.turnoutPercentage?.toFixed(1) || 0}%</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            
+
+            {/* Department Info */}
+            {departmentalElectionData?.departmentId && (
+              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+                <h3 className="text-lg font-semibold text-[#001f65] mb-4">Department Info</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Code:</span>
+                    <span className="font-medium">{departmentalElectionData.departmentId.departmentCode}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">College:</span>
+                    <span className="font-medium text-blue-600">{departmentalElectionData.departmentId.college}</span>
+                  </div>
+                  <div className="flex justify-between border-t pt-2">
+                    <span className="text-gray-600">Program:</span>
+                    <span className="font-bold text-[#001f65] text-sm">{departmentalElectionData.departmentId.degreeProgram}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

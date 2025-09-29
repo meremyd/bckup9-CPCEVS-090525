@@ -24,8 +24,8 @@ router.get("/ssg/elections/:ssgElectionId/candidate-limits", authorizeStaffAndVo
 router.get("/ssg/:positionId/validate-deletion", authorizeRoles("election_committee"), PositionController.validateSSGPositionDeletion)
 
 // Departmental Position Routes
-router.get("/departmental", authorizeRoles("election_committee", "sao", "voter"), PositionController.getAllDepartmentalPositions)
-router.get("/departmental/:id", authorizeRoles("election_committee", "sao", "voter"), PositionController.getDepartmentalPositionById)
+router.get("/departmental", authorizeStaffAndVoters("election_committee", "sao", "voter"), PositionController.getAllDepartmentalPositions)
+router.get("/departmental/:id", authorizeStaffAndVoters("election_committee", "sao", "voter"), PositionController.getDepartmentalPositionById)
 router.post("/departmental", authorizeRoles("election_committee"), PositionController.createDepartmentalPosition)
 router.put("/departmental/:id", authorizeRoles("election_committee"), PositionController.updateDepartmentalPosition)
 router.delete("/departmental/:id", authorizeRoles("election_committee"), PositionController.deleteDepartmentalPosition)

@@ -10,472 +10,124 @@ const AuditLog = require("../models/AuditLog")
 const { v4: uuidv4 } = require('uuid')
 const mongoose = require("mongoose")
 
-const VotingController = {
+class VotingController {
+  // ===== SSG ELECTION VOTING METHODS =====
+
   // Get all active SSG elections that registered voters can participate in
-  getActiveSSGElections: async (req, res) => {
+  static async getActiveSSGElections(req, res, next) {
     try {
       const currentDate = new Date()
-      const currentTime = new Date().toTimeString().slice(0, 8)
       
+      // Get elections that are active and within voting time
       const activeElections = await SSGElection.find({
-        electionDate: { $lte: currentDate },
         status: "active",
-        ballotOpenTime: { $lte: currentTime },
-        ballotCloseTime: { $gte: currentTime }
+        electionDate: { $lte: currentDate }
       })
       .populate('createdBy', 'username')
       .select('ssgElectionId electionYear title status electionDate ballotOpenTime ballotCloseTime totalVotes voterTurnout')
       .sort({ electionDate: 1 })
 
-      // Check if voter has already voted in each election
-      const electionsWithVotingStatus = await Promise.all(
-        activeElections.map(async (election) => {
+      // Filter elections by ballot time and check voting status
+      const electionsWithVotingStatus = []
+      
+      for (const election of activeElections) {
+        // Check if ballots are currently open
+        const ballotStatus = this.checkBallotTime(election)
+        
+        if (ballotStatus.isOpen) {
+          // Check if voter has already voted
           const existingBallot = await Ballot.findOne({
             ssgElectionId: election._id,
-            voterId: req.user.voterId || req.user.userId,
+            voterId: req.user.voterId,
             isSubmitted: true
           })
 
-          return {
+          electionsWithVotingStatus.push({
             ...election.toObject(),
             hasVoted: !!existingBallot,
-            votedAt: existingBallot?.submittedAt || null
-          }
-        })
-      )
+            votedAt: existingBallot?.submittedAt || null,
+            ballotStatus: ballotStatus.status,
+            timeRemaining: ballotStatus.timeRemaining
+          })
+        }
+      }
 
-      // Log the system access
       await AuditLog.logVoterAction(
         "SYSTEM_ACCESS",
-        { _id: req.user.voterId || req.user.userId, schoolId: req.user.schoolId },
+        { _id: req.user.voterId, schoolId: req.user.schoolId },
         "Accessed active SSG elections list",
         req
       )
 
       res.json({
         success: true,
-        data: electionsWithVotingStatus
+        data: electionsWithVotingStatus,
+        message: electionsWithVotingStatus.length > 0 ? "Active SSG elections found" : "No active SSG elections available"
       })
     } catch (error) {
       console.error("Get active SSG elections error:", error)
-      res.status(500).json({
-        success: false,
-        message: "Error fetching active SSG elections",
-        error: process.env.NODE_ENV === "development" ? error.message : {}
-      })
-    }
-  },
-
-  // Get all active departmental elections for voter's department
-  getActiveDepartmentalElections: async (req, res) => {
-    try {
-      const currentDate = new Date()
-      const currentTime = new Date().toTimeString().slice(0, 8)
-      
-      // Get voter info to determine department
-      const voter = await Voter.findById(req.user.voterId || req.user.userId)
-        .populate('departmentId')
-      
-      if (!voter) {
-        return res.status(404).json({
-          success: false,
-          message: "Voter not found"
-        })
-      }
-
-      const activeElections = await DepartmentalElection.find({
-        departmentId: voter.departmentId._id,
-        electionDate: { $lte: currentDate },
-        status: "active",
-        ballotOpenTime: { $lte: currentTime },
-        ballotCloseTime: { $gte: currentTime }
-      })
-      .populate('createdBy', 'username')
-      .populate('departmentId', 'departmentCode degreeProgram college')
-      .select('deptElectionId electionYear title status electionDate ballotOpenTime ballotCloseTime totalVotes voterTurnout departmentId')
-      .sort({ electionDate: 1 })
-
-      // Check if voter has already voted and can vote
-      const electionsWithVotingStatus = await Promise.all(
-        activeElections.map(async (election) => {
-          const existingBallot = await Ballot.findOne({
-            deptElectionId: election._id,
-            voterId: req.user.voterId || req.user.userId,
-            isSubmitted: true
-          })
-
-          // Only registered voters who are class officers can vote in departmental elections
-          const canVote = voter.isRegistered && voter.isClassOfficer
-          const canViewOnly = voter.isRegistered && !voter.isClassOfficer
-
-          return {
-            ...election.toObject(),
-            hasVoted: !!existingBallot,
-            votedAt: existingBallot?.submittedAt || null,
-            canVote,
-            canViewOnly
-          }
-        })
-      )
-
-      // Log the system access
       await AuditLog.logVoterAction(
         "SYSTEM_ACCESS",
-        { _id: req.user.voterId || req.user.userId, schoolId: req.user.schoolId },
-        `Accessed active departmental elections list for department: ${voter.departmentId.departmentCode}`,
+        { _id: req.user.voterId, schoolId: req.user.schoolId },
+        `Failed to get active SSG elections: ${error.message}`,
         req
       )
-
-      res.json({
-        success: true,
-        data: electionsWithVotingStatus,
-        voterInfo: {
-          canVote: voter.isClassOfficer && voter.isRegistered,
-          isClassOfficer: voter.isClassOfficer,
-          department: voter.departmentId
-        }
-      })
-    } catch (error) {
-      console.error("Get active departmental elections error:", error)
-      res.status(500).json({
-        success: false,
-        message: "Error fetching active departmental elections",
-        error: process.env.NODE_ENV === "development" ? error.message : {}
-      })
+      next(error)
     }
-  },
+  }
 
-  // Get SSG election details with positions and candidates
-  getSSGElectionDetails: async (req, res) => {
-    try {
-      const { id } = req.params
-      
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid SSG election ID"
-        })
-      }
-
-      const election = await SSGElection.findById(id)
-        .populate('createdBy', 'username')
-
-      if (!election) {
-        return res.status(404).json({
-          success: false,
-          message: "SSG election not found"
-        })
-      }
-
-      // Get positions for this SSG election
-      const positions = await Position.find({
-        ssgElectionId: id,
-        isActive: true
-      }).sort({ positionOrder: 1 })
-
-      // Get candidates for each position
-      const positionsWithCandidates = await Promise.all(
-        positions.map(async (position) => {
-          const candidates = await Candidate.find({
-            ssgElectionId: id,
-            positionId: position._id,
-            isActive: true
-          })
-          .populate({
-            path: 'voterId',
-            select: 'firstName middleName lastName schoolId departmentId',
-            populate: {
-              path: 'departmentId',
-              select: 'departmentCode degreeProgram college'
-            }
-          })
-          .populate('partylistId', 'partylistName description')
-          .sort({ candidateNumber: 1 })
-
-          return {
-            ...position.toObject(),
-            candidates: candidates.map(candidate => ({
-              ...candidate.toObject(),
-              campaignPicture: candidate.campaignPicture ? candidate.campaignPicture.toString('base64') : null
-            }))
-          }
-        })
-      )
-
-      // Log ballot access
-      await AuditLog.logVoterAction(
-        "BALLOT_ACCESSED",
-        { _id: req.user.voterId || req.user.userId, schoolId: req.user.schoolId },
-        `Accessed SSG election details for: ${election.title}`,
-        req
-      )
-
-      res.json({
-        success: true,
-        data: {
-          election,
-          positions: positionsWithCandidates
-        }
-      })
-    } catch (error) {
-      console.error("Get SSG election details error:", error)
-      res.status(500).json({
-        success: false,
-        message: "Error fetching SSG election details",
-        error: process.env.NODE_ENV === "development" ? error.message : {}
-      })
-    }
-  },
-
-  // Get departmental election details with positions and candidates
-  getDepartmentalElectionDetails: async (req, res) => {
-    try {
-      const { id } = req.params
-      
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid departmental election ID"
-        })
-      }
-
-      const election = await DepartmentalElection.findById(id)
-        .populate('createdBy', 'username')
-        .populate('departmentId', 'departmentCode degreeProgram college')
-
-      if (!election) {
-        return res.status(404).json({
-          success: false,
-          message: "Departmental election not found"
-        })
-      }
-
-      // Get positions for this departmental election
-      const positions = await Position.find({
-        deptElectionId: id,
-        isActive: true
-      }).sort({ positionOrder: 1 })
-
-      // Get candidates for each position
-      const positionsWithCandidates = await Promise.all(
-        positions.map(async (position) => {
-          const candidates = await Candidate.find({
-            deptElectionId: id,
-            positionId: position._id,
-            isActive: true
-          })
-          .populate({
-            path: 'voterId',
-            select: 'firstName middleName lastName schoolId departmentId yearLevel',
-            populate: {
-              path: 'departmentId',
-              select: 'departmentCode degreeProgram college'
-            }
-          })
-          .sort({ candidateNumber: 1 })
-
-          return {
-            ...position.toObject(),
-            candidates: candidates.map(candidate => ({
-              ...candidate.toObject(),
-              campaignPicture: candidate.campaignPicture ? candidate.campaignPicture.toString('base64') : null
-            }))
-          }
-        })
-      )
-
-      // Log ballot access
-      await AuditLog.logVoterAction(
-        "BALLOT_ACCESSED",
-        { _id: req.user.voterId || req.user.userId, schoolId: req.user.schoolId },
-        `Accessed departmental election details for: ${election.title}`,
-        req
-      )
-
-      res.json({
-        success: true,
-        data: {
-          election,
-          positions: positionsWithCandidates
-        }
-      })
-    } catch (error) {
-      console.error("Get departmental election details error:", error)
-      res.status(500).json({
-        success: false,
-        message: "Error fetching departmental election details",
-        error: process.env.NODE_ENV === "development" ? error.message : {}
-      })
-    }
-  },
-
-  // Get SSG candidates for a specific election
-  getSSGElectionCandidates: async (req, res) => {
-    try {
-      const { id } = req.params
-      
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid SSG election ID"
-        })
-      }
-
-      const candidates = await Candidate.find({
-        ssgElectionId: id,
-        isActive: true
-      })
-      .populate({
-        path: 'voterId',
-        select: 'firstName middleName lastName schoolId departmentId',
-        populate: {
-          path: 'departmentId',
-          select: 'departmentCode degreeProgram college'
-        }
-      })
-      .populate('positionId', 'positionName positionOrder')
-      .populate('partylistId', 'partylistName')
-      .sort({ 'positionId.positionOrder': 1, candidateNumber: 1 })
-
-      // Log system access
-      await AuditLog.logVoterAction(
-        "SYSTEM_ACCESS",
-        { _id: req.user.voterId || req.user.userId, schoolId: req.user.schoolId },
-        `Viewed SSG candidates for election ID: ${id}`,
-        req
-      )
-
-      res.json({
-        success: true,
-        data: candidates.map(candidate => ({
-          ...candidate.toObject(),
-          campaignPicture: candidate.campaignPicture ? candidate.campaignPicture.toString('base64') : null
-        }))
-      })
-    } catch (error) {
-      console.error("Get SSG election candidates error:", error)
-      res.status(500).json({
-        success: false,
-        message: "Error fetching SSG candidates",
-        error: process.env.NODE_ENV === "development" ? error.message : {}
-      })
-    }
-  },
-
-  // Get departmental candidates for a specific election
-  getDepartmentalElectionCandidates: async (req, res) => {
-    try {
-      const { id } = req.params
-      
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid departmental election ID"
-        })
-      }
-
-      const candidates = await Candidate.find({
-        deptElectionId: id,
-        isActive: true
-      })
-      .populate({
-        path: 'voterId',
-        select: 'firstName middleName lastName schoolId departmentId yearLevel',
-        populate: {
-          path: 'departmentId',
-          select: 'departmentCode degreeProgram college'
-        }
-      })
-      .populate('positionId', 'positionName positionOrder')
-      .sort({ 'positionId.positionOrder': 1, candidateNumber: 1 })
-
-      // Log system access
-      await AuditLog.logVoterAction(
-        "SYSTEM_ACCESS",
-        { _id: req.user.voterId || req.user.userId, schoolId: req.user.schoolId },
-        `Viewed departmental candidates for election ID: ${id}`,
-        req
-      )
-
-      res.json({
-        success: true,
-        data: candidates.map(candidate => ({
-          ...candidate.toObject(),
-          campaignPicture: candidate.campaignPicture ? candidate.campaignPicture.toString('base64') : null
-        }))
-      })
-    } catch (error) {
-      console.error("Get departmental election candidates error:", error)
-      res.status(500).json({
-        success: false,
-        message: "Error fetching departmental candidates",
-        error: process.env.NODE_ENV === "development" ? error.message : {}
-      })
-    }
-  },
-
-  // Cast vote in SSG election - only registered voters
-  castSSGVote: async (req, res) => {
+  // Cast vote in SSG election - all positions at once
+  static async castSSGVote(req, res, next) {
     const session = await mongoose.startSession()
     session.startTransaction()
 
     try {
       const { ssgElectionId, votes } = req.body
-      const voterId = req.user.voterId || req.user.userId
+      const voterId = req.user.voterId
 
       // Validate input
       if (!ssgElectionId || !votes || !Array.isArray(votes)) {
-        await AuditLog.logVoterAction(
-          "BALLOT_ABANDONED",
-          { _id: voterId, schoolId: req.user.schoolId },
-          "Invalid SSG vote data submitted - missing ssgElectionId or votes array",
-          req
-        )
-        return res.status(400).json({
-          success: false,
-          message: "Invalid vote data. SSG Election ID and votes array are required."
-        })
+        await session.abortTransaction()
+        const error = new Error("Invalid vote data. SSG Election ID and votes array are required.")
+        error.statusCode = 400
+        return next(error)
       }
 
-      // Check if voter exists and is registered
+      // Get voter info
       const voter = await Voter.findById(voterId).session(session)
       if (!voter || !voter.isActive || !voter.isRegistered) {
-        await AuditLog.logVoterAction(
-          "BALLOT_ABANDONED",
-          { _id: voterId, schoolId: req.user.schoolId },
-          "Unregistered voter attempted to vote in SSG election",
-          req
-        )
-        throw new Error("Only registered voters can participate in SSG elections")
+        await session.abortTransaction()
+        const error = new Error("Only registered voters can participate in SSG elections")
+        error.statusCode = 403
+        return next(error)
       }
 
-      // Check if SSG election exists and is active
+      // Check SSG election
       const election = await SSGElection.findById(ssgElectionId).session(session)
       if (!election) {
-        await AuditLog.logVoterAction(
-          "BALLOT_ABANDONED",
-          { _id: voterId, schoolId: voter.schoolId },
-          `SSG election not found: ${ssgElectionId}`,
-          req
-        )
-        throw new Error("SSG election not found")
+        await session.abortTransaction()
+        const error = new Error("SSG election not found")
+        error.statusCode = 404
+        return next(error)
       }
 
-      const currentDate = new Date()
-      const currentTime = new Date().toTimeString().slice(0, 8)
-      if (election.status !== "active" || 
-          currentTime < election.ballotOpenTime || 
-          currentTime > election.ballotCloseTime) {
-        await AuditLog.logVoterAction(
-          "BALLOT_ABANDONED",
-          { _id: voterId, schoolId: voter.schoolId },
-          `Attempted to vote in inactive SSG election: ${election.title}`,
-          req
-        )
-        throw new Error("SSG election is not currently active")
+      if (election.status !== "active") {
+        await session.abortTransaction()
+        const error = new Error("SSG election is not currently active")
+        error.statusCode = 400
+        return next(error)
       }
 
-      // Check if voter has already voted
+      // Check ballot timing
+      const ballotStatus = this.checkBallotTime(election)
+      if (!ballotStatus.isOpen) {
+        await session.abortTransaction()
+        const error = new Error(ballotStatus.message || "Voting is not currently allowed")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Check if already voted
       const existingBallot = await Ballot.findOne({
         ssgElectionId,
         voterId,
@@ -483,26 +135,15 @@ const VotingController = {
       }).session(session)
 
       if (existingBallot) {
-        await AuditLog.logVoterAction(
-          "BALLOT_ABANDONED",
-          { _id: voterId, schoolId: voter.schoolId },
-          `Attempted duplicate voting in SSG election: ${election.title}`,
-          req
-        )
-        throw new Error("You have already voted in this SSG election")
+        await session.abortTransaction()
+        const error = new Error("You have already voted in this SSG election")
+        error.statusCode = 400
+        return next(error)
       }
 
-      // Validate votes and create ballot
-      const validatedVotes = await this.validateVotes(votes, ssgElectionId, 'ssg', session)
+      // Validate votes
+      const validatedVotes = await this.validateSSGVotes(votes, ssgElectionId, session)
       
-      // Log ballot started
-      await AuditLog.logVoterAction(
-        "BALLOT_STARTED",
-        { _id: voterId, schoolId: voter.schoolId },
-        `Started SSG voting process for election: ${election.title}`,
-        req
-      )
-
       // Create ballot
       const ballot = new Ballot({
         ssgElectionId,
@@ -538,18 +179,10 @@ const VotingController = {
 
       await session.commitTransaction()
 
-      // Log successful voting
       await AuditLog.logVoterAction(
         "VOTED",
         { _id: voterId, schoolId: voter.schoolId },
         `Successfully cast ${voteRecords.length} votes in SSG election: ${election.title}`,
-        req
-      )
-
-      await AuditLog.logVoterAction(
-        "VOTE_SUBMITTED",
-        { _id: voterId, schoolId: voter.schoolId },
-        `SSG ballot submitted with token: ${savedBallot.ballotToken}`,
         req
       )
 
@@ -560,7 +193,11 @@ const VotingController = {
           ballotId: savedBallot._id,
           ballotToken: savedBallot.ballotToken,
           submittedAt: savedBallot.submittedAt,
-          voteCount: voteRecords.length
+          voteCount: voteRecords.length,
+          election: {
+            id: election._id,
+            title: election.title
+          }
         }
       })
 
@@ -568,406 +205,28 @@ const VotingController = {
       await session.abortTransaction()
       console.error("Cast SSG vote error:", error)
       
-      if (req.user?.voterId || req.user?.userId) {
+      if (req.user?.voterId) {
         await AuditLog.logVoterAction(
           "BALLOT_ABANDONED",
-          { _id: req.user.voterId || req.user.userId, schoolId: req.user.schoolId },
+          { _id: req.user.voterId, schoolId: req.user.schoolId },
           `SSG vote casting failed: ${error.message}`,
           req
         )
       }
 
-      res.status(400).json({
-        success: false,
-        message: error.message || "Error casting SSG vote",
-        error: process.env.NODE_ENV === "development" ? error.message : {}
-      })
+      if (error.statusCode) {
+        error.status = error.statusCode
+      }
+      next(error)
     } finally {
       session.endSession()
     }
-  },
-
-  // Cast vote in departmental election - only registered class officers
-  castDepartmentalVote: async (req, res) => {
-    const session = await mongoose.startSession()
-    session.startTransaction()
-
-    try {
-      const { deptElectionId, votes } = req.body
-      const voterId = req.user.voterId || req.user.userId
-
-      // Validate input
-      if (!deptElectionId || !votes || !Array.isArray(votes)) {
-        await AuditLog.logVoterAction(
-          "BALLOT_ABANDONED",
-          { _id: voterId, schoolId: req.user.schoolId },
-          "Invalid departmental vote data submitted - missing deptElectionId or votes array",
-          req
-        )
-        return res.status(400).json({
-          success: false,
-          message: "Invalid vote data. Departmental Election ID and votes array are required."
-        })
-      }
-
-      // Check if voter exists and is registered class officer
-      const voter = await Voter.findById(voterId).populate('departmentId').session(session)
-      if (!voter || !voter.isActive || !voter.isRegistered) {
-        await AuditLog.logVoterAction(
-          "BALLOT_ABANDONED",
-          { _id: voterId, schoolId: req.user.schoolId },
-          "Unregistered voter attempted to vote in departmental election",
-          req
-        )
-        throw new Error("Only registered voters can participate in departmental elections")
-      }
-
-      if (!voter.isClassOfficer) {
-        await AuditLog.logVoterAction(
-          "BALLOT_ABANDONED",
-          { _id: voterId, schoolId: voter.schoolId },
-          "Non-class officer attempted to vote in departmental election",
-          req
-        )
-        throw new Error("Only class officers can vote in departmental elections")
-      }
-
-      // Check if departmental election exists and is active
-      const election = await DepartmentalElection.findById(deptElectionId)
-        .populate('departmentId').session(session)
-      if (!election) {
-        await AuditLog.logVoterAction(
-          "BALLOT_ABANDONED",
-          { _id: voterId, schoolId: voter.schoolId },
-          `Departmental election not found: ${deptElectionId}`,
-          req
-        )
-        throw new Error("Departmental election not found")
-      }
-
-      // Verify voter is from the same department
-      if (!voter.departmentId._id.equals(election.departmentId._id)) {
-        await AuditLog.logVoterAction(
-          "BALLOT_ABANDONED",
-          { _id: voterId, schoolId: voter.schoolId },
-          `Attempted cross-department voting: voter dept ${voter.departmentId.departmentCode}, election dept ${election.departmentId.departmentCode}`,
-          req
-        )
-        throw new Error("You can only vote in elections for your department")
-      }
-
-      const currentDate = new Date()
-      const currentTime = new Date().toTimeString().slice(0, 8)
-      if (election.status !== "active" || 
-          currentTime < election.ballotOpenTime || 
-          currentTime > election.ballotCloseTime) {
-        await AuditLog.logVoterAction(
-          "BALLOT_ABANDONED",
-          { _id: voterId, schoolId: voter.schoolId },
-          `Attempted to vote in inactive departmental election: ${election.title}`,
-          req
-        )
-        throw new Error("Departmental election is not currently active")
-      }
-
-      // Check if voter has already voted
-      const existingBallot = await Ballot.findOne({
-        deptElectionId,
-        voterId,
-        isSubmitted: true
-      }).session(session)
-
-      if (existingBallot) {
-        await AuditLog.logVoterAction(
-          "BALLOT_ABANDONED",
-          { _id: voterId, schoolId: voter.schoolId },
-          `Attempted duplicate voting in departmental election: ${election.title}`,
-          req
-        )
-        throw new Error("You have already voted in this departmental election")
-      }
-
-      // Validate votes and create ballot
-      const validatedVotes = await this.validateVotes(votes, deptElectionId, 'departmental', session)
-      
-      // Log ballot started
-      await AuditLog.logVoterAction(
-        "BALLOT_STARTED",
-        { _id: voterId, schoolId: voter.schoolId },
-        `Started departmental voting process for election: ${election.title}`,
-        req
-      )
-
-      // Create ballot
-      const ballot = new Ballot({
-        deptElectionId,
-        voterId,
-        ballotToken: uuidv4(),
-        isSubmitted: true,
-        submittedAt: new Date(),
-        ipAddress: req.ip || req.connection.remoteAddress,
-        userAgent: req.get('User-Agent')
-      })
-
-      const savedBallot = await ballot.save({ session })
-
-      // Create vote records
-      const voteRecords = validatedVotes.map(vote => ({
-        ballotId: savedBallot._id,
-        candidateId: vote.candidateId,
-        positionId: vote.positionId,
-        deptElectionId: deptElectionId,
-        voteTimestamp: new Date()
-      }))
-
-      await Vote.insertMany(voteRecords, { session })
-
-      // Update candidate vote counts
-      for (const vote of validatedVotes) {
-        await Candidate.findByIdAndUpdate(
-          vote.candidateId,
-          { $inc: { voteCount: 1 } },
-          { session }
-        )
-      }
-
-      await session.commitTransaction()
-
-      // Log successful voting
-      await AuditLog.logVoterAction(
-        "VOTED",
-        { _id: voterId, schoolId: voter.schoolId },
-        `Successfully cast ${voteRecords.length} votes in departmental election: ${election.title}`,
-        req
-      )
-
-      await AuditLog.logVoterAction(
-        "VOTE_SUBMITTED",
-        { _id: voterId, schoolId: voter.schoolId },
-        `Departmental ballot submitted with token: ${savedBallot.ballotToken}`,
-        req
-      )
-
-      res.json({
-        success: true,
-        message: "Departmental vote cast successfully",
-        data: {
-          ballotId: savedBallot._id,
-          ballotToken: savedBallot.ballotToken,
-          submittedAt: savedBallot.submittedAt,
-          voteCount: voteRecords.length
-        }
-      })
-
-    } catch (error) {
-      await session.abortTransaction()
-      console.error("Cast departmental vote error:", error)
-      
-      if (req.user?.voterId || req.user?.userId) {
-        await AuditLog.logVoterAction(
-          "BALLOT_ABANDONED",
-          { _id: req.user.voterId || req.user.userId, schoolId: req.user.schoolId },
-          `Departmental vote casting failed: ${error.message}`,
-          req
-        )
-      }
-
-      res.status(400).json({
-        success: false,
-        message: error.message || "Error casting departmental vote",
-        error: process.env.NODE_ENV === "development" ? error.message : {}
-      })
-    } finally {
-      session.endSession()
-    }
-  },
-
-  // Helper method to validate votes
-  validateVotes: async (votes, electionId, electionType, session) => {
-    const validatedVotes = []
-    
-    for (const vote of votes) {
-      if (!vote.positionId || !vote.candidateId) {
-        throw new Error("Invalid vote structure. Position ID and candidate ID are required.")
-      }
-
-      // Validate position exists in this election
-      const positionQuery = electionType === 'ssg' 
-        ? { _id: vote.positionId, ssgElectionId: electionId, isActive: true }
-        : { _id: vote.positionId, deptElectionId: electionId, isActive: true }
-        
-      const position = await Position.findOne(positionQuery).session(session)
-
-      if (!position) {
-        throw new Error(`Invalid position: ${vote.positionId}`)
-      }
-
-      // Validate candidate exists and belongs to the position
-      const candidateQuery = electionType === 'ssg'
-        ? { _id: vote.candidateId, ssgElectionId: electionId, positionId: vote.positionId, isActive: true }
-        : { _id: vote.candidateId, deptElectionId: electionId, positionId: vote.positionId, isActive: true }
-        
-      const candidate = await Candidate.findOne(candidateQuery).session(session)
-
-      if (!candidate) {
-        throw new Error(`Invalid candidate: ${vote.candidateId} for position: ${vote.positionId}`)
-      }
-
-      validatedVotes.push({
-        positionId: vote.positionId,
-        candidateId: vote.candidateId
-      })
-    }
-
-    // Check for duplicate position votes
-    const positionIds = validatedVotes.map(v => v.positionId.toString())
-    const uniquePositions = [...new Set(positionIds)]
-    if (positionIds.length !== uniquePositions.length) {
-      throw new Error("Duplicate votes for the same position are not allowed")
-    }
-
-    return validatedVotes
-  },
-
-  // Get voter's SSG voting history
-  getMySSGVotes: async (req, res) => {
-    try {
-      const voterId = req.user.voterId || req.user.userId
-
-      const ballots = await Ballot.find({
-        voterId,
-        ssgElectionId: { $exists: true },
-        isSubmitted: true
-      })
-      .populate('ssgElectionId', 'ssgElectionId title electionYear electionDate status')
-      .sort({ submittedAt: -1 })
-
-      const votingHistory = await Promise.all(
-        ballots.map(async (ballot) => {
-          const votes = await Vote.find({
-            ballotId: ballot._id
-          })
-          .populate('candidateId', 'candidateNumber voterId')
-          .populate({
-            path: 'candidateId',
-            populate: {
-              path: 'voterId',
-              select: 'firstName middleName lastName'
-            }
-          })
-          .populate('positionId', 'positionName')
-
-          return {
-            ballotId: ballot._id,
-            ballotToken: ballot.ballotToken,
-            election: ballot.ssgElectionId,
-            submittedAt: ballot.submittedAt,
-            votes: votes.map(vote => ({
-              position: vote.positionId.positionName,
-              candidate: `${vote.candidateId.voterId.firstName} ${vote.candidateId.voterId.lastName}`,
-              candidateNumber: vote.candidateId.candidateNumber
-            }))
-          }
-        })
-      )
-
-      // Log system access
-      await AuditLog.logVoterAction(
-        "SYSTEM_ACCESS",
-        { _id: req.user.voterId || req.user.userId, schoolId: req.user.schoolId },
-        "Accessed SSG voting history",
-        req
-      )
-
-      res.json({
-        success: true,
-        data: votingHistory
-      })
-    } catch (error) {
-      console.error("Get my SSG votes error:", error)
-      res.status(500).json({
-        success: false,
-        message: "Error fetching SSG voting history",
-        error: process.env.NODE_ENV === "development" ? error.message : {}
-      })
-    }
-  },
-
-  // Get voter's departmental voting history
-  getMyDepartmentalVotes: async (req, res) => {
-    try {
-      const voterId = req.user.voterId || req.user.userId
-
-      const ballots = await Ballot.find({
-        voterId,
-        deptElectionId: { $exists: true },
-        isSubmitted: true
-      })
-      .populate({
-        path: 'deptElectionId',
-        select: 'deptElectionId title electionYear electionDate status departmentId',
-        populate: {
-          path: 'departmentId',
-          select: 'departmentCode degreeProgram college'
-        }
-      })
-      .sort({ submittedAt: -1 })
-
-      const votingHistory = await Promise.all(
-        ballots.map(async (ballot) => {
-          const votes = await Vote.find({
-            ballotId: ballot._id
-          })
-          .populate('candidateId', 'candidateNumber voterId')
-          .populate({
-            path: 'candidateId',
-            populate: {
-              path: 'voterId',
-              select: 'firstName middleName lastName'
-            }
-          })
-          .populate('positionId', 'positionName')
-
-          return {
-            ballotId: ballot._id,
-            ballotToken: ballot.ballotToken,
-            election: ballot.deptElectionId,
-            submittedAt: ballot.submittedAt,
-            votes: votes.map(vote => ({
-              position: vote.positionId.positionName,
-              candidate: `${vote.candidateId.voterId.firstName} ${vote.candidateId.voterId.lastName}`,
-              candidateNumber: vote.candidateId.candidateNumber
-            }))
-          }
-        })
-      )
-
-      // Log system access
-      await AuditLog.logVoterAction(
-        "SYSTEM_ACCESS",
-        { _id: req.user.voterId || req.user.userId, schoolId: req.user.schoolId },
-        "Accessed departmental voting history",
-        req
-      )
-
-      res.json({
-        success: true,
-        data: votingHistory
-      })
-    } catch (error) {
-      console.error("Get my departmental votes error:", error)
-      res.status(500).json({
-        success: false,
-        message: "Error fetching departmental voting history",
-        error: process.env.NODE_ENV === "development" ? error.message : {}
-      })
-    }
-  },
+  }
 
   // Get voter's SSG voting status
-  getSSGVotingStatus: async (req, res) => {
+  static async getSSGVotingStatus(req, res, next) {
     try {
-      const voterId = req.user.voterId || req.user.userId
+      const voterId = req.user.voterId
 
       // Get voter info
       const voter = await Voter.findById(voterId)
@@ -975,20 +234,15 @@ const VotingController = {
         .select('-password -faceEncoding')
 
       if (!voter) {
-        return res.status(404).json({
-          success: false,
-          message: "Voter not found"
-        })
+        const error = new Error("Voter not found")
+        error.statusCode = 404
+        return next(error)
       }
 
-      // Get active SSG elections
-      const currentDate = new Date()
-      const currentTime = new Date().toTimeString().slice(0, 8)
+      // Get active SSG elections count
       const activeSSGElections = await SSGElection.find({
-        electionDate: { $lte: currentDate },
         status: "active",
-        ballotOpenTime: { $lte: currentTime },
-        ballotCloseTime: { $gte: currentTime }
+        electionDate: { $lte: new Date() }
       }).countDocuments()
 
       // Get SSG elections voter has participated in
@@ -1007,11 +261,10 @@ const VotingController = {
         }).distinct('_id') }
       }).countDocuments()
 
-      // Check if voter is eligible for SSG elections (must be registered)
+      // Check eligibility
       const isEligibleForSSG = voter.isActive && voter.isRegistered && 
                               voter.isPasswordActive && !voter.isPasswordExpired()
 
-      // Log system access
       await AuditLog.logVoterAction(
         "SYSTEM_ACCESS",
         { _id: voterId, schoolId: voter.schoolId },
@@ -1042,24 +295,445 @@ const VotingController = {
             activeSSGElections,
             votedSSGElections,
             totalSSGVotesCast,
-            pendingSSGElections: activeSSGElections - votedSSGElections
+            pendingSSGElections: Math.max(0, activeSSGElections - votedSSGElections)
           }
         }
       })
     } catch (error) {
       console.error("Get SSG voting status error:", error)
-      res.status(500).json({
-        success: false,
-        message: "Error fetching SSG voting status",
-        error: process.env.NODE_ENV === "development" ? error.message : {}
-      })
+      await AuditLog.logVoterAction(
+        "SYSTEM_ACCESS",
+        { _id: req.user.voterId, schoolId: req.user.schoolId },
+        `Failed to get SSG voting status: ${error.message}`,
+        req
+      )
+      next(error)
     }
-  },
+  }
+
+  // Get voter's SSG voting history
+  static async getMySSGVotes(req, res, next) {
+    try {
+      const voterId = req.user.voterId
+
+      const ballots = await Ballot.find({
+        voterId,
+        ssgElectionId: { $exists: true },
+        isSubmitted: true
+      })
+      .populate('ssgElectionId', 'ssgElectionId title electionYear electionDate status')
+      .sort({ submittedAt: -1 })
+
+      const votingHistory = await Promise.all(
+        ballots.map(async (ballot) => {
+          const votes = await Vote.find({
+            ballotId: ballot._id
+          })
+          .populate('candidateId', 'candidateNumber')
+          .populate({
+            path: 'candidateId',
+            populate: {
+              path: 'voterId',
+              select: 'firstName middleName lastName'
+            }
+          })
+          .populate('positionId', 'positionName positionOrder')
+          .sort({ 'positionId.positionOrder': 1 })
+
+          return {
+            ballotId: ballot._id,
+            ballotToken: ballot.ballotToken,
+            election: ballot.ssgElectionId,
+            submittedAt: ballot.submittedAt,
+            totalVotes: votes.length,
+            votes: votes.map(vote => ({
+              position: vote.positionId.positionName,
+              positionOrder: vote.positionId.positionOrder,
+              candidateNumber: vote.candidateId.candidateNumber,
+              candidateName: vote.candidateId.voterId ? 
+                `${vote.candidateId.voterId.firstName} ${vote.candidateId.voterId.middleName || ''} ${vote.candidateId.voterId.lastName}`.replace(/\s+/g, ' ').trim() : 
+                'Unknown Candidate'
+            }))
+          }
+        })
+      )
+
+      await AuditLog.logVoterAction(
+        "SYSTEM_ACCESS",
+        { _id: req.user.voterId, schoolId: req.user.schoolId },
+        "Accessed SSG voting history",
+        req
+      )
+
+      res.json({
+        success: true,
+        data: votingHistory,
+        message: votingHistory.length > 0 ? `Found ${votingHistory.length} SSG voting records` : "No SSG voting history found"
+      })
+    } catch (error) {
+      console.error("Get my SSG votes error:", error)
+      await AuditLog.logVoterAction(
+        "SYSTEM_ACCESS",
+        { _id: req.user.voterId, schoolId: req.user.schoolId },
+        `Failed to get SSG voting history: ${error.message}`,
+        req
+      )
+      next(error)
+    }
+  }
+
+  // ===== DEPARTMENTAL ELECTION VOTING METHODS =====
+
+  // Get all active departmental elections for voter's department
+  static async getActiveDepartmentalElections(req, res, next) {
+    try {
+      // Get voter info
+      const voter = await Voter.findById(req.user.voterId)
+        .populate('departmentId')
+      
+      if (!voter) {
+        const error = new Error("Voter not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      const currentDate = new Date()
+      const activeElections = await DepartmentalElection.find({
+        departmentId: voter.departmentId._id,
+        electionDate: { $lte: currentDate },
+        status: "active"
+      })
+      .populate('createdBy', 'username')
+      .populate('departmentId', 'departmentCode degreeProgram college')
+      .sort({ electionDate: 1 })
+
+      // Get voting status for each election
+      const electionsWithVotingStatus = await Promise.all(
+        activeElections.map(async (election) => {
+          // Get current active position
+          const currentPosition = await this.getCurrentActivePosition(election._id)
+          
+          let hasVotedForCurrentPosition = false
+          let votedAt = null
+          
+          if (currentPosition) {
+            const existingBallot = await Ballot.findOne({
+              deptElectionId: election._id,
+              voterId: req.user.voterId,
+              currentPositionId: currentPosition._id,
+              isSubmitted: true
+            })
+            
+            hasVotedForCurrentPosition = !!existingBallot
+            votedAt = existingBallot?.submittedAt || null
+          }
+
+          // Voting eligibility
+          const canVote = voter.isRegistered && voter.isClassOfficer
+          const canViewOnly = voter.isRegistered && !voter.isClassOfficer
+
+          return {
+            ...election.toObject(),
+            currentPosition: currentPosition ? {
+              _id: currentPosition._id,
+              positionName: currentPosition.positionName,
+              positionOrder: currentPosition.positionOrder,
+              maxVotes: currentPosition.maxVotes
+            } : null,
+            hasVotedForCurrentPosition,
+            votedAt,
+            canVote,
+            canViewOnly
+          }
+        })
+      )
+
+      await AuditLog.logVoterAction(
+        "SYSTEM_ACCESS",
+        { _id: req.user.voterId, schoolId: req.user.schoolId },
+        `Accessed active departmental elections for department: ${voter.departmentId.departmentCode}`,
+        req
+      )
+
+      res.json({
+        success: true,
+        data: electionsWithVotingStatus,
+        voterInfo: {
+          canVote: voter.isClassOfficer && voter.isRegistered,
+          isClassOfficer: voter.isClassOfficer,
+          department: voter.departmentId
+        },
+        message: electionsWithVotingStatus.length > 0 ? "Active departmental elections found" : "No active departmental elections available"
+      })
+    } catch (error) {
+      console.error("Get active departmental elections error:", error)
+      await AuditLog.logVoterAction(
+        "SYSTEM_ACCESS",
+        { _id: req.user.voterId, schoolId: req.user.schoolId },
+        `Failed to get active departmental elections: ${error.message}`,
+        req
+      )
+      next(error)
+    }
+  }
+
+  // Cast vote in departmental election - position by position
+  static async castDepartmentalVote(req, res, next) {
+    const session = await mongoose.startSession()
+    session.startTransaction()
+
+    try {
+      const { deptElectionId, positionId, candidateId } = req.body
+      const voterId = req.user.voterId
+
+      // Validate input
+      if (!deptElectionId || !positionId || !candidateId) {
+        await session.abortTransaction()
+        const error = new Error("Departmental Election ID, Position ID, and Candidate ID are required.")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Get voter info
+      const voter = await Voter.findById(voterId).populate('departmentId').session(session)
+      if (!voter || !voter.isActive || !voter.isRegistered) {
+        await session.abortTransaction()
+        const error = new Error("Only registered voters can participate in departmental elections")
+        error.statusCode = 403
+        return next(error)
+      }
+
+      if (!voter.isClassOfficer) {
+        await session.abortTransaction()
+        const error = new Error("Only class officers can vote in departmental elections")
+        error.statusCode = 403
+        return next(error)
+      }
+
+      // Check departmental election
+      const election = await DepartmentalElection.findById(deptElectionId)
+        .populate('departmentId').session(session)
+      if (!election) {
+        await session.abortTransaction()
+        const error = new Error("Departmental election not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      // Verify same department
+      if (!voter.departmentId._id.equals(election.departmentId._id)) {
+        await session.abortTransaction()
+        const error = new Error("You can only vote in elections for your department")
+        error.statusCode = 403
+        return next(error)
+      }
+
+      if (election.status !== "active") {
+        await session.abortTransaction()
+        const error = new Error("Departmental election is not currently active")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Verify current active position
+      const currentActivePosition = await this.getCurrentActivePosition(deptElectionId)
+      if (!currentActivePosition || !currentActivePosition._id.equals(positionId)) {
+        await session.abortTransaction()
+        const error = new Error("This position is not currently open for voting")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Check if already voted for this position
+      const existingBallot = await Ballot.findOne({
+        deptElectionId,
+        voterId,
+        currentPositionId: positionId,
+        isSubmitted: true
+      }).session(session)
+
+      if (existingBallot) {
+        await session.abortTransaction()
+        const error = new Error("You have already voted for this position")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Validate candidate
+      const candidate = await Candidate.findOne({
+        _id: candidateId,
+        deptElectionId: deptElectionId,
+        positionId: positionId,
+        isActive: true
+      }).session(session)
+
+      if (!candidate) {
+        await session.abortTransaction()
+        const error = new Error("Invalid candidate for this position")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Create ballot
+      const ballot = new Ballot({
+        deptElectionId,
+        voterId,
+        currentPositionId: positionId,
+        ballotToken: uuidv4(),
+        isSubmitted: true,
+        submittedAt: new Date(),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.get('User-Agent')
+      })
+
+      const savedBallot = await ballot.save({ session })
+
+      // Create vote record
+      const voteRecord = new Vote({
+        ballotId: savedBallot._id,
+        candidateId: candidateId,
+        positionId: positionId,
+        deptElectionId: deptElectionId,
+        voteTimestamp: new Date()
+      })
+
+      await voteRecord.save({ session })
+
+      // Update candidate vote count
+      await Candidate.findByIdAndUpdate(
+        candidateId,
+        { $inc: { voteCount: 1 } },
+        { session }
+      )
+
+      await session.commitTransaction()
+
+      await AuditLog.logVoterAction(
+        "VOTED",
+        { _id: voterId, schoolId: voter.schoolId },
+        `Successfully cast vote for ${currentActivePosition.positionName} in departmental election: ${election.title}`,
+        req
+      )
+
+      res.json({
+        success: true,
+        message: "Departmental vote cast successfully",
+        data: {
+          ballotId: savedBallot._id,
+          ballotToken: savedBallot.ballotToken,
+          submittedAt: savedBallot.submittedAt,
+          position: currentActivePosition.positionName,
+          election: {
+            id: election._id,
+            title: election.title,
+            department: election.departmentId.departmentCode
+          }
+        }
+      })
+
+    } catch (error) {
+      await session.abortTransaction()
+      console.error("Cast departmental vote error:", error)
+      
+      if (req.user?.voterId) {
+        await AuditLog.logVoterAction(
+          "BALLOT_ABANDONED",
+          { _id: req.user.voterId, schoolId: req.user.schoolId },
+          `Departmental vote casting failed: ${error.message}`,
+          req
+        )
+      }
+
+      if (error.statusCode) {
+        error.status = error.statusCode
+      }
+      next(error)
+    } finally {
+      session.endSession()
+    }
+  }
+
+  // Get voter's departmental voting history
+  static async getMyDepartmentalVotes(req, res, next) {
+    try {
+      const voterId = req.user.voterId
+
+      const ballots = await Ballot.find({
+        voterId,
+        deptElectionId: { $exists: true },
+        isSubmitted: true
+      })
+      .populate({
+        path: 'deptElectionId',
+        select: 'deptElectionId title electionYear electionDate status',
+        populate: {
+          path: 'departmentId',
+          select: 'departmentCode degreeProgram college'
+        }
+      })
+      .populate('currentPositionId', 'positionName positionOrder')
+      .sort({ submittedAt: -1 })
+
+      const votingHistory = await Promise.all(
+        ballots.map(async (ballot) => {
+          const votes = await Vote.find({
+            ballotId: ballot._id
+          })
+          .populate('candidateId', 'candidateNumber')
+          .populate({
+            path: 'candidateId',
+            populate: {
+              path: 'voterId',
+              select: 'firstName middleName lastName'
+            }
+          })
+          .populate('positionId', 'positionName')
+
+          return {
+            ballotId: ballot._id,
+            ballotToken: ballot.ballotToken,
+            election: ballot.deptElectionId,
+            position: ballot.currentPositionId,
+            submittedAt: ballot.submittedAt,
+            votes: votes.map(vote => ({
+              position: vote.positionId.positionName,
+              candidateNumber: vote.candidateId.candidateNumber,
+              candidateName: vote.candidateId.voterId ? 
+                `${vote.candidateId.voterId.firstName} ${vote.candidateId.voterId.middleName || ''} ${vote.candidateId.voterId.lastName}`.replace(/\s+/g, ' ').trim() : 
+                'Unknown Candidate'
+            }))
+          }
+        })
+      )
+
+      await AuditLog.logVoterAction(
+        "SYSTEM_ACCESS",
+        { _id: req.user.voterId, schoolId: req.user.schoolId },
+        "Accessed departmental voting history",
+        req
+      )
+
+      res.json({
+        success: true,
+        data: votingHistory,
+        message: votingHistory.length > 0 ? `Found ${votingHistory.length} departmental voting records` : "No departmental voting history found"
+      })
+    } catch (error) {
+      console.error("Get my departmental votes error:", error)
+      await AuditLog.logVoterAction(
+        "SYSTEM_ACCESS",
+        { _id: req.user.voterId, schoolId: req.user.schoolId },
+        `Failed to get departmental voting history: ${error.message}`,
+        req
+      )
+      next(error)
+    }
+  }
 
   // Get voter's departmental voting status
-  getDepartmentalVotingStatus: async (req, res) => {
+  static async getDepartmentalVotingStatus(req, res, next) {
     try {
-      const voterId = req.user.voterId || req.user.userId
+      const voterId = req.user.voterId
 
       // Get voter info
       const voter = await Voter.findById(voterId)
@@ -1067,29 +741,26 @@ const VotingController = {
         .select('-password -faceEncoding')
 
       if (!voter) {
-        return res.status(404).json({
-          success: false,
-          message: "Voter not found"
-        })
+        const error = new Error("Voter not found")
+        error.statusCode = 404
+        return next(error)
       }
 
       // Get active departmental elections for voter's department
-      const currentDate = new Date()
-      const currentTime = new Date().toTimeString().slice(0, 8)
       const activeDeptElections = await DepartmentalElection.find({
         departmentId: voter.departmentId._id,
-        electionDate: { $lte: currentDate },
-        status: "active",
-        ballotOpenTime: { $lte: currentTime },
-        ballotCloseTime: { $gte: currentTime }
+        electionDate: { $lte: new Date() },
+        status: "active"
       }).countDocuments()
 
-      // Get departmental elections voter has participated in
-      const votedDeptElections = await Ballot.find({
+      // Get unique departmental elections voter has participated in
+      const votedDeptElectionIds = await Ballot.find({
         voterId,
         deptElectionId: { $exists: true },
         isSubmitted: true
-      }).countDocuments()
+      }).distinct('deptElectionId')
+
+      const votedDeptElections = votedDeptElectionIds.length
 
       // Get total departmental votes cast
       const totalDeptVotesCast = await Vote.find({
@@ -1100,13 +771,12 @@ const VotingController = {
         }).distinct('_id') }
       }).countDocuments()
 
-      // Check if voter is eligible for departmental elections (must be registered and class officer)
+      // Check eligibility
       const isEligibleForDept = voter.isActive && voter.isRegistered && 
                                voter.isPasswordActive && !voter.isPasswordExpired() && voter.isClassOfficer
       const canViewDeptOnly = voter.isActive && voter.isRegistered && 
                              voter.isPasswordActive && !voter.isPasswordExpired() && !voter.isClassOfficer
 
-      // Log system access
       await AuditLog.logVoterAction(
         "SYSTEM_ACCESS",
         { _id: voterId, schoolId: voter.schoolId },
@@ -1140,19 +810,969 @@ const VotingController = {
             activeDeptElections,
             votedDeptElections,
             totalDeptVotesCast,
-            pendingDeptElections: activeDeptElections - votedDeptElections
+            pendingDeptElections: Math.max(0, activeDeptElections - votedDeptElections)
           }
         }
       })
     } catch (error) {
       console.error("Get departmental voting status error:", error)
-      res.status(500).json({
-        success: false,
-        message: "Error fetching departmental voting status",
-        error: process.env.NODE_ENV === "development" ? error.message : {}
-      })
+      await AuditLog.logVoterAction(
+        "SYSTEM_ACCESS",
+        { _id: req.user.voterId, schoolId: req.user.schoolId },
+        `Failed to get departmental voting status: ${error.message}`,
+        req
+      )
+      next(error)
     }
   }
+
+  // ===== ELECTION DETAILS METHODS (FOR STAFF) =====
+
+  // Get SSG election details with positions and candidates
+  static async getSSGElectionDetails(req, res, next) {
+    try {
+      const { id } = req.params
+      
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        const error = new Error("Invalid SSG election ID")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      const election = await SSGElection.findById(id)
+        .populate('createdBy', 'username')
+
+      if (!election) {
+        const error = new Error("SSG election not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      // Get positions with candidates
+      const positions = await Position.find({
+        ssgElectionId: id,
+        isActive: true
+      }).sort({ positionOrder: 1 })
+
+      const positionsWithCandidates = await Promise.all(
+        positions.map(async (position) => {
+          const candidates = await Candidate.find({
+            ssgElectionId: id,
+            positionId: position._id,
+            isActive: true
+          })
+          .populate({
+            path: 'voterId',
+            select: 'firstName middleName lastName schoolId departmentId',
+            populate: {
+              path: 'departmentId',
+              select: 'departmentCode degreeProgram college'
+            }
+          })
+          .populate('partylistId', 'partylistName description')
+          .sort({ candidateNumber: 1 })
+
+          return {
+            ...position.toObject(),
+            candidates: candidates.map(candidate => ({
+              ...candidate.toObject(),
+              campaignPicture: candidate.campaignPicture ? candidate.campaignPicture.toString('base64') : null,
+              credentials: candidate.credentials ? candidate.credentials.toString('base64') : null
+            }))
+          }
+        })
+      )
+
+      await AuditLog.logUserAction(
+        "BALLOT_ACCESSED",
+        req.user,
+        `Accessed SSG election details for: ${election.title}`,
+        req
+      )
+
+      res.json({
+        success: true,
+        data: {
+          election,
+          positions: positionsWithCandidates
+        },
+        message: "SSG election details retrieved successfully"
+      })
+    } catch (error) {
+      console.error("Get SSG election details error:", error)
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election details for ${req.params.id}: ${error.message}`,
+        req
+      )
+      next(error)
+    }
+  }
+
+  // Get SSG candidates for a specific election
+  static async getSSGElectionCandidates(req, res, next) {
+    try {
+      const { id } = req.params
+      
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        const error = new Error("Invalid SSG election ID")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      const candidates = await Candidate.find({
+        ssgElectionId: id,
+        isActive: true
+      })
+      .populate({
+        path: 'voterId',
+        select: 'firstName middleName lastName schoolId departmentId',
+        populate: {
+          path: 'departmentId',
+          select: 'departmentCode degreeProgram college'
+        }
+      })
+      .populate('positionId', 'positionName positionOrder maxVotes')
+      .populate('partylistId', 'partylistName')
+      .sort({ 'positionId.positionOrder': 1, candidateNumber: 1 })
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Viewed SSG candidates for election ID: ${id}`,
+        req
+      )
+
+      res.json({
+        success: true,
+        data: candidates.map(candidate => ({
+          ...candidate.toObject(),
+          campaignPicture: candidate.campaignPicture ? candidate.campaignPicture.toString('base64') : null,
+          credentials: candidate.credentials ? candidate.credentials.toString('base64') : null
+        })),
+        message: `Found ${candidates.length} SSG candidates`
+      })
+    } catch (error) {
+      console.error("Get SSG election candidates error:", error)
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election candidates for ${req.params.id}: ${error.message}`,
+        req
+      )
+      next(error)
+    }
+  }
+
+  // Get departmental election details with positions and candidates
+  static async getDepartmentalElectionDetails(req, res, next) {
+    try {
+      const { id } = req.params
+      
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        const error = new Error("Invalid departmental election ID")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      const election = await DepartmentalElection.findById(id)
+        .populate('createdBy', 'username')
+        .populate('departmentId', 'departmentCode degreeProgram college')
+
+      if (!election) {
+        const error = new Error("Departmental election not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      // Get positions
+      const positions = await Position.find({
+        deptElectionId: id,
+        isActive: true
+      }).sort({ positionOrder: 1 })
+
+      // Get current active position
+      const currentActivePosition = await this.getCurrentActivePosition(id)
+
+      const positionsWithCandidates = await Promise.all(
+        positions.map(async (position) => {
+          const candidates = await Candidate.find({
+            deptElectionId: id,
+            positionId: position._id,
+            isActive: true
+          })
+          .populate({
+            path: 'voterId',
+            select: 'firstName middleName lastName schoolId departmentId yearLevel',
+            populate: {
+              path: 'departmentId',
+              select: 'departmentCode degreeProgram college'
+            }
+          })
+          .sort({ candidateNumber: 1 })
+
+          return {
+            ...position.toObject(),
+            isCurrentlyActive: currentActivePosition?._id.equals(position._id),
+            candidates: candidates.map(candidate => ({
+              ...candidate.toObject(),
+              campaignPicture: candidate.campaignPicture ? candidate.campaignPicture.toString('base64') : null,
+              credentials: candidate.credentials ? candidate.credentials.toString('base64') : null
+            }))
+          }
+        })
+      )
+
+      await AuditLog.logUserAction(
+        "BALLOT_ACCESSED",
+        req.user,
+        `Accessed departmental election details for: ${election.title}`,
+        req
+      )
+
+      res.json({
+        success: true,
+        data: {
+          election,
+          positions: positionsWithCandidates,
+          currentActivePosition
+        },
+        message: "Departmental election details retrieved successfully"
+      })
+    } catch (error) {
+      console.error("Get departmental election details error:", error)
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get departmental election details for ${req.params.id}: ${error.message}`,
+        req
+      )
+      next(error)
+    }
+  }
+
+  // Get departmental candidates for a specific election
+  static async getDepartmentalElectionCandidates(req, res, next) {
+    try {
+      const { id } = req.params
+      
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        const error = new Error("Invalid departmental election ID")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      const candidates = await Candidate.find({
+        deptElectionId: id,
+        isActive: true
+      })
+      .populate({
+        path: 'voterId',
+        select: 'firstName middleName lastName schoolId departmentId yearLevel',
+        populate: {
+          path: 'departmentId',
+          select: 'departmentCode degreeProgram college'
+        }
+      })
+      .populate('positionId', 'positionName positionOrder maxVotes')
+      .sort({ 'positionId.positionOrder': 1, candidateNumber: 1 })
+
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Viewed departmental candidates for election ID: ${id}`,
+        req
+      )
+
+      res.json({
+        success: true,
+        data: candidates.map(candidate => ({
+          ...candidate.toObject(),
+          campaignPicture: candidate.campaignPicture ? candidate.campaignPicture.toString('base64') : null,
+          credentials: candidate.credentials ? candidate.credentials.toString('base64') : null
+        })),
+        message: `Found ${candidates.length} departmental candidates`
+      })
+    } catch (error) {
+      console.error("Get departmental election candidates error:", error)
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get departmental election candidates for ${req.params.id}: ${error.message}`,
+        req
+      )
+      next(error)
+    }
+  }
+
+  // ===== HELPER METHODS =====
+
+  // Check if ballot time is open for voting
+  static checkBallotTime(election) {
+    if (!election.ballotOpenTime || !election.ballotCloseTime) {
+      return {
+        isOpen: true,
+        status: 'open',
+        message: 'Voting is open'
+      }
+    }
+
+    const now = new Date()
+    const electionDate = new Date(election.electionDate)
+    
+    // Create datetime objects for open and close times
+    const [openHours, openMinutes] = election.ballotOpenTime.split(':').map(Number)
+    const [closeHours, closeMinutes] = election.ballotCloseTime.split(':').map(Number)
+    
+    const openDateTime = new Date(electionDate)
+    openDateTime.setHours(openHours, openMinutes, 0, 0)
+    
+    const closeDateTime = new Date(electionDate)
+    closeDateTime.setHours(closeHours, closeMinutes, 0, 0)
+
+    if (now < openDateTime) {
+      const timeDiff = openDateTime - now
+      const hoursUntil = Math.floor(timeDiff / (1000 * 60 * 60))
+      const minutesUntil = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60))
+      
+      return {
+        isOpen: false,
+        status: 'scheduled',
+        message: `Voting opens in ${hoursUntil}h ${minutesUntil}m`,
+        timeRemaining: { hours: hoursUntil, minutes: minutesUntil }
+      }
+    }
+
+    if (now > closeDateTime) {
+      return {
+        isOpen: false,
+        status: 'closed',
+        message: 'Voting has ended'
+      }
+    }
+
+    // Currently open
+    const timeDiff = closeDateTime - now
+    const hoursRemaining = Math.floor(timeDiff / (1000 * 60 * 60))
+    const minutesRemaining = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60))
+    
+    return {
+      isOpen: true,
+      status: 'open',
+      message: `Voting closes in ${hoursRemaining}h ${minutesRemaining}m`,
+      timeRemaining: { hours: hoursRemaining, minutes: minutesRemaining }
+    }
+  }
+
+  // Validate SSG votes (all positions at once)
+  static async validateSSGVotes(votes, electionId, session) {
+    const validatedVotes = []
+    const positionIds = new Set()
+    
+    for (const vote of votes) {
+      if (!vote.positionId || !vote.candidateId) {
+        throw new Error("Invalid vote structure. Position ID and candidate ID are required.")
+      }
+
+      // Check for duplicate position votes
+      if (positionIds.has(vote.positionId.toString())) {
+        throw new Error("Duplicate votes for the same position are not allowed")
+      }
+      positionIds.add(vote.positionId.toString())
+
+      // Validate position
+      const position = await Position.findOne({
+        _id: vote.positionId,
+        ssgElectionId: electionId,
+        isActive: true
+      }).session(session)
+
+      if (!position) {
+        throw new Error(`Invalid position: ${vote.positionId}`)
+      }
+
+      // Validate candidate
+      const candidate = await Candidate.findOne({
+        _id: vote.candidateId,
+        ssgElectionId: electionId,
+        positionId: vote.positionId,
+        isActive: true
+      }).session(session)
+
+      if (!candidate) {
+        throw new Error(`Invalid candidate: ${vote.candidateId} for position: ${vote.positionId}`)
+      }
+
+      validatedVotes.push({
+        positionId: vote.positionId,
+        candidateId: vote.candidateId
+      })
+    }
+
+    return validatedVotes
+  }
+
+  // Get current active position for departmental elections
+  static async getCurrentActivePosition(deptElectionId) {
+    // Get the first position by order that is currently accepting votes
+    // This would be controlled by election committee in real implementation
+    return await Position.findOne({
+      deptElectionId,
+      isActive: true
+    }).sort({ positionOrder: 1 })
+  }
+
+  // Additional helper method to manage departmental position flow (for admin use)
+  static async activateNextDepartmentalPosition(deptElectionId, currentPositionId) {
+    const session = await mongoose.startSession()
+    session.startTransaction()
+
+    try {
+      // Get current position
+      const currentPosition = await Position.findById(currentPositionId).session(session)
+      if (!currentPosition) {
+        throw new Error("Current position not found")
+      }
+
+      // Find next position by order
+      const nextPosition = await Position.findOne({
+        deptElectionId,
+        positionOrder: { $gt: currentPosition.positionOrder },
+        isActive: false
+      }).sort({ positionOrder: 1 }).session(session)
+
+      if (nextPosition) {
+        // Deactivate current position (optional - for strict position-by-position flow)
+        // currentPosition.isActive = false
+        // await currentPosition.save({ session })
+
+        // Activate next position
+        nextPosition.isActive = true
+        await nextPosition.save({ session })
+      }
+
+      await session.commitTransaction()
+      return nextPosition
+    } catch (error) {
+      await session.abortTransaction()
+      throw error
+    } finally {
+      session.endSession()
+    }
+  }
+
+// Get live SSG election results/vote counts
+static async getSSGElectionLiveResults(req, res, next) {
+  try {
+    const { id } = req.params
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid SSG election ID")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await SSGElection.findById(id)
+    if (!election) {
+      const error = new Error("SSG election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Get positions with live vote counts
+    const positions = await Position.find({
+      ssgElectionId: id,
+      isActive: true
+    }).sort({ positionOrder: 1 })
+
+    const liveResults = await Promise.all(
+      positions.map(async (position) => {
+        const candidates = await Candidate.find({
+          ssgElectionId: id,
+          positionId: position._id,
+          isActive: true
+        })
+        .populate({
+          path: 'voterId',
+          select: 'firstName middleName lastName schoolId'
+        })
+        .populate('partylistId', 'partylistName')
+        .sort({ candidateNumber: 1 })
+
+        // Get live vote counts
+        const candidatesWithVotes = await Promise.all(
+          candidates.map(async (candidate) => {
+            const voteCount = await Vote.countDocuments({
+              candidateId: candidate._id,
+              ssgElectionId: id
+            })
+
+            return {
+              ...candidate.toObject(),
+              voteCount,
+              percentage: 0 // Will be calculated after getting total votes
+            }
+          })
+        )
+
+        // Calculate total votes for this position
+        const totalVotes = candidatesWithVotes.reduce((sum, candidate) => sum + candidate.voteCount, 0)
+
+        // Calculate percentages
+        candidatesWithVotes.forEach(candidate => {
+          candidate.percentage = totalVotes > 0 ? 
+            Math.round((candidate.voteCount / totalVotes) * 100) : 0
+        })
+
+        // Sort by vote count (descending)
+        candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount)
+
+        return {
+          position: {
+            _id: position._id,
+            positionName: position.positionName,
+            positionOrder: position.positionOrder,
+            maxVotes: position.maxVotes
+          },
+          candidates: candidatesWithVotes,
+          totalVotes,
+          winner: candidatesWithVotes[0] || null
+        }
+      })
+    )
+
+    // Get total ballots submitted
+    const totalBallots = await Ballot.countDocuments({
+      ssgElectionId: id,
+      isSubmitted: true
+    })
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Accessed live results for SSG election: ${election.title}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election: {
+          _id: election._id,
+          title: election.title,
+          status: election.status,
+          electionDate: election.electionDate
+        },
+        positions: liveResults,
+        summary: {
+          totalBallots,
+          totalPositions: positions.length,
+          lastUpdated: new Date()
+        }
+      },
+      message: "Live SSG election results retrieved successfully"
+    })
+  } catch (error) {
+    console.error("Get SSG live results error:", error)
+    next(error)
+  }
+}
+
+// Get live departmental election results for current active position
+static async getDepartmentalElectionLiveResults(req, res, next) {
+  try {
+    const { id } = req.params
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid departmental election ID")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await DepartmentalElection.findById(id)
+      .populate('departmentId', 'departmentCode degreeProgram college')
+    if (!election) {
+      const error = new Error("Departmental election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Get current active position
+    const currentPosition = await this.getCurrentActivePosition(id)
+    if (!currentPosition) {
+      return res.json({
+        success: true,
+        data: {
+          election,
+          currentPosition: null,
+          candidates: [],
+          summary: {
+            totalVotes: 0,
+            message: "No position is currently active for voting"
+          }
+        },
+        message: "No active position found"
+      })
+    }
+
+    // Get candidates for current active position with live vote counts
+    const candidates = await Candidate.find({
+      deptElectionId: id,
+      positionId: currentPosition._id,
+      isActive: true
+    })
+    .populate({
+      path: 'voterId',
+      select: 'firstName middleName lastName schoolId yearLevel'
+    })
+    .sort({ candidateNumber: 1 })
+
+    const candidatesWithVotes = await Promise.all(
+      candidates.map(async (candidate) => {
+        const voteCount = await Vote.countDocuments({
+          candidateId: candidate._id,
+          deptElectionId: id,
+          positionId: currentPosition._id
+        })
+
+        return {
+          ...candidate.toObject(),
+          voteCount,
+          percentage: 0 // Will be calculated after getting total votes
+        }
+      })
+    )
+
+    // Calculate total votes for current position
+    const totalVotes = candidatesWithVotes.reduce((sum, candidate) => sum + candidate.voteCount, 0)
+
+    // Calculate percentages
+    candidatesWithVotes.forEach(candidate => {
+      candidate.percentage = totalVotes > 0 ? 
+        Math.round((candidate.voteCount / totalVotes) * 100) : 0
+    })
+
+    // Sort by vote count (descending)
+    candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount)
+
+    // Get total ballots for current position
+    const totalBallots = await Ballot.countDocuments({
+      deptElectionId: id,
+      currentPositionId: currentPosition._id,
+      isSubmitted: true
+    })
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Accessed live results for departmental election: ${election.title} - Position: ${currentPosition.positionName}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election,
+        currentPosition: {
+          _id: currentPosition._id,
+          positionName: currentPosition.positionName,
+          positionOrder: currentPosition.positionOrder,
+          maxVotes: currentPosition.maxVotes
+        },
+        candidates: candidatesWithVotes,
+        summary: {
+          totalBallots,
+          totalVotes,
+          winner: candidatesWithVotes[0] || null,
+          lastUpdated: new Date()
+        }
+      },
+      message: `Live results for ${currentPosition.positionName} retrieved successfully`
+    })
+  } catch (error) {
+    console.error("Get departmental live results error:", error)
+    next(error)
+  }
+}
+
+// Get live SSG election results for voters (read-only)
+static async getSSGElectionLiveResultsForVoter(req, res, next) {
+  try {
+    const { id } = req.params
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid SSG election ID")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    // Check if voter is registered (only registered voters can view results)
+    const voter = await Voter.findById(req.user.voterId)
+    if (!voter || !voter.isRegistered) {
+      const error = new Error("Only registered voters can view election results")
+      error.statusCode = 403
+      return next(error)
+    }
+
+    const election = await SSGElection.findById(id)
+    if (!election) {
+      const error = new Error("SSG election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Only show results if election is completed or voter has already voted
+    const hasVoted = await Ballot.findOne({
+      ssgElectionId: id,
+      voterId: req.user.voterId,
+      isSubmitted: true
+    })
+
+    if (election.status !== 'completed' && !hasVoted) {
+      return res.json({
+        success: false,
+        message: "Results are only available after you have voted or when the election is completed",
+        data: { canViewResults: false }
+      })
+    }
+
+    // Get positions with vote counts (same logic as staff but filtered for voter viewing)
+    const positions = await Position.find({
+      ssgElectionId: id,
+      isActive: true
+    }).sort({ positionOrder: 1 })
+
+    const liveResults = await Promise.all(
+      positions.map(async (position) => {
+        const candidates = await Candidate.find({
+          ssgElectionId: id,
+          positionId: position._id,
+          isActive: true
+        })
+        .populate({
+          path: 'voterId',
+          select: 'firstName middleName lastName'
+        })
+        .populate('partylistId', 'partylistName')
+        .sort({ candidateNumber: 1 })
+
+        const candidatesWithVotes = await Promise.all(
+          candidates.map(async (candidate) => {
+            const voteCount = await Vote.countDocuments({
+              candidateId: candidate._id,
+              ssgElectionId: id
+            })
+
+            return {
+              _id: candidate._id,
+              candidateNumber: candidate.candidateNumber,
+              name: candidate.voterId ? 
+                `${candidate.voterId.firstName} ${candidate.voterId.middleName || ''} ${candidate.voterId.lastName}`.replace(/\s+/g, ' ').trim() : 
+                'Unknown Candidate',
+              partylist: candidate.partylistId?.partylistName || 'Independent',
+              voteCount,
+              percentage: 0
+            }
+          })
+        )
+
+        const totalVotes = candidatesWithVotes.reduce((sum, candidate) => sum + candidate.voteCount, 0)
+        
+        candidatesWithVotes.forEach(candidate => {
+          candidate.percentage = totalVotes > 0 ? 
+            Math.round((candidate.voteCount / totalVotes) * 100) : 0
+        })
+
+        candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount)
+
+        return {
+          position: {
+            _id: position._id,
+            positionName: position.positionName,
+            positionOrder: position.positionOrder
+          },
+          candidates: candidatesWithVotes,
+          totalVotes,
+          leading: candidatesWithVotes[0] || null
+        }
+      })
+    )
+
+    await AuditLog.logVoterAction(
+      "SYSTEM_ACCESS",
+      { _id: req.user.voterId, schoolId: req.user.schoolId },
+      `Viewed live results for SSG election: ${election.title}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election: {
+          _id: election._id,
+          title: election.title,
+          status: election.status,
+          electionDate: election.electionDate
+        },
+        positions: liveResults,
+        viewerInfo: {
+          hasVoted: !!hasVoted,
+          votedAt: hasVoted?.submittedAt || null
+        }
+      },
+      message: "SSG election results retrieved successfully"
+    })
+  } catch (error) {
+    console.error("Get SSG live results for voter error:", error)
+    next(error)
+  }
+}
+
+// Get live departmental election results for voters (read-only)
+static async getDepartmentalElectionLiveResultsForVoter(req, res, next) {
+  try {
+    const { id } = req.params
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid departmental election ID")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    // Check if voter is registered and from the same department
+    const voter = await Voter.findById(req.user.voterId).populate('departmentId')
+    if (!voter || !voter.isRegistered) {
+      const error = new Error("Only registered voters can view election results")
+      error.statusCode = 403
+      return next(error)
+    }
+
+    const election = await DepartmentalElection.findById(id)
+      .populate('departmentId', 'departmentCode degreeProgram college')
+    if (!election) {
+      const error = new Error("Departmental election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Verify voter is from the same department
+    if (!voter.departmentId._id.equals(election.departmentId._id)) {
+      const error = new Error("You can only view results for elections in your department")
+      error.statusCode = 403
+      return next(error)
+    }
+
+    // Get current active position
+    const currentPosition = await this.getCurrentActivePosition(id)
+    if (!currentPosition) {
+      return res.json({
+        success: true,
+        data: {
+          election,
+          currentPosition: null,
+          candidates: [],
+          message: "No position is currently active for voting"
+        }
+      })
+    }
+
+    // Check if voter has voted for current position or if they're a class officer
+    const hasVoted = await Ballot.findOne({
+      deptElectionId: id,
+      voterId: req.user.voterId,
+      currentPositionId: currentPosition._id,
+      isSubmitted: true
+    })
+
+    // Only class officers can vote, but all registered students from dept can view results after voting or completion
+    const canViewResults = election.status === 'completed' || hasVoted || voter.isClassOfficer
+
+    if (!canViewResults) {
+      return res.json({
+        success: false,
+        message: "Results are only available after voting or when the election is completed",
+        data: { canViewResults: false }
+      })
+    }
+
+    // Get candidates with vote counts
+    const candidates = await Candidate.find({
+      deptElectionId: id,
+      positionId: currentPosition._id,
+      isActive: true
+    })
+    .populate({
+      path: 'voterId',
+      select: 'firstName middleName lastName yearLevel'
+    })
+    .sort({ candidateNumber: 1 })
+
+    const candidatesWithVotes = await Promise.all(
+      candidates.map(async (candidate) => {
+        const voteCount = await Vote.countDocuments({
+          candidateId: candidate._id,
+          deptElectionId: id,
+          positionId: currentPosition._id
+        })
+
+        return {
+          _id: candidate._id,
+          candidateNumber: candidate.candidateNumber,
+          name: candidate.voterId ? 
+            `${candidate.voterId.firstName} ${candidate.voterId.middleName || ''} ${candidate.voterId.lastName}`.replace(/\s+/g, ' ').trim() : 
+            'Unknown Candidate',
+          yearLevel: candidate.voterId?.yearLevel || null,
+          voteCount,
+          percentage: 0
+        }
+      })
+    )
+
+    const totalVotes = candidatesWithVotes.reduce((sum, candidate) => sum + candidate.voteCount, 0)
+    
+    candidatesWithVotes.forEach(candidate => {
+      candidate.percentage = totalVotes > 0 ? 
+        Math.round((candidate.voteCount / totalVotes) * 100) : 0
+    })
+
+    candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount)
+
+    await AuditLog.logVoterAction(
+      "SYSTEM_ACCESS",
+      { _id: req.user.voterId, schoolId: req.user.schoolId },
+      `Viewed live results for departmental election: ${election.title} - Position: ${currentPosition.positionName}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election,
+        currentPosition: {
+          _id: currentPosition._id,
+          positionName: currentPosition.positionName,
+          positionOrder: currentPosition.positionOrder
+        },
+        candidates: candidatesWithVotes,
+        summary: {
+          totalVotes,
+          leading: candidatesWithVotes[0] || null
+        },
+        viewerInfo: {
+          hasVoted: !!hasVoted,
+          votedAt: hasVoted?.submittedAt || null,
+          canVote: voter.isClassOfficer
+        }
+      },
+      message: `Results for ${currentPosition.positionName} retrieved successfully`
+    })
+  } catch (error) {
+    console.error("Get departmental live results for voter error:", error)
+    next(error)
+  }
+}
+
 }
 
 module.exports = VotingController

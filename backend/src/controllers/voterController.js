@@ -1648,7 +1648,7 @@ static async getActiveOfficersByDepartmentCode(req, res, next) {
   // Get voter profile (for authenticated voters)
   static async getVoterProfile(req, res, next) {
     try {
-      const voterId = req.voter.id // Assumes voterAuthMiddleware sets req.voter
+      const voterId = req.voter.id 
 
       const voter = await Voter.findById(voterId)
         .populate("departmentId")

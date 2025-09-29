@@ -1,21 +1,81 @@
 import api from '../api'
 
 export const ssgElectionsAPI = {
+  // STAFF ENDPOINTS
   // Get all SSG elections with filtering and pagination
   getAll: async (params = {}) => {
-    const response = await api.get('/ssgElections', { params })
+    const response = await api.get('/ssgElections/user/', { params })
     return response.data
   },
 
-  // Get SSG election by ID
+  // Get SSG election by ID (Staff)
   getById: async (id) => {
-    const response = await api.get(`/ssgElections/${id}`)
+    const response = await api.get(`/ssgElections/user/${id}`)
     return response.data
   },
 
   // Get SSG election overview with comprehensive stats
   getOverview: async (id) => {
-    const response = await api.get(`/ssgElections/${id}/overview`)
+    const response = await api.get(`/ssgElections/user/${id}/overview`)
+    return response.data
+  },
+
+  // Dashboard and summary functions
+  getDashboardSummary: async () => {
+    const response = await api.get('/ssgElections/user/dashboard')
+    return response.data
+  },
+
+  getUpcoming: async (params = {}) => {
+    const response = await api.get('/ssgElections/user/upcoming', { params })
+    return response.data
+  },
+
+  // Get SSG election results (Staff)
+  getResults: async (id) => {
+    const response = await api.get(`/ssgElections/user/${id}/results`)
+    return response.data
+  },
+
+  // Get SSG election statistics (Staff)
+  getStatistics: async (id) => {
+    const response = await api.get(`/ssgElections/user/${id}/statistics`)
+    return response.data
+  },
+
+  // Get SSG election candidates (Staff)
+  getCandidates: async (id, params = {}) => {
+    const response = await api.get(`/ssgElections/user/${id}/candidates`, { params })
+    return response.data
+  },
+
+  // Get SSG election positions (Staff)
+  getPositions: async (id, params = {}) => {
+    const response = await api.get(`/ssgElections/user/${id}/positions`, { params })
+    return response.data
+  },
+
+  // Get SSG election partylists (Staff)
+  getPartylists: async (id, params = {}) => {
+    const response = await api.get(`/ssgElections/user/${id}/partylists`, { params })
+    return response.data
+  },
+
+  // Get SSG election voter participants (Staff)
+  getVoterParticipants: async (id, params = {}) => {
+    const response = await api.get(`/ssgElections/user/${id}/participants`, { params })
+    return response.data
+  },
+
+  // Get SSG election voter turnout (Staff)
+  getVoterTurnout: async (id) => {
+    const response = await api.get(`/ssgElections/user/${id}/turnout`)
+    return response.data
+  },
+
+  // Get SSG election ballots (Staff)
+  getBallots: async (id, params = {}) => {
+    const response = await api.get(`/ssgElections/user/${id}/ballots`, { params })
     return response.data
   },
 
@@ -39,7 +99,7 @@ export const ssgElectionsAPI = {
       throw new Error('Ballot close time must be in HH:MM format (e.g., 17:00)')
     }
     
-    const response = await api.post('/ssgElections', formattedData)
+    const response = await api.post('/ssgElections/user/', formattedData)
     return response.data
   },
 
@@ -63,90 +123,68 @@ export const ssgElectionsAPI = {
       throw new Error('Ballot close time must be in HH:MM format (e.g., 17:00)')
     }
     
-    const response = await api.put(`/ssgElections/${id}`, formattedData)
-    return response.data
-  },
-
-  // Delete SSG election (Admin only)
-  delete: async (id) => {
-    const response = await api.delete(`/ssgElections/${id}`)
-    return response.data
-  },
-
-  // Get SSG election results
-  getResults: async (id) => {
-    const response = await api.get(`/ssgElections/${id}/results`)
-    return response.data
-  },
-
-  // Get SSG election statistics
-  getStatistics: async (id) => {
-    const response = await api.get(`/ssgElections/${id}/statistics`)
-    return response.data
-  },
-
-  // Get SSG election candidates
-  getCandidates: async (id, params = {}) => {
-    const response = await api.get(`/ssgElections/${id}/candidates`, { params })
-    return response.data
-  },
-
-  // Get SSG election positions
-  getPositions: async (id, params = {}) => {
-    const response = await api.get(`/ssgElections/${id}/positions`, { params })
-    return response.data
-  },
-
-  // Get SSG election partylists
-  getPartylists: async (id, params = {}) => {
-    const response = await api.get(`/ssgElections/${id}/partylists`, { params })
-    return response.data
-  },
-
-  // Get SSG election voter participants
-  getVoterParticipants: async (id, params = {}) => {
-    const response = await api.get(`/ssgElections/${id}/participants`, { params })
-    return response.data
-  },
-
-  // Get SSG election voter turnout
-  getVoterTurnout: async (id) => {
-    const response = await api.get(`/ssgElections/${id}/turnout`)
-    return response.data
-  },
-
-  // Get SSG election ballots
-  getBallots: async (id, params = {}) => {
-    const response = await api.get(`/ssgElections/${id}/ballots`, { params })
+    const response = await api.put(`/ssgElections/user/${id}`, formattedData)
     return response.data
   },
 
   // Toggle SSG election status
   toggleStatus: async (id, status) => {
-    const response = await api.patch(`/ssgElections/${id}/status`, { status })
+    const response = await api.patch(`/ssgElections/user/${id}/status`, { status })
     return response.data
   },
 
-  // Dashboard and summary functions
-  getDashboardSummary: async () => {
-    const response = await api.get('/ssgElections/dashboard')
+  // Delete SSG election (Admin only)
+  delete: async (id) => {
+    const response = await api.delete(`/ssgElections/user/${id}`)
     return response.data
   },
 
-  getUpcoming: async (params = {}) => {
-    const response = await api.get('/ssgElections/upcoming', { params })
+  // VOTER ENDPOINTS
+  // Get all SSG elections for voters
+  getAllForVoters: async (params = {}) => {
+    const response = await api.get('/ssgElections/voter/', { params })
     return response.data
   },
 
-  getForVoting: async (voterId = null) => {
-    const endpoint = voterId ? `/ssgElections/for-voting/${voterId}` : '/ssgElections/for-voting'
-    const response = await api.get(endpoint)
+  // Get single SSG election for voters
+  getForVoters: async (id) => {
+    const response = await api.get(`/ssgElections/voter/${id}`)
+    return response.data
+  },
+
+  // Get SSG elections available for voting
+  getForVoting: async () => {
+    const response = await api.get('/ssgElections/voter/for-voting')
+    return response.data
+  },
+
+  // Get SSG election results for voters
+  getResultsForVoters: async (id) => {
+    const response = await api.get(`/ssgElections/voter/${id}/results`)
+    return response.data
+  },
+
+  // Get SSG election statistics for voters
+  getStatisticsForVoters: async (id) => {
+    const response = await api.get(`/ssgElections/voter/${id}/statistics`)
     return response.data
   },
 
   // Get candidates for voter view
   getCandidatesForVoter: async (electionId) => {
-    const response = await api.get(`/ssgElections/${electionId}/candidates/voter`)
+    const response = await api.get(`/ssgElections/voter/${electionId}/candidates`)
+    return response.data
+  },
+
+  // Get positions for voters (same as staff for viewing)
+  getPositionsForVoters: async (id, params = {}) => {
+    const response = await api.get(`/ssgElections/voter/${id}/positions`, { params })
+    return response.data
+  },
+
+  // Get partylists for voters (same as staff for viewing)
+  getPartylistsForVoters: async (id, params = {}) => {
+    const response = await api.get(`/ssgElections/voter/${id}/partylists`, { params })
     return response.data
   },
 

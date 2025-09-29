@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Vote, GraduationCap, MessageSquare, HelpCircle, LogOut, ChevronRight, Loader2, Fingerprint } from "lucide-react"
+import { Vote, GraduationCap, MessageSquare, HelpCircle, LogOut, ChevronRight, Loader2 } from "lucide-react"
 import Swal from 'sweetalert2'
 import { dashboardAPI } from '@/lib/api/dashboard'
 import { ssgElectionsAPI } from '@/lib/api/ssgElections'
@@ -14,8 +14,8 @@ import VoterLayout from '@/components/VoterLayout'
 export default function VoterDashboard() {
   const [dashboardData, setDashboardData] = useState(null)
   const [votingStatus, setVotingStatus] = useState({
-    ssg: { hasVoted: false, availableElections: 0 },
-    departmental: { hasVoted: false, availableElections: 0 }
+    ssg: { hasVoted: false, availableElections: 0, totalElections: 0 },
+    departmental: { hasVoted: false, availableElections: 0, totalElections: 0 }
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -28,7 +28,6 @@ export default function VoterDashboard() {
       try {
         console.log("Starting auth check...")
         
-        // First check if token exists and is valid
         const voterToken = localStorage.getItem("voterToken")
         console.log("Voter token exists:", !!voterToken)
 
@@ -38,15 +37,6 @@ export default function VoterDashboard() {
           return
         }
 
-        // Check token validity without automatic logout
-        // if (!isVoterTokenValid()) {
-        //   console.log("Token is invalid or expired")
-        //   voterLogout()
-        //   router.push("/voterlogin")
-        //   return
-        // }
-
-        // Get voter from token
         const voterFromToken = getVoterFromToken()
         console.log("Voter from token:", voterFromToken ? "Valid" : "Invalid")
         
@@ -60,125 +50,148 @@ export default function VoterDashboard() {
         setVoter(voterFromToken)
         setAuthChecked(true)
         
-        // Load data with individual error handling
         await loadDashboardDataSafely()
         
       } catch (error) {
         console.error("Auth check error:", error)
         setError("Authentication error occurred")
-        // Don't auto-redirect on auth check errors, let user decide
       } 
     }
 
     checkAuthAndLoadData()
   }, [router])
 
-  // FIXED: Separate data loading with better error handling
   const loadDashboardDataSafely = async () => {
-    const promises = []
-    let dashboardError = null
-    let votingError = null
+  const promises = []
+  let dashboardError = null
+  let votingError = null
 
-    // Load dashboard data
-    promises.push(
-      dashboardAPI.getVoterDashboard()
-        .then(data => setDashboardData(data))
-        .catch(error => {
-          console.error("Dashboard API error:", error)
-          dashboardError = error
-        })
-    )
+  // Load dashboard data first
+  const dashboardPromise = dashboardAPI.getVoterDashboard()
+    .then(data => {
+      console.log("Dashboard data received:", data)
+      setDashboardData(data)
+      return data // Return data for use in voting status loading
+    })
+    .catch(error => {
+      console.error("Dashboard API error:", error)
+      dashboardError = error
+      return null
+    })
 
-    // Load voting status
-    promises.push(
-      loadVotingStatusSafely()
-        .catch(error => {
-          console.error("Voting status error:", error)
-          votingError = error
-        })
-    )
+  promises.push(dashboardPromise)
 
-    // Wait for all promises to resolve
-    await Promise.allSettled(promises)
+  const results = await Promise.allSettled(promises)
+  const dashboardResult = results[0]
+  const dashboardDataFromAPI = dashboardResult.status === 'fulfilled' ? dashboardResult.value : null
 
-    // Handle errors after all calls complete
-    if (dashboardError && dashboardError.response?.status === 401) {
-      console.log("Dashboard auth error, redirecting to login")
-      voterLogout()
-      router.push("/voterlogin")
-      return
-    }
-
-    if (dashboardError || votingError) {
-      let errorMessage = "Failed to load some dashboard data"
-      
-      if (dashboardError?.code === 'NETWORK_ERROR' || dashboardError?.message?.includes('Network Error')) {
-        errorMessage = "Network error - please check if the server is running"
-      } else if (dashboardError?.response?.status >= 500) {
-        errorMessage = "Server error - please try again later"
-      } else if (dashboardError?.message) {
-        errorMessage = dashboardError.message
-      }
-      
-      setError(errorMessage)
-    }
-
-    setLoading(false)
-  }
-
-  const loadVotingStatusSafely = async () => {
+  // Now load voting status using the dashboard data
+  if (dashboardDataFromAPI) {
     try {
-      // Set default values first
-      let ssgElections = []
-      let departmentalElections = []
-
-      // Fetch SSG elections with individual error handling
-      try {
-        const ssgResponse = await ssgElectionsAPI.getForVoting()
-        if (ssgResponse.elections) {
-          ssgElections = ssgResponse.elections
-        } else if (Array.isArray(ssgResponse)) {
-          ssgElections = ssgResponse
-        }
-      } catch (error) {
-        console.error("SSG elections error:", error)
-        // Continue with empty array
-      }
-
-      // Fetch departmental elections with individual error handling
-      try {
-        const deptResponse = await departmentalElectionsAPI.getAll({ status: 'active' })
-        if (deptResponse.elections) {
-          departmentalElections = deptResponse.elections
-        } else if (Array.isArray(deptResponse)) {
-          departmentalElections = deptResponse
-        }
-      } catch (error) {
-        console.error("Departmental elections error:", error)
-        // Continue with empty array
-      }
-
-      // Update voting status
-      setVotingStatus({
-        ssg: { 
-          hasVoted: false, // This should come from API
-          availableElections: ssgElections.length 
-        },
-        departmental: { 
-          hasVoted: false, // This should come from API
-          availableElections: departmentalElections.length 
-        }
-      })
-
+      await loadVotingStatusSafely(dashboardDataFromAPI)
     } catch (error) {
       console.error("Voting status error:", error)
-      // Set default values on error
-      setVotingStatus({
-        ssg: { hasVoted: false, availableElections: 0 },
-        departmental: { hasVoted: false, availableElections: 0 }
-      })
+      votingError = error
     }
   }
+
+  if (dashboardError && dashboardError.response?.status === 401) {
+    console.log("Dashboard auth error, redirecting to login")
+    voterLogout()
+    router.push("/voterlogin")
+    return
+  }
+
+  if (dashboardError || votingError) {
+    let errorMessage = "Failed to load some dashboard data"
+    
+    if (dashboardError?.code === 'NETWORK_ERROR' || dashboardError?.message?.includes('Network Error')) {
+      errorMessage = "Network error - please check if the server is running"
+    } else if (dashboardError?.response?.status >= 500) {
+      errorMessage = "Server error - please try again later"
+    } else if (dashboardError?.message) {
+      errorMessage = dashboardError.message
+    }
+    
+    setError(errorMessage)
+  }
+
+  setLoading(false)
+}
+
+const loadVotingStatusSafely = async (dashboardDataFromAPI = null) => {
+  try {
+    let ssgElections = []
+    let departmentalElections = []
+    let totalSSGElections = 0
+    let totalDepartmentalElections = 0
+
+    try {
+      // Get SSG elections using voter endpoint
+      const ssgResponse = await ssgElectionsAPI.getAllForVoters()
+      console.log('SSG Response:', ssgResponse)
+      
+      // Extract available elections
+      if (ssgResponse?.success && ssgResponse?.data?.elections) {
+        ssgElections = ssgResponse.data.elections.filter(e => e.status === 'active')
+      }
+
+    } catch (error) {
+      console.error("SSG elections error:", error)
+    }
+
+    try {
+      // Get Departmental elections using voter endpoint
+      const deptResponse = await departmentalElectionsAPI.getAllForVoters()
+      console.log('Dept Response:', deptResponse)
+      
+      // Extract available elections
+      if (deptResponse?.success && deptResponse?.data?.elections) {
+        departmentalElections = deptResponse.data.elections.filter(e => e.status === 'active')
+      }
+
+    } catch (error) {
+      console.error("Departmental elections error:", error)
+    }
+
+    // FIXED: Use total counts from dashboard data parameter if available
+    if (dashboardDataFromAPI?.totalElections) {
+      totalSSGElections = dashboardDataFromAPI.totalElections.ssg || 0
+      totalDepartmentalElections = dashboardDataFromAPI.totalElections.departmental || 0
+    }
+
+    console.log('Final counts - SSG:', { 
+      active: ssgElections.length, 
+      total: totalSSGElections
+    })
+    console.log('Final counts - Dept:', { 
+      active: departmentalElections.length, 
+      total: totalDepartmentalElections
+    })
+
+    // Update voting status with proper counts
+    setVotingStatus({
+      ssg: { 
+        hasVoted: false, // This should come from API when available
+        availableElections: ssgElections.length,
+        totalElections: totalSSGElections
+      },
+      departmental: { 
+        hasVoted: false, // This should come from API when available
+        availableElections: departmentalElections.length,
+        totalElections: totalDepartmentalElections
+      }
+    })
+
+  } catch (error) {
+    console.error("Voting status error:", error)
+    // Set default empty state
+    setVotingStatus({
+      ssg: { hasVoted: false, availableElections: 0, totalElections: 0 },
+      departmental: { hasVoted: false, availableElections: 0, totalElections: 0 }
+    })
+  }
+}
 
   const handleLogout = async () => {
     const result = await Swal.fire({
@@ -207,20 +220,20 @@ export default function VoterDashboard() {
   }
 
   const handleCardClick = async (path, cardTitle) => {
-    if (path === '/voters/ssg' && votingStatus.ssg.availableElections === 0) {
+    if (path === '/voter/ssg/elections' && votingStatus.ssg.totalElections === 0) {
       await Swal.fire({
         title: 'No SSG Elections',
-        text: 'There are currently no active SSG elections available',
+        text: 'There are currently no SSG elections in the system',
         icon: 'info',
         confirmButtonText: 'OK'
       })
       return
     }
     
-    if (path === '/voters/departmental' && votingStatus.departmental.availableElections === 0) {
+    if (path === '/voters/departmental/elections' && votingStatus.departmental.totalElections === 0) {
       await Swal.fire({
         title: 'No Departmental Elections',
-        text: 'There are currently no departmental elections available for your department',
+        text: 'There are currently no departmental elections in the system',
         icon: 'info',
         confirmButtonText: 'OK'
       })
@@ -236,7 +249,6 @@ export default function VoterDashboard() {
     loadDashboardDataSafely()
   }
 
-  // Show loading while auth is being checked
   if (!authChecked || loading) {
     return (
       <VoterLayout>
@@ -285,32 +297,34 @@ export default function VoterDashboard() {
       title: "SSG ELECTION",
       subtitle: "Student Supreme Government",
       availableElections: votingStatus.ssg.availableElections,
+      totalElections: votingStatus.ssg.totalElections,
       hasVoted: votingStatus.ssg.hasVoted,
       color: "blue",
-      path: "/voters/ssg",
+      path: "/voter/ssg/elections",
       icon: <Vote className="w-8 h-8 sm:w-10 md:w-12" />
     },
     {
       title: "DEPARTMENTAL ELECTION", 
       subtitle: "Class Officers",
       availableElections: votingStatus.departmental.availableElections,
+      totalElections: votingStatus.departmental.totalElections,
       hasVoted: votingStatus.departmental.hasVoted,
       color: "green",
-      path: "/voters/departmental",
+      path: "/voter/departmental/elections",
       icon: <GraduationCap className="w-8 h-8 sm:w-10 md:w-12" />
     },
     {
       title: "FAQ",
       subtitle: "Frequently Asked Questions",
       color: "purple",
-      path: "/voters/faq",
+      path: "/voter/faq",
       icon: <HelpCircle className="w-8 h-8 sm:w-10 md:w-12" />
     },
     {
       title: "MESSAGES",
       subtitle: "Support & Notifications",
       color: "orange",
-      path: "/voters/messages",
+      path: "/voter/messages",
       icon: <MessageSquare className="w-8 h-8 sm:w-10 md:w-12" />
     }
   ]
@@ -321,29 +335,25 @@ export default function VoterDashboard() {
         text: hasVoted ? "text-blue-600" : "text-[#001f65]",
         bg: hasVoted ? "bg-blue-100/80" : "bg-blue-50/80",
         hover: hasVoted ? "hover:bg-blue-200/80" : "hover:bg-blue-100/80",
-        border: hasVoted ? "border-blue-300/60" : "border-blue-200/60",
-        fingerprint: hasVoted ? "text-blue-600" : "text-gray-400"
+        border: hasVoted ? "border-blue-300/60" : "border-blue-200/60"
       },
       green: {
         text: hasVoted ? "text-green-600" : "text-[#001f65]",
         bg: hasVoted ? "bg-green-100/80" : "bg-green-50/80",
         hover: hasVoted ? "hover:bg-green-200/80" : "hover:bg-green-100/80",
-        border: hasVoted ? "border-green-300/60" : "border-green-200/60",
-        fingerprint: hasVoted ? "text-green-600" : "text-gray-400"
+        border: hasVoted ? "border-green-300/60" : "border-green-200/60"
       },
       purple: {
         text: "text-[#001f65]",
         bg: "bg-purple-50/80",
         hover: "hover:bg-purple-100/80",
-        border: "border-purple-200/60",
-        fingerprint: "text-gray-400"
+        border: "border-purple-200/60"
       },
       orange: {
         text: "text-[#001f65]",
         bg: "bg-orange-50/80",
         hover: "hover:bg-orange-100/80",
-        border: "border-orange-200/60",
-        fingerprint: "text-gray-400"
+        border: "border-orange-200/60"
       }
     }
     return colorMap[color] || colorMap.blue
@@ -363,7 +373,7 @@ export default function VoterDashboard() {
                 Voter Dashboard
               </h1>
               <p className="text-xs text-[#001f65]/70">
-                Welcome, {voter?.firstName} {voter?.lastName}
+                Welcome, {voter?.schoolId} - {voter?.firstName}
               </p>
             </div>
           </div>
@@ -393,15 +403,8 @@ export default function VoterDashboard() {
                   onClick={() => handleCardClick(card.path, card.title)}
                   className={`bg-white/90 backdrop-blur-sm rounded-xl shadow-lg cursor-pointer transform hover:scale-105 transition-all duration-300 hover:shadow-2xl ${colors.hover} border ${colors.border} h-64 lg:h-72 flex flex-col justify-center items-center hover:bg-white/95 relative`}
                 >
-                  {/* Fingerprint icon for election cards */}
-                  {isElectionCard && (
-                    <div className="absolute top-4 right-4">
-                      <Fingerprint className={`w-6 h-6 ${colors.fingerprint} transition-colors duration-300`} />
-                    </div>
-                  )}
-                  
                   <div className="p-6 text-center h-full flex flex-col justify-center items-center w-full">
-                    {/* Icon */}
+                    {/* Icon - REMOVED fingerprint icon */}
                     <div className={`p-4 rounded-full ${colors.bg} mb-6 shadow-lg border ${colors.border}`}>
                       <div className={colors.text}>
                         {card.icon}
@@ -419,7 +422,7 @@ export default function VoterDashboard() {
                       
                       {/* Election status */}
                       {isElectionCard && (
-                        <div className="mb-4">
+                        <div className="mb-4 space-y-2">
                           {card.hasVoted ? (
                             <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
                               ✓ Voted
@@ -430,9 +433,12 @@ export default function VoterDashboard() {
                             </span>
                           ) : (
                             <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600">
-                              No Elections
+                              No Active Elections
                             </span>
                           )}
+                          <div className="text-xs text-gray-500">
+                            Total: {card.totalElections || 0} elections
+                          </div>
                         </div>
                       )}
                     </div>

@@ -4,7 +4,7 @@ export const electionParticipationAPI = {
   // Confirm participation in SSG election (voter only)
   confirmSSGParticipation: async (ssgElectionId) => {
     try {
-      const response = await api.post('/election-participation/confirm/ssg', {
+      const response = await api.post('/election-participation/voter/confirm/ssg', {
         ssgElectionId
       })
       return response.data
@@ -17,7 +17,7 @@ export const electionParticipationAPI = {
   // Confirm participation in Departmental election (voter only)
   confirmDepartmentalParticipation: async (deptElectionId) => {
     try {
-      const response = await api.post('/election-participation/confirm/departmental', {
+      const response = await api.post('/election-participation/voter/confirm/departmental', {
         deptElectionId
       })
       return response.data
@@ -30,7 +30,7 @@ export const electionParticipationAPI = {
   // Check voter status for SSG election (voter only)
   checkSSGStatus: async (ssgElectionId) => {
     try {
-      const response = await api.get(`/election-participation/status/ssg/${ssgElectionId}`)
+      const response = await api.get(`/election-participation/voter/status/ssg/${ssgElectionId}`)
       return response.data
     } catch (error) {
       console.error('Error checking SSG status:', error)
@@ -41,7 +41,7 @@ export const electionParticipationAPI = {
   // Check voter status for Departmental election (voter only)
   checkDepartmentalStatus: async (deptElectionId) => {
     try {
-      const response = await api.get(`/election-participation/status/departmental/${deptElectionId}`)
+      const response = await api.get(`/election-participation/voter/status/departmental/${deptElectionId}`)
       return response.data
     } catch (error) {
       console.error('Error checking Departmental status:', error)
@@ -52,7 +52,7 @@ export const electionParticipationAPI = {
   // Get SSG voting receipt (voter only)
   getSSGVotingReceipt: async (ssgElectionId) => {
     try {
-      const response = await api.get(`/election-participation/receipt/ssg/${ssgElectionId}`)
+      const response = await api.get(`/election-participation/voter/receipt/ssg/${ssgElectionId}`)
       return response.data
     } catch (error) {
       console.error('Error fetching SSG voting receipt:', error)
@@ -63,7 +63,7 @@ export const electionParticipationAPI = {
   // Get Departmental voting receipt (voter only)
   getDepartmentalVotingReceipt: async (deptElectionId) => {
     try {
-      const response = await api.get(`/election-participation/receipt/departmental/${deptElectionId}`)
+      const response = await api.get(`/election-participation/voter/receipt/departmental/${deptElectionId}`)
       return response.data
     } catch (error) {
       console.error('Error fetching Departmental voting receipt:', error)
@@ -81,7 +81,7 @@ export const electionParticipationAPI = {
         ...(params.search && { search: params.search })
       })
       
-      const response = await api.get(`/election-participation/participants/ssg/${ssgElectionId}?${searchParams}`)
+      const response = await api.get(`/election-participation/user/participants/ssg/${ssgElectionId}?${searchParams}`)
       return response.data
     } catch (error) {
       console.error('Error fetching SSG participants:', error)
@@ -99,7 +99,7 @@ export const electionParticipationAPI = {
         ...(params.search && { search: params.search })
       })
       
-      const response = await api.get(`/election-participation/participants/departmental/${deptElectionId}?${searchParams}`)
+      const response = await api.get(`/election-participation/user/participants/departmental/${deptElectionId}?${searchParams}`)
       return response.data
     } catch (error) {
       console.error('Error fetching Departmental participants:', error)
@@ -110,7 +110,7 @@ export const electionParticipationAPI = {
   // Get SSG election statistics (admin/committee/sao only)
   getSSGStatistics: async (ssgElectionId) => {
     try {
-      const response = await api.get(`/election-participation/statistics/ssg/${ssgElectionId}`)
+      const response = await api.get(`/election-participation/user/statistics/ssg/${ssgElectionId}`)
       return response.data
     } catch (error) {
       console.error('Error fetching SSG statistics:', error)
@@ -121,7 +121,7 @@ export const electionParticipationAPI = {
   // Get Departmental election statistics (admin/committee/sao only)
   getDepartmentalStatistics: async (deptElectionId) => {
     try {
-      const response = await api.get(`/election-participation/statistics/departmental/${deptElectionId}`)
+      const response = await api.get(`/election-participation/user/statistics/departmental/${deptElectionId}`)
       return response.data
     } catch (error) {
       console.error('Error fetching Departmental statistics:', error)
@@ -135,7 +135,7 @@ export const electionParticipationAPI = {
       ...(params.hasVoted !== undefined && { hasVoted: params.hasVoted })
     })
     
-    const response = await api.get(`/election-participation/export/ssg/${ssgElectionId}/pdf?${searchParams}`, {
+    const response = await api.get(`/election-participation/user/export/ssg/${ssgElectionId}/pdf?${searchParams}`, {
       responseType: 'blob'
     })
     return response.data
@@ -151,7 +151,7 @@ exportDepartmentalParticipantsPDF: async (deptElectionId, params = {}) => {
       ...(params.hasVoted !== undefined && { hasVoted: params.hasVoted })
     })
     
-    const response = await api.get(`/election-participation/export/departmental/${deptElectionId}/pdf?${searchParams}`, {
+    const response = await api.get(`/election-participation/user/export/departmental/${deptElectionId}/pdf?${searchParams}`, {
       responseType: 'blob'
     })
     return response.data
@@ -229,5 +229,86 @@ exportDepartmentalParticipantsPDF: async (deptElectionId, params = {}) => {
     } else {
       throw new Error('Invalid election type. Must be "ssg" or "departmental"')
     }
+  },
+
+  getSSGVotingStatus: async (ssgElectionId) => {
+  try {
+    const response = await api.get(`/election-participation/voter/voting-status/ssg/${ssgElectionId}`)
+    return response.data
+  } catch (error) {
+    console.error('Error fetching SSG voting status:', error)
+    throw error
   }
+},
+
+// Get voter's voting status for Departmental election
+getDepartmentalVotingStatus: async (deptElectionId) => {
+  try {
+    const response = await api.get(`/election-participation/voter/voting-status/departmental/${deptElectionId}`)
+    return response.data
+  } catch (error) {
+    console.error('Error fetching Departmental voting status:', error)
+    throw error
+  }
+},
+
+// Export SSG voting receipt as PDF
+exportSSGVotingReceiptPDF: async (ssgElectionId) => {
+  try {
+    const response = await api.get(`/election-participation/voter/receipt/ssg/${ssgElectionId}/pdf`, {
+      responseType: 'blob'
+    })
+    return response.data
+  } catch (error) {
+    console.error('Error exporting SSG voting receipt PDF:', error)
+    throw error
+  }
+},
+
+// Export Departmental voting receipt as PDF
+exportDepartmentalVotingReceiptPDF: async (deptElectionId) => {
+  try {
+    const response = await api.get(`/election-participation/voter/receipt/departmental/${deptElectionId}/pdf`, {
+      responseType: 'blob'
+    })
+    return response.data
+  } catch (error) {
+    console.error('Error exporting Departmental voting receipt PDF:', error)
+    throw error
+  }
+},
+
+// Update the ssg and departmental convenience methods by adding:
+ssg: {
+  // ... existing methods
+  getVotingStatus: (electionId) => electionParticipationAPI.getSSGVotingStatus(electionId),
+  exportReceiptPDF: (electionId) => electionParticipationAPI.exportSSGVotingReceiptPDF(electionId)
+},
+
+departmental: {
+  // ... existing methods  
+  getVotingStatus: (electionId) => electionParticipationAPI.getDepartmentalVotingStatus(electionId),
+  exportReceiptPDF: (electionId) => electionParticipationAPI.exportDepartmentalVotingReceiptPDF(electionId)
+},
+
+// Add generic methods for voting status:
+getVotingStatus: async (electionId, electionType) => {
+  if (electionType === 'ssg') {
+    return electionParticipationAPI.getSSGVotingStatus(electionId)
+  } else if (electionType === 'departmental') {
+    return electionParticipationAPI.getDepartmentalVotingStatus(electionId)
+  } else {
+    throw new Error('Invalid election type. Must be "ssg" or "departmental"')
+  }
+},
+
+exportReceiptPDF: async (electionId, electionType) => {
+  if (electionType === 'ssg') {
+    return electionParticipationAPI.exportSSGVotingReceiptPDF(electionId)
+  } else if (electionType === 'departmental') {
+    return electionParticipationAPI.exportDepartmentalVotingReceiptPDF(electionId)
+  } else {
+    throw new Error('Invalid election type. Must be "ssg" or "departmental"')
+  }
+}
 }

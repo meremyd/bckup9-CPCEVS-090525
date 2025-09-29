@@ -1447,8 +1447,6 @@ class SSGElectionController {
     }
   }
 
-  // Additional methods for SSGElectionController class
-
 // Get SSG election candidates
 static async getSSGElectionCandidates(req, res, next) {
   try {
@@ -2349,6 +2347,544 @@ static async getSSGElectionOverview(req, res, next) {
       `Failed to retrieve SSG election overview for ${req.params.id}: ${error.message}`,
       req
     )
+    next(error)
+  }
+}
+
+static async getAllSSGElectionsForVoters(req, res, next) {
+  try {
+    const { status, page = 1, limit = 50 } = req.query
+    const filter = {}
+    if (status && status !== '') {
+      filter.status = status
+    }
+    
+    const skip = (page - 1) * limit
+    const limitNum = Math.min(Number.parseInt(limit), 100)
+
+    const elections = await SSGElection.find(filter)
+      .sort({ electionDate: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .select('title ssgElectionId status electionDate electionYear ballotOpenTime ballotCloseTime')
+
+    const total = await SSGElection.countDocuments(filter)
+
+    await AuditLog.logVoterAction(
+      "SYSTEM_ACCESS",
+      { _id: req.user.voterId, schoolId: req.user.schoolId },
+      `SSG elections accessed for voters - ${elections.length} elections returned`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        elections,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(total / limitNum),
+          totalItems: total,
+          itemsPerPage: limitNum
+        }
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// Get single SSG election for voters
+static async getSSGElectionForVoters(req, res, next) {
+  try {
+    const { id } = req.params
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await SSGElection.findById(id)
+      .select('title ssgElectionId status electionDate electionYear ballotOpenTime ballotCloseTime description')
+
+    if (!election) {
+      const error = new Error("SSG election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Get positions and candidates count
+    const totalPositions = await Position.countDocuments({ ssgElectionId: id, isActive: true })
+    const totalCandidates = await Candidate.countDocuments({ ssgElectionId: id, isActive: true })
+
+    await AuditLog.logVoterAction(
+      "SYSTEM_ACCESS",
+      { _id: req.user.voterId, schoolId: req.user.schoolId },
+      `SSG election accessed - ${election.title}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election,
+        summary: {
+          totalPositions,
+          totalCandidates
+        }
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+static async getCandidatesForVoter(req, res, next) {
+  try {
+    const { electionId } = req.params
+    const voterId = req.user.voterId
+
+    if (!mongoose.Types.ObjectId.isValid(electionId)) {
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    // Get voter info
+    const voter = await Voter.findById(voterId).populate('departmentId')
+    if (!voter) {
+      const error = new Error("Voter not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Verify election exists
+    const election = await SSGElection.findById(electionId)
+    if (!election) {
+      const error = new Error("SSG Election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // For SSG elections, all registered voters can view and vote
+    const voterEligibility = {
+      canVote: false,
+      canViewCandidates: false,
+      isRegistered: voter.isRegistered,
+      isPasswordActive: voter.isPasswordActive,
+      message: ''
+    }
+
+    // Determine access levels
+    if (!voter.isRegistered || !voter.isPasswordActive) {
+      voterEligibility.message = "You must be a registered voter with an active password"
+    } else {
+      // Registered voter with active password
+      voterEligibility.canViewCandidates = true
+      voterEligibility.canVote = true
+      voterEligibility.message = "You are eligible to vote in this SSG election"
+    }
+
+    // Get candidates if voter can view them
+    let candidates = []
+    let candidatesByPosition = []
+    
+    if (voterEligibility.canViewCandidates) {
+      candidates = await Candidate.find({ 
+        ssgElectionId: electionId,
+        isActive: true 
+      })
+      .populate('voterId', 'schoolId firstName middleName lastName departmentId yearLevel')
+      .populate({
+        path: 'voterId',
+        populate: {
+          path: 'departmentId',
+          select: 'departmentCode degreeProgram college'
+        }
+      })
+      .populate('positionId', 'positionName positionOrder maxVotes')
+      .populate('partylistId', 'partylistName description')
+      .sort({ 'positionId.positionOrder': 1, candidateNumber: 1 })
+
+      // Group candidates by position
+      candidatesByPosition = candidates.reduce((acc, candidate) => {
+        const positionId = candidate.positionId._id.toString()
+        if (!acc[positionId]) {
+          acc[positionId] = {
+            position: candidate.positionId,
+            candidates: []
+          }
+        }
+        acc[positionId].candidates.push(candidate)
+        return acc
+      }, {})
+    }
+
+    await AuditLog.logVoterAction(
+      "SYSTEM_ACCESS",
+      voter,
+      `Viewed candidates for SSG election: ${election.title} - ${voterEligibility.message}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election: {
+          _id: election._id,
+          title: election.title,
+          ssgElectionId: election.ssgElectionId,
+          status: election.status,
+          electionDate: election.electionDate,
+          ballotOpenTime: election.ballotOpenTime,
+          ballotCloseTime: election.ballotCloseTime,
+          type: 'SSG'
+        },
+        candidates: voterEligibility.canViewCandidates ? candidates : [],
+        candidatesByPosition: voterEligibility.canViewCandidates ? Object.values(candidatesByPosition) : [],
+        totalCandidates: voterEligibility.canViewCandidates ? candidates.length : 0,
+        voterEligibility
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+static async getSSGElectionResultsForVoters(req, res, next) {
+  try {
+    const { id } = req.params
+    const voterId = req.user.voterId
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    // Get voter info
+    const voter = await Voter.findById(voterId).populate('departmentId')
+    if (!voter) {
+      const error = new Error("Voter not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Verify election exists
+    const election = await SSGElection.findById(id)
+    if (!election) {
+      const error = new Error("SSG Election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    let canViewResults = false
+    let accessReason = ''
+
+    // Check if voter can view results
+    if (!voter.isRegistered || !voter.isPasswordActive) {
+      canViewResults = false
+      accessReason = "You must be a registered voter with an active password"
+    } else {
+      canViewResults = true
+      accessReason = "You can view results as a registered voter"
+    }
+
+    if (!canViewResults) {
+      const error = new Error(accessReason)
+      error.statusCode = 403
+      return next(error)
+    }
+
+    // Get detailed results by position
+    const results = await Position.aggregate([
+      { $match: { ssgElectionId: new mongoose.Types.ObjectId(id), isActive: true } },
+      { $sort: { positionOrder: 1 } },
+      {
+        $lookup: {
+          from: "candidates",
+          let: { positionId: "$_id" },
+          pipeline: [
+            { $match: { 
+              $expr: { 
+                $and: [
+                  { $eq: ["$positionId", "$$positionId"] },
+                  { $eq: ["$ssgElectionId", new mongoose.Types.ObjectId(id)] },
+                  { $eq: ["$isActive", true] }
+                ]
+              }
+            }},
+            {
+              $lookup: {
+                from: "votes",
+                localField: "_id",
+                foreignField: "candidateId",
+                as: "votes"
+              }
+            },
+            {
+              $addFields: {
+                actualVoteCount: { $size: "$votes" }
+              }
+            },
+            {
+              $lookup: {
+                from: "voters",
+                localField: "voterId",
+                foreignField: "_id",
+                as: "voter"
+              }
+            },
+            { $unwind: "$voter" },
+            {
+              $lookup: {
+                from: "departments",
+                localField: "voter.departmentId",
+                foreignField: "_id",
+                as: "voter.department"
+              }
+            },
+            {
+              $lookup: {
+                from: "partylists",
+                localField: "partylistId",
+                foreignField: "_id",
+                as: "partylist"
+              }
+            },
+            {
+              $addFields: {
+                candidateName: {
+                  $concat: [
+                    "$voter.firstName",
+                    " ",
+                    { $ifNull: [{ $concat: ["$voter.middleName", " "] }, ""] },
+                    "$voter.lastName"
+                  ]
+                },
+                partylistName: { $arrayElemAt: ["$partylist.partylistName", 0] },
+                department: { $arrayElemAt: ["$voter.department", 0] }
+              }
+            },
+            { $sort: { actualVoteCount: -1, candidateNumber: 1 } }
+          ],
+          as: "candidates"
+        }
+      },
+      {
+        $addFields: {
+          totalVotesForPosition: { 
+            $sum: "$candidates.actualVoteCount"
+          },
+          winner: { $arrayElemAt: ["$candidates", 0] }
+        }
+      }
+    ])
+
+    await AuditLog.logVoterAction(
+      "SYSTEM_ACCESS",
+      voter,
+      `Viewed SSG election results: ${election.title}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election: {
+          id: election._id,
+          title: election.title,
+          ssgElectionId: election.ssgElectionId,
+          status: election.status,
+          electionDate: election.electionDate,
+          type: 'SSG'
+        },
+        results,
+        accessInfo: {
+          canViewResults,
+          accessReason,
+          userRole: 'voter'
+        }
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+static async getSSGElectionStatisticsForVoters(req, res, next) {
+  try {
+    const { id } = req.params
+    const voterId = req.user.voterId
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    // Get voter info
+    const voter = await Voter.findById(voterId).populate('departmentId')
+    if (!voter) {
+      const error = new Error("Voter not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Verify election exists
+    const election = await SSGElection.findById(id)
+    if (!election) {
+      const error = new Error("SSG Election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    let canViewStatistics = false
+    let accessReason = ''
+
+    // Check if voter can view statistics
+    if (!voter.isRegistered || !voter.isPasswordActive) {
+      canViewStatistics = false
+      accessReason = "You must be a registered voter with an active password"
+    } else {
+      canViewStatistics = true
+      accessReason = "You can view statistics as a registered voter"
+    }
+
+    if (!canViewStatistics) {
+      const error = new Error(accessReason)
+      error.statusCode = 403
+      return next(error)
+    }
+
+    // Get basic statistics
+    const totalPositions = await Position.countDocuments({ ssgElectionId: id, isActive: true })
+    const totalCandidates = await Candidate.countDocuments({ ssgElectionId: id, isActive: true })
+    const totalPartylists = await Partylist.countDocuments({ ssgElectionId: id, isActive: true })
+    const totalRegisteredVoters = await Voter.countDocuments({ isActive: true, isRegistered: true })
+    const submittedBallots = await Ballot.countDocuments({ ssgElectionId: id, isSubmitted: true })
+    const totalVotes = await Vote.countDocuments({ ssgElectionId: id })
+
+    // Get candidates by position with vote counts (public information)
+    const candidatesByPosition = await Position.aggregate([
+      { $match: { ssgElectionId: new mongoose.Types.ObjectId(id), isActive: true } },
+      { $sort: { positionOrder: 1 } },
+      {
+        $lookup: {
+          from: "candidates",
+          let: { positionId: "$_id" },
+          pipeline: [
+            { 
+              $match: { 
+                $expr: { 
+                  $and: [
+                    { $eq: ["$positionId", "$$positionId"] },
+                    { $eq: ["$ssgElectionId", new mongoose.Types.ObjectId(id)] },
+                    { $eq: ["$isActive", true] }
+                  ]
+                }
+              }
+            },
+            {
+              $lookup: {
+                from: "votes",
+                localField: "_id",
+                foreignField: "candidateId",
+                as: "votes"
+              }
+            },
+            {
+              $addFields: {
+                actualVoteCount: { $size: "$votes" }
+              }
+            },
+            {
+              $lookup: {
+                from: "voters",
+                localField: "voterId",
+                foreignField: "_id",
+                as: "voter"
+              }
+            },
+            { $unwind: "$voter" },
+            {
+              $lookup: {
+                from: "partylists",
+                localField: "partylistId",
+                foreignField: "_id",
+                as: "partylist"
+              }
+            },
+            {
+              $addFields: {
+                candidateName: {
+                  $concat: [
+                    "$voter.firstName",
+                    " ",
+                    { $ifNull: [{ $concat: ["$voter.middleName", " "] }, ""] },
+                    "$voter.lastName"
+                  ]
+                },
+                partylistName: { $arrayElemAt: ["$partylist.partylistName", 0] }
+              }
+            },
+            { $sort: { actualVoteCount: -1, candidateNumber: 1 } }
+          ],
+          as: "candidates"
+        }
+      },
+      {
+        $addFields: {
+          totalVotesForPosition: { 
+            $sum: "$candidates.actualVoteCount"
+          },
+          candidateCount: { $size: "$candidates" }
+        }
+      }
+    ])
+
+    const overview = {
+      totalPositions,
+      totalCandidates,
+      totalPartylists,
+      totalRegisteredVoters,
+      submittedBallots,
+      totalVotes,
+      turnoutPercentage: totalRegisteredVoters > 0 ? ((submittedBallots / totalRegisteredVoters) * 100).toFixed(2) : 0,
+      status: election.status,
+      electionDate: election.electionDate,
+      electionType: "ssg"
+    }
+
+    await AuditLog.logVoterAction(
+      "SYSTEM_ACCESS",
+      voter,
+      `Viewed SSG election statistics: ${election.title}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        overview,
+        candidatesByPosition,
+        election: {
+          id: election._id,
+          title: election.title,
+          ssgElectionId: election.ssgElectionId,
+          status: election.status,
+          electionDate: election.electionDate,
+          type: 'SSG'
+        },
+        accessInfo: {
+          canViewStatistics,
+          accessReason,
+          userRole: 'voter'
+        }
+      }
+    })
+  } catch (error) {
     next(error)
   }
 }

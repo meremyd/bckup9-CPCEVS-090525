@@ -3,79 +3,116 @@ import api from '../api'
 export const departmentalElectionsAPI = {
   // Get all departmental elections with filtering and pagination
   getAll: async (params = {}) => {
-    const response = await api.get('/departmentalElections', { params })
+    const response = await api.get('/departmentalElections/user/', { params })
     return response.data
   },
 
-  // Get departmental election by ID
+  // Get departmental election by ID (Staff)
   getById: async (id) => {
-    const response = await api.get(`/departmentalElections/${id}`)
+    const response = await api.get(`/departmentalElections/user/${id}`)
     return response.data
   },
 
   // Get available departments with election statistics
   getAvailableDepartments: async () => {
-    const response = await api.get('/departmentalElections/departments')
+    const response = await api.get('/departmentalElections/user/departments')
     return response.data
   },
 
   // Get departmental dashboard summary (Admin/Election Committee only)
   getDashboardSummary: async () => {
-    const response = await api.get('/departmentalElections/dashboard')
+    const response = await api.get('/departmentalElections/user/dashboard')
     return response.data
   },
 
   // Get audit logs for departmental elections (Admin only)
   getAuditLogs: async (params = {}) => {
-    const response = await api.get('/departmentalElections/audit-logs', { params })
+    const response = await api.get('/departmentalElections/user/audit-logs', { params })
     return response.data
   },
 
   // Get elections by specific department ID
   getByDepartment: async (departmentId, params = {}) => {
-    const response = await api.get(`/departmentalElections/department/${departmentId}`, { params })
+    const response = await api.get(`/departmentalElections/user/department/${departmentId}`, { params })
     return response.data
   },
 
-  // Get departmental election results
+  // Get departmental election results (Staff)
   getResults: async (id) => {
-    const response = await api.get(`/departmentalElections/${id}/results`)
+    const response = await api.get(`/departmentalElections/user/${id}/results`)
     return response.data
   },
 
-  // Get departmental election statistics (Admin/Election Committee only)
+  // Get departmental election statistics (Staff)
   getStatistics: async (id) => {
-    const response = await api.get(`/departmentalElections/${id}/statistics`)
+    const response = await api.get(`/departmentalElections/user/${id}/statistics`)
     return response.data
   },
 
-  // Get candidates for voter view (Voter only)
-  getCandidatesForVoter: async (electionId) => {
-    const response = await api.get(`/departmentalElections/${electionId}/candidates/voter`)
+  // Get officers count for departmental election
+  getOfficersCount: async (id) => {
+    const response = await api.get(`/departmentalElections/user/${id}/officers-count`)
     return response.data
   },
 
   // Create new departmental election (Admin/Election Committee only)
   create: async (electionData) => {
-    const response = await api.post('/departmentalElections', electionData)
+    const response = await api.post('/departmentalElections/user/', electionData)
     return response.data
   },
 
   // Update departmental election (Admin/Election Committee only)
   update: async (id, electionData) => {
-    const response = await api.put(`/departmentalElections/${id}`, electionData)
+    const response = await api.put(`/departmentalElections/user/${id}`, electionData)
     return response.data
   },
 
   // Toggle departmental election status (Admin/Election Committee only)
   toggleStatus: async (id, status) => {
-    const response = await api.patch(`/departmentalElections/${id}/status`, { status })
+    const response = await api.patch(`/departmentalElections/user/${id}/status`, { status })
     return response.data
   },
 
   // Delete departmental election (Admin only)
   delete: async (id) => {
-    const response = await api.delete(`/departmentalElections/${id}`)
+    const response = await api.delete(`/departmentalElections/user/${id}`)
+    return response.data
+  },
+
+  // VOTER-SPECIFIC ENDPOINTS (NEW)
+  // Get all departmental elections for voters
+  getAllForVoters: async (params = {}) => {
+    const response = await api.get('/departmentalElections/voter/', { params })
+    return response.data
+  },
+
+  // Get single departmental election for voters
+  getForVoters: async (id) => {
+    const response = await api.get(`/departmentalElections/voter/${id}`)
+    return response.data
+  },
+
+  // Get departmental election results for voters
+  getResultsForVoters: async (id) => {
+    const response = await api.get(`/departmentalElections/voter/${id}/results`)
+    return response.data
+  },
+
+  // Get departmental election statistics for voters
+  getStatisticsForVoters: async (id) => {
+    const response = await api.get(`/departmentalElections/voter/${id}/statistics`)
+    return response.data
+  },
+
+  // Get candidates for voter view 
+  getCandidatesForVoter: async (electionId) => {
+    const response = await api.get(`/departmentalElections/voter/${electionId}/candidates`)
+    return response.data
+  },
+
+  // Check voter eligibility for departmental election
+  checkVoterEligibility: async (id) => {
+    const response = await api.get(`/departmentalElections/voter/${id}/voter-eligibility`)
     return response.data
   },
 
@@ -123,8 +160,8 @@ export const departmentalElectionsAPI = {
   // Get voter's eligible elections (for voter dashboard)
   getVoterEligibleElections: async () => {
     try {
-      const response = await departmentalElectionsAPI.getAll({ status: 'active' })
-      const elections = response.elections || []
+      const response = await departmentalElectionsAPI.getAllForVoters({ status: 'active' })
+      const elections = response.data?.elections || response.elections || []
       
       // Filter elections where voter is eligible (will be determined by backend)
       const eligibleElections = []
@@ -287,16 +324,6 @@ export const departmentalElectionsAPI = {
     }
   },
 
-  getOfficersCount: async (id) => {
-  const response = await api.get(`/departmentalElections/${id}/officers-count`)
-  return response.data
-},
-
-checkVoterEligibility: async (id) => {
-  const response = await api.get(`/departmentalElections/${id}/voter-eligibility`)
-  return response.data
-},
-
   // Format election for voter display with ballot considerations
   formatElectionForVoter: (election, eligibility = null) => {
     return {
@@ -311,5 +338,4 @@ checkVoterEligibility: async (id) => {
       votingInfo: departmentalElectionsAPI.getVotingTimeInfo(election)
     }
   }
-  
 }
