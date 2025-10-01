@@ -4,12 +4,15 @@ export const electionParticipationAPI = {
   // Confirm participation in SSG election (voter only)
   confirmSSGParticipation: async (ssgElectionId) => {
     try {
+      console.log('API: Confirming SSG participation for election:', ssgElectionId)
       const response = await api.post('/election-participation/voter/confirm/ssg', {
-        ssgElectionId
+        ssgElectionId: ssgElectionId // Ensure the ID is sent correctly
       })
+      console.log('API: Participation confirmed:', response.data)
       return response.data
     } catch (error) {
-      console.error('Error confirming SSG participation:', error)
+      console.error('API: Error confirming SSG participation:', error)
+      console.error('API: Error response:', error.response?.data)
       throw error
     }
   },

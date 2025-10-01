@@ -46,9 +46,20 @@ const electionParticipationSchema = new mongoose.Schema(
   }
 )
 
-// Compound indexes to ensure a voter can only confirm once per election
-electionParticipationSchema.index({ voterId: 1, deptElectionId: 1 }, { unique: true, sparse: true })
-electionParticipationSchema.index({ voterId: 1, ssgElectionId: 1 }, { unique: true, sparse: true })
+electionParticipationSchema.index(
+  { voterId: 1, deptElectionId: 1 }, 
+  { 
+    unique: true, 
+    partialFilterExpression: { deptElectionId: { $type: 'objectId' } } 
+  }
+)
+electionParticipationSchema.index(
+  { voterId: 1, ssgElectionId: 1 }, 
+  { 
+    unique: true, 
+    partialFilterExpression: { ssgElectionId: { $type: 'objectId' } } 
+  }
+)
 
 // Additional indexes for performance
 electionParticipationSchema.index({ deptElectionId: 1 })
@@ -192,18 +203,7 @@ electionParticipationSchema.statics.checkParticipationEligibility = async functi
     return { eligible: false, reason: 'Voter must be registered with an active password' }
   }
   
-  // Check if already participated
-  const query = { voterId }
-  if (electionType === 'ssg') {
-    query.ssgElectionId = electionId
-  } else {
-    query.deptElectionId = electionId
-  }
-  
-  const existingParticipation = await this.findOne(query)
-  if (existingParticipation) {
-    return { eligible: false, reason: 'Already confirmed participation in this election' }
-  }
+  // REMOVED: Don't check for existing participation here - let controller handle it
   
   // Check election-specific eligibility
   if (electionType === 'departmental') {

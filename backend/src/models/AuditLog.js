@@ -61,6 +61,8 @@ const auditLogSchema = new mongoose.Schema(
         "FILE_DELETE",
         "PROFILE_PICTURE_UPDATE",
         "CAMPAIGN_PICTURE_UPDATE",
+        "VOTER_PARTICIPATED_IN_SSG_ELECTION",
+        "VOTER_PARTICIPATED_IN_DEPARTMENTAL_ELECTION",
       ],
     },
     username: {

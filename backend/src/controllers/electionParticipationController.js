@@ -8,75 +8,195 @@ const PDFDocument = require('pdfkit')
 class ElectionParticipationController {
   // Confirm participation in SSG election
   static async confirmSSGParticipation(req, res, next) {
-    try {
-      const { ssgElectionId } = req.body
-      const voterId = req.user.voterId
+  try {
+    const { ssgElectionId } = req.body
+    const voterId = req.user.voterId
 
-      if (!ssgElectionId) {
-        return res.status(400).json({ message: "SSG Election ID is required" })
-      }
+    console.log('=== SSG Participation Request ===')
+    console.log('Voter ID (raw):', voterId, 'Type:', typeof voterId)
+    console.log('SSG Election ID (raw):', ssgElectionId, 'Type:', typeof ssgElectionId)
 
-      // Verify SSG election exists and is available
-      const ssgElection = await SSGElection.findById(ssgElectionId)
-      if (!ssgElection) {
-        return res.status(404).json({ message: "SSG Election not found" })
-      }
-
-      if (!['upcoming', 'active'].includes(ssgElection.status)) {
-        return res.status(400).json({ message: "This SSG election is not available for participation" })
-      }
-
-      // Check eligibility using model method
-      const eligibilityCheck = await ElectionParticipation.checkParticipationEligibility(
-        voterId, 
-        ssgElectionId, 
-        'ssg'
-      )
-
-      if (!eligibilityCheck.eligible) {
-        return res.status(400).json({ message: eligibilityCheck.reason })
-      }
-
-      // Create participation record
-      const participation = new ElectionParticipation({
-        voterId,
-        ssgElectionId,
-        departmentId: eligibilityCheck.voter.departmentId._id
-      })
-
-      await participation.save()
-
-      // Populate for response
-      await participation.populate([
-        { 
-          path: 'voterId', 
-          select: 'schoolId firstName middleName lastName departmentId',
-          populate: {
-            path: 'departmentId',
-            select: 'departmentCode degreeProgram college'
-          }
-        },
-        { path: 'ssgElectionId', select: 'title electionDate status electionYear' }
-      ])
-
-      await AuditLog.logVoterAction(
-        "ELECTION_PARTICIPATION",
-        eligibilityCheck.voter,
-        `Confirmed participation in SSG election: ${ssgElection.title}`,
-        req
-      )
-
-      res.status(201).json({
-        message: "SSG election participation confirmed successfully",
-        participation
-      })
-    } catch (error) {
-      if (error.code === 11000) {
-        return res.status(400).json({ message: "You have already confirmed participation in this SSG election" })
-      }
-      next(error)
+    if (!ssgElectionId) {
+      return res.status(400).json({ message: "SSG Election ID is required" })
     }
+
+    const mongoose = require('mongoose')
+    
+    // MORE ROBUST: Try to find with multiple query formats
+    let existingParticipation = null
+    
+    // Try 1: Direct IDs (in case they're already ObjectIds or strings work)
+    existingParticipation = await ElectionParticipation.findOne({
+      voterId: voterId,
+      ssgElectionId: ssgElectionId
+    })
+    
+    console.log('Check 1 (direct):', existingParticipation ? 'FOUND' : 'NOT FOUND')
+    
+    // Try 2: With ObjectId conversion
+    if (!existingParticipation) {
+      try {
+        const voterObjectId = new mongoose.Types.ObjectId(voterId)
+        const electionObjectId = new mongoose.Types.ObjectId(ssgElectionId)
+        
+        existingParticipation = await ElectionParticipation.findOne({
+          voterId: voterObjectId,
+          ssgElectionId: electionObjectId
+        })
+        
+        console.log('Check 2 (ObjectId):', existingParticipation ? 'FOUND' : 'NOT FOUND')
+      } catch (conversionError) {
+        console.error('ObjectId conversion error:', conversionError)
+      }
+    }
+    
+    // Try 3: String comparison
+    if (!existingParticipation) {
+      existingParticipation = await ElectionParticipation.findOne({
+        voterId: voterId.toString(),
+        ssgElectionId: ssgElectionId.toString()
+      })
+      
+      console.log('Check 3 (string):', existingParticipation ? 'FOUND' : 'NOT FOUND')
+    }
+    
+    if (existingParticipation) {
+      console.log('✗ Already participated in THIS election')
+      console.log('Existing record ID:', existingParticipation._id)
+      
+      return res.status(400).json({ 
+        message: "You have already confirmed participation in this SSG election",
+        participationId: existingParticipation._id,
+        confirmedAt: existingParticipation.confirmedAt,
+        ssgElectionId: existingParticipation.ssgElectionId
+      })
+    }
+
+    // Verify SSG election exists and is available
+    const ssgElection = await SSGElection.findById(ssgElectionId)
+    if (!ssgElection) {
+      return res.status(404).json({ message: "SSG Election not found" })
+    }
+
+    if (!['upcoming', 'active'].includes(ssgElection.status)) {
+      return res.status(400).json({ 
+        message: "This SSG election is not available for participation",
+        currentStatus: ssgElection.status
+      })
+    }
+
+    // Check eligibility
+    const eligibilityCheck = await ElectionParticipation.checkParticipationEligibility(
+      voterId, 
+      ssgElectionId, 
+      'ssg'
+    )
+
+    if (!eligibilityCheck.eligible) {
+      return res.status(400).json({ message: eligibilityCheck.reason })
+    }
+
+    console.log('Creating participation record...')
+    console.log('Department ID:', eligibilityCheck.voter.departmentId._id)
+
+    // Create participation record - let MongoDB handle ObjectId conversion
+    const participation = new ElectionParticipation({
+      voterId: voterId, // Don't convert - let mongoose schema handle it
+      ssgElectionId: ssgElectionId, // Don't convert - let mongoose schema handle it
+      departmentId: eligibilityCheck.voter.departmentId._id,
+      deptElectionId: null,
+      confirmedAt: new Date(),
+      hasVoted: false,
+      votedAt: null,
+      status: 'confirmed'
+    })
+
+    console.log('Attempting to save...')
+
+    try {
+      await participation.save()
+      console.log('✓ Participation saved successfully:', participation._id)
+    } catch (saveError) {
+      console.error('=== SAVE ERROR ===')
+      console.error('Error code:', saveError.code)
+      console.error('Error message:', saveError.message)
+      console.error('Key pattern:', saveError.keyPattern)
+      console.error('Key value:', saveError.keyValue)
+      
+      if (saveError.code === 11000) {
+        // Duplicate key - try ONE MORE TIME to find the existing record
+        const finalCheck = await ElectionParticipation.findOne({
+          $or: [
+            { voterId: voterId, ssgElectionId: ssgElectionId },
+            { voterId: new mongoose.Types.ObjectId(voterId), ssgElectionId: new mongoose.Types.ObjectId(ssgElectionId) },
+            { voterId: voterId.toString(), ssgElectionId: ssgElectionId.toString() }
+          ]
+        })
+        
+        if (finalCheck) {
+          console.log('Found on final check:', finalCheck._id)
+          return res.status(400).json({ 
+            message: "You have already confirmed participation in this SSG election",
+            participationId: finalCheck._id,
+            confirmedAt: finalCheck.confirmedAt
+          })
+        }
+        
+        // If still not found, there's a serious database issue
+        console.error('CRITICAL: Duplicate error but no record found!')
+        console.error('This indicates a database inconsistency.')
+        
+        return res.status(500).json({
+          message: "Database inconsistency detected. Please contact system administrator.",
+          error: "Unable to resolve duplicate participation record",
+          debug: {
+            voterId: voterId.toString(),
+            ssgElectionId: ssgElectionId.toString()
+          }
+        })
+      }
+      
+      throw saveError
+    }
+
+    // Populate for response
+    await participation.populate([
+      { 
+        path: 'voterId', 
+        select: 'schoolId firstName middleName lastName departmentId',
+        populate: {
+          path: 'departmentId',
+          select: 'departmentCode degreeProgram college'
+        }
+      },
+      { path: 'ssgElectionId', select: 'title electionDate status electionYear' }
+    ])
+
+    await AuditLog.logVoterAction(
+      "VOTER_PARTICIPATED_IN_SSG_ELECTION",
+      eligibilityCheck.voter,
+      `Confirmed participation in SSG election: ${ssgElection.title}`,
+      req
+    )
+
+    res.status(201).json({
+      message: "SSG election participation confirmed successfully",
+      participation
+    })
+  } catch (error) {
+    console.error('=== Unexpected Error ===')
+    console.error('Error:', error)
+    console.error('Stack:', error.stack)
+    
+    if (error.code === 11000) {
+      return res.status(400).json({ 
+        message: "Participation conflict occurred. Please refresh the page and try again.",
+        error: "Database constraint violation"
+      })
+    }
+    next(error)
   }
+}
 
   // Confirm participation in Departmental election
   static async confirmDepartmentalParticipation(req, res, next) {
@@ -139,7 +259,7 @@ class ElectionParticipationController {
       ])
 
       await AuditLog.logVoterAction(
-        "ELECTION_PARTICIPATION",
+        "VOTER_PARTICIPATED_IN_DEPARTMENTAL_ELECTION",
         eligibilityCheck.voter,
         `Confirmed participation in Departmental election: ${deptElection.title}`,
         req

@@ -63,7 +63,9 @@ class AuditLogController {
         "FILE_UPLOAD",
         "FILE_DELETE",
         "PROFILE_PICTURE_UPDATE",
-        "CAMPAIGN_PICTURE_UPDATE"
+        "CAMPAIGN_PICTURE_UPDATE",
+        "VOTER_PARTICIPATED_IN_SSG_ELECTION",
+        "VOTER_PARTICIPATED_IN_DEPARTMENTAL_ELECTION",
         ]
         
         if (validActions.includes(action)) {

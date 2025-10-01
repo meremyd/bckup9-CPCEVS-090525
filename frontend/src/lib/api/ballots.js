@@ -1,7 +1,7 @@
 import api from '../api'
 
 export const ballotAPI = {
-  // ==================== SSG BALLOT API FUNCTIONS ====================
+  // ==================== STAFF/ADMIN SSG BALLOT METHODS ====================
 
   // Get all SSG ballots for selected election (Election Committee)
   getSelectedSSGElectionBallots: async (electionId, params = {}) => {
@@ -12,53 +12,41 @@ export const ballotAPI = {
       ...(status && { status })
     })
     
-    const response = await api.get(`/ballots/ssg/${electionId}/ballots?${queryParams}`)
+    const response = await api.get(`/ballots/user/ssg/${electionId}/ballots?${queryParams}`)
     return response.data
   },
 
   // Get selected SSG election ballot statistics (Election Committee)
   getSelectedSSGElectionBallotStatistics: async (electionId) => {
-    const response = await api.get(`/ballots/ssg/${electionId}/statistics`)
+    const response = await api.get(`/ballots/user/ssg/${electionId}/statistics`)
     return response.data
   },
 
   // Preview SSG ballot for election committee
   previewSSGBallot: async (electionId) => {
-    const response = await api.get(`/ballots/ssg/${electionId}/preview`)
+    const response = await api.get(`/ballots/user/ssg/${electionId}/preview`)
     return response.data
   },
 
-  // Submit SSG ballot (Election Committee can also use for testing)
-  submitSelectedSSGBallot: async (ballotId, votes) => {
-    const response = await api.post(`/ballots/ssg/${ballotId}/submit`, { votes })
-    return response.data
-  },
-
-  // Get voter SSG ballot status for selected election
-  getVoterSelectedSSGBallotStatus: async (electionId) => {
-    const response = await api.get(`/ballots/ssg/${electionId}/voter-status`)
-    return response.data
-  },
-
-  // Get selected SSG election ballot with votes (for review)
+  // Get selected SSG election ballot with votes (for review - Staff)
   getSelectedSSGBallotWithVotes: async (ballotId) => {
-    const response = await api.get(`/ballots/ssg/ballot/${ballotId}/votes`)
+    const response = await api.get(`/ballots/user/ssg/ballot/${ballotId}/votes`)
     return response.data
   },
 
   // Update SSG ballot timer (Election Committee)
   updateSSGBallotTimer: async (ballotId, additionalMinutes = 10) => {
-    const response = await api.put(`/ballots/ssg/${ballotId}/timer`, { additionalMinutes })
+    const response = await api.put(`/ballots/user/ssg/${ballotId}/timer`, { additionalMinutes })
     return response.data
   },
 
-  // Start SSG ballot with timer (Voters)
-  startSSGBallot: async (electionId) => {
-    const response = await api.post('/ballots/ssg/start', { electionId })
+  // Submit SSG ballot (Election Committee - for testing)
+  submitSelectedSSGBallot: async (ballotId, votes) => {
+    const response = await api.post(`/ballots/user/ssg/${ballotId}/submit`, { votes })
     return response.data
   },
 
-  // ==================== DEPARTMENTAL BALLOT API FUNCTIONS ====================
+  // ==================== STAFF/ADMIN DEPARTMENTAL BALLOT METHODS ====================
 
   // Get departmental ballots for selected election and position
   getDepartmentalBallots: async (electionId, positionId, params = {}) => {
@@ -69,58 +57,92 @@ export const ballotAPI = {
       ...(status && { status })
     })
     
-    const response = await api.get(`/ballots/departmental/${electionId}/${positionId}/ballots?${queryParams}`)
+    const response = await api.get(`/ballots/user/departmental/${electionId}/${positionId}/ballots?${queryParams}`)
     return response.data
   },
 
   // Get departmental ballot statistics for selected election and position
   getDepartmentalBallotStatistics: async (electionId, positionId) => {
-    const response = await api.get(`/ballots/departmental/${electionId}/${positionId}/statistics`)
+    const response = await api.get(`/ballots/user/departmental/${electionId}/${positionId}/statistics`)
     return response.data
   },
 
   // Preview departmental ballot for election committee
   previewDepartmentalBallot: async (electionId, positionId) => {
-    const response = await api.get(`/ballots/departmental/${electionId}/${positionId}/preview`)
+    const response = await api.get(`/ballots/user/departmental/${electionId}/${positionId}/preview`)
     return response.data
   },
 
-  // Get available positions for departmental voting
-  getAvailablePositionsForVoting: async (electionId) => {
-    const response = await api.get(`/ballots/departmental/${electionId}/available-positions`)
+  // Get positions for preview (Staff)
+  getPositionsForPreview: async (electionId) => {
+    const response = await api.get(`/ballots/user/departmental/${electionId}/preview-positions`)
     return response.data
   },
 
   // Delete departmental ballot (Election Committee)
   deleteDepartmentalBallot: async (ballotId) => {
-    const response = await api.delete(`/ballots/departmental/${ballotId}`)
-    return response.data
-  },
-
-  // Get voter departmental ballot status
-  getVoterDepartmentalBallotStatus: async (electionId, positionId) => {
-    const response = await api.get(`/ballots/departmental/${electionId}/${positionId}/voter-status`)
+    const response = await api.delete(`/ballots/user/departmental/${ballotId}`)
     return response.data
   },
 
   // Update year level restriction for departmental position (Election Committee)
   updateYearLevelRestriction: async (positionId, allowedYearLevels) => {
-    const response = await api.put(`/ballots/departmental/position/${positionId}/year-restriction`, { allowedYearLevels })
+    const response = await api.put(`/ballots/user/departmental/position/${positionId}/year-restriction`, { allowedYearLevels })
     return response.data
   },
 
-  // Start departmental ballot with timer (Voters)
-  startDepartmentalBallot: async (electionId, positionId) => {
-    const response = await api.post('/ballots/departmental/start', { electionId, positionId })
-    return response.data
+  // ==================== VOTER SSG BALLOT METHODS ====================
+
+  voter: {
+    // Get voter SSG ballot status for selected election
+    getVoterSelectedSSGBallotStatus: async (electionId) => {
+      const response = await api.get(`/ballots/voter/ssg/${electionId}/voter-status`)
+      return response.data
+    },
+
+    // Get selected SSG election ballot with votes (for review - Voter)
+    getSelectedSSGBallotWithVotes: async (ballotId) => {
+      const response = await api.get(`/ballots/voter/ssg/ballot/${ballotId}/votes`)
+      return response.data
+    },
+
+    // Start SSG ballot with timer (Voters)
+    startSSGBallot: async (electionId) => {
+      const response = await api.post('/ballots/voter/ssg/start', { electionId })
+      return response.data
+    },
+
+    // Submit SSG ballot (Voters)
+    submitSelectedSSGBallot: async (ballotId, votes) => {
+      const response = await api.post(`/ballots/voter/ssg/${ballotId}/submit`, { votes })
+      return response.data
+    },
+
+    // Get available positions for departmental voting (Voters)
+    getAvailablePositionsForVoting: async (electionId) => {
+      const response = await api.get(`/ballots/voter/departmental/${electionId}/available-positions`)
+      return response.data
+    },
+
+    // Get voter departmental ballot status
+    getVoterDepartmentalBallotStatus: async (electionId, positionId) => {
+      const response = await api.get(`/ballots/voter/departmental/${electionId}/${positionId}/voter-status`)
+      return response.data
+    },
+
+    // Start departmental ballot with timer (Voters)
+    startDepartmentalBallot: async (electionId, positionId) => {
+      const response = await api.post('/ballots/voter/departmental/start', { electionId, positionId })
+      return response.data
+    }
   },
 
-  // ==================== UTILITY FUNCTIONS ====================
+  // ==================== UTILITY FUNCTIONS (UNCHANGED) ====================
 
   // Check if voter can vote in SSG election
   canVoteInSSGElection: async (electionId) => {
     try {
-      const status = await ballotAPI.getVoterSelectedSSGBallotStatus(electionId)
+      const status = await ballotAPI.voter.getVoterSelectedSSGBallotStatus(electionId)
       return status.canVote && !status.hasVoted
     } catch (error) {
       console.error('Error checking SSG voting eligibility:', error)
@@ -131,7 +153,7 @@ export const ballotAPI = {
   // Check if voter can vote for specific departmental position
   canVoteForDepartmentalPosition: async (electionId, positionId) => {
     try {
-      const status = await ballotAPI.getVoterDepartmentalBallotStatus(electionId, positionId)
+      const status = await ballotAPI.voter.getVoterDepartmentalBallotStatus(electionId, positionId)
       return status.canVote && !status.hasVoted
     } catch (error) {
       console.error('Error checking departmental voting eligibility:', error)
@@ -142,7 +164,7 @@ export const ballotAPI = {
   // Get active SSG ballot for voter (if any)
   getActiveSSGBallot: async (electionId) => {
     try {
-      const status = await ballotAPI.getVoterSelectedSSGBallotStatus(electionId)
+      const status = await ballotAPI.voter.getVoterSelectedSSGBallotStatus(electionId)
       if (status.ballot && !status.ballot.isSubmitted) {
         return status.ballot
       }
@@ -156,7 +178,7 @@ export const ballotAPI = {
   // Get active Departmental ballot for voter (if any)
   getActiveDepartmentalBallot: async (electionId, positionId = null) => {
     try {
-      const status = await ballotAPI.getVoterDepartmentalBallotStatus(electionId, positionId)
+      const status = await ballotAPI.voter.getVoterDepartmentalBallotStatus(electionId, positionId)
       if (status.ballot && !status.ballot.isSubmitted) {
         return status.ballot
       }
@@ -170,7 +192,7 @@ export const ballotAPI = {
   // Get voting progress for departmental elections
   getDepartmentalVotingProgress: async (electionId) => {
     try {
-      const availablePositions = await ballotAPI.getAvailablePositionsForVoting(electionId)
+      const availablePositions = await ballotAPI.voter.getAvailablePositionsForVoting(electionId)
       return {
         totalPositions: availablePositions.totalPositions,
         votedPositions: availablePositions.votedPositions,
@@ -204,7 +226,7 @@ export const ballotAPI = {
   // Get SSG voting progress for voter
   getSSGVotingProgress: async (electionId) => {
     try {
-      const status = await ballotAPI.getVoterSelectedSSGBallotStatus(electionId)
+      const status = await ballotAPI.voter.getVoterSelectedSSGBallotStatus(electionId)
       const preview = await ballotAPI.previewSSGBallot(electionId)
       
       return {

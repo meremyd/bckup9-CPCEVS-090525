@@ -1,20 +1,29 @@
 const express = require("express")
 const PartylistController = require("../controllers/partylistController")
-const { authMiddleware, authorizeRoles, authorizeStaffAndVoters } = require("../middleware/authMiddleware")
+const { authMiddleware, authorizeRoles, voterAuthMiddleware } = require("../middleware/authMiddleware")
 const router = express.Router()
 
-// Apply authentication middleware to all routes
-router.use(authMiddleware)
+// ==================== STAFF/ADMIN ROUTES ====================
+router.use('/user', authMiddleware)
 
-// GET routes - accessible by all authenticated users (election_committee, sao, voter)
-router.get("/", authorizeStaffAndVoters("election_committee", "sao", "voter"), PartylistController.getAllPartylists)
-router.get("/ssg-election/:ssgElectionId", authorizeStaffAndVoters("election_committee", "sao", "voter"), PartylistController.getPartylistsBySSGElection)
-router.get("/:id", authorizeStaffAndVoters("election_committee", "sao", "voter"), PartylistController.getPartylist)
-router.get("/:id/logo", authorizeStaffAndVoters("election_committee", "sao", "voter"), PartylistController.getPartylistLogo)
-router.get("/:id/platform", authorizeStaffAndVoters("election_committee", "sao", "voter"), PartylistController.getPartylistPlatform)
-router.get("/:id/statistics", authorizeStaffAndVoters("election_committee", "sao", "voter"), PartylistController.getPartylistStatistics)
-router.post("/", authorizeRoles("election_committee"), PartylistController.createPartylist)
-router.put("/:id", authorizeRoles("election_committee"), PartylistController.updatePartylist)
-router.delete("/:id", authorizeRoles("election_committee"), PartylistController.deletePartylist)
+router.get("/user/", authorizeRoles("election_committee", "sao"), PartylistController.getAllPartylists)
+router.get("/user/ssg-election/:ssgElectionId", authorizeRoles("election_committee", "sao"), PartylistController.getPartylistsBySSGElection)
+router.get("/user/:id", authorizeRoles("election_committee", "sao"), PartylistController.getPartylist)
+router.get("/user/:id/logo", authorizeRoles("election_committee", "sao"), PartylistController.getPartylistLogo)
+router.get("/user/:id/platform", authorizeRoles("election_committee", "sao"), PartylistController.getPartylistPlatform)
+router.get("/user/:id/statistics", authorizeRoles("election_committee", "sao"), PartylistController.getPartylistStatistics)
+router.post("/user/", authorizeRoles("election_committee"), PartylistController.createPartylist)
+router.put("/user/:id", authorizeRoles("election_committee"), PartylistController.updatePartylist)
+router.delete("/user/:id", authorizeRoles("election_committee"), PartylistController.deletePartylist)
+
+// ==================== VOTER ROUTES ====================
+router.use('/voter', voterAuthMiddleware)
+
+router.get("/voter/", PartylistController.getAllPartylists)
+router.get("/voter/ssg-election/:ssgElectionId", PartylistController.getPartylistsBySSGElection)
+router.get("/voter/:id", PartylistController.getPartylist)
+router.get("/voter/:id/logo", PartylistController.getPartylistLogo)
+router.get("/voter/:id/platform", PartylistController.getPartylistPlatform)
+router.get("/voter/:id/statistics", PartylistController.getPartylistStatistics)
 
 module.exports = router
