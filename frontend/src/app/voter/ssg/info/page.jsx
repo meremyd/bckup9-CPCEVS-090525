@@ -16,7 +16,11 @@ import {
   Calendar,
   CheckCircle,
   AlertCircle,
-  Info
+  Info,
+  Receipt,
+  Download,
+  LogOut,
+  X
 } from "lucide-react"
 
 export default function VoterSSGElectionInfoPage() {
@@ -29,6 +33,9 @@ export default function VoterSSGElectionInfoPage() {
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [ballotStatus, setBallotStatus] = useState(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [showReceiptModal, setShowReceiptModal] = useState(false)
+  const [votingStatus, setVotingStatus] = useState(null)
+  const [loadingReceipt, setLoadingReceipt] = useState(false)
   
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -67,7 +74,6 @@ export default function VoterSSGElectionInfoPage() {
     try {
       setLoading(true)
       
-      // Load election details first
       const electionResponse = await ssgElectionsAPI.getForVoters(electionId)
       const electionData = electionResponse?.data?.election || electionResponse?.election
       
@@ -79,54 +85,36 @@ export default function VoterSSGElectionInfoPage() {
 
       setElection(electionData)
 
-      // Check ballot status
       const status = ssgElectionsAPI.getBallotStatus(electionData)
       setBallotStatus(status)
 
-      // Check participation status for THIS specific election ONLY
       try {
-        console.log('Checking participation for election:', electionId)
         const participationResponse = await electionParticipationAPI.checkSSGStatus(electionId)
-        console.log('Participation response:', participationResponse)
-        
         setParticipationStatus(participationResponse)
         
-        // hasParticipated should be for THIS election only
         const hasParticipated = participationResponse?.hasParticipated || false
         const isActiveOrUpcoming = ['active', 'upcoming'].includes(electionData.status)
         
-        console.log('Has participated in THIS election:', hasParticipated)
-        console.log('Election status:', electionData.status)
-        
-        // Show confirmation modal only if:
-        // 1. Election is active or upcoming
-        // 2. Voter hasn't participated yet in THIS specific election
         if (isActiveOrUpcoming && !hasParticipated) {
-          console.log('Showing confirmation modal')
           setShowConfirmModal(true)
           setLoading(false)
-          return // Don't load other data yet
+          return
         }
         
-        // If participated or election is completed, load the rest
-        console.log('Loading partylists')
         await loadPartylistsData()
         
       } catch (participationError) {
         console.error("Error checking participation:", participationError)
         
-        // If 404 or not found, voter hasn't participated in THIS election
         if (participationError.response?.status === 404) {
           const isActiveOrUpcoming = ['active', 'upcoming'].includes(electionData.status)
           if (isActiveOrUpcoming) {
-            console.log('404 - Showing confirmation modal')
             setShowConfirmModal(true)
             setLoading(false)
             return
           }
         }
         
-        // For other errors or completed elections, still load partylists
         await loadPartylistsData()
       }
 
@@ -158,7 +146,7 @@ export default function VoterSSGElectionInfoPage() {
         text: 'You chose not to participate in this election.',
         confirmButtonColor: '#001f65'
       }).then(() => {
-        router.push('/voter/ssg')
+        router.push('/voter/ssg/elections')
       })
       return
     }
@@ -174,21 +162,13 @@ export default function VoterSSGElectionInfoPage() {
         }
       })
 
-      console.log('Confirming participation for election:', electionId)
-      
-      // Confirm participation in THIS specific election
       await electionParticipationAPI.confirmSSGParticipation(electionId)
       
-      console.log('Participation confirmed, refreshing status')
-      
-      // Update participation status
       const updatedStatus = await electionParticipationAPI.checkSSGStatus(electionId)
       setParticipationStatus(updatedStatus)
       
-      // Hide modal
       setShowConfirmModal(false)
       
-      // Load partylists now
       await loadPartylistsData()
       
       Swal.fire({
@@ -200,7 +180,6 @@ export default function VoterSSGElectionInfoPage() {
         
     } catch (error) {
       console.error("Error confirming participation:", error)
-      console.error("Error response:", error.response?.data)
       
       const errorMessage = error.response?.data?.message || 'Failed to confirm participation'
       
@@ -223,6 +202,93 @@ export default function VoterSSGElectionInfoPage() {
     router.push(`/voter/ssg/ballot?id=${electionId}`)
   }
 
+  const handleLogout = async () => {
+    const result = await Swal.fire({
+      title: 'Are you sure?',
+      text: 'You will be logged out of your account',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, logout',
+      cancelButtonText: 'Cancel'
+    })
+
+    if (result.isConfirmed) {
+      localStorage.removeItem("voterToken")
+      localStorage.removeItem("voterData")
+      router.push("/voterlogin")
+      
+      Swal.fire({
+        title: 'Logged Out',
+        text: 'You have been successfully logged out',
+        icon: 'success',
+        timer: 1500,
+        showConfirmButton: false
+      })
+    }
+  }
+
+  const handleOpenReceipt = async () => {
+    setLoadingReceipt(true)
+    setShowReceiptModal(true)
+    
+    try {
+      const status = await electionParticipationAPI.getSSGVotingStatus(electionId)
+      setVotingStatus(status)
+    } catch (error) {
+      console.error("Error loading voting status:", error)
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'Failed to load voting receipt',
+        confirmButtonColor: '#001f65'
+      })
+      setShowReceiptModal(false)
+    } finally {
+      setLoadingReceipt(false)
+    }
+  }
+
+  const handleDownloadReceipt = async () => {
+    try {
+      Swal.fire({
+        title: 'Generating Receipt...',
+        allowOutsideClick: false,
+        didOpen: () => {
+          Swal.showLoading()
+        }
+      })
+
+      const blob = await electionParticipationAPI.exportSSGVotingReceiptPDF(electionId)
+      
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `SSG_Voting_Receipt_${voter?.schoolId}_${election?.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      
+      Swal.fire({
+        icon: 'success',
+        title: 'Receipt Downloaded',
+        text: 'Your voting receipt has been downloaded successfully',
+        confirmButtonColor: '#001f65',
+        timer: 2000
+      })
+    } catch (error) {
+      console.error("Error downloading receipt:", error)
+      Swal.fire({
+        icon: 'error',
+        title: 'Download Failed',
+        text: 'Failed to download voting receipt',
+        confirmButtonColor: '#001f65'
+      })
+    }
+  }
+
   const formatTime = (time24) => {
     if (!time24) return ''
     try {
@@ -235,7 +301,129 @@ export default function VoterSSGElectionInfoPage() {
     }
   }
 
-  // Loading state
+  const formatDateTime = (dateString) => {
+    if (!dateString) return 'N/A'
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      })
+    } catch (error) {
+      return 'Invalid date'
+    }
+  }
+
+  // Updated function to get button status message
+  const getButtonStatusMessage = () => {
+    if (!election || !ballotStatus) return { message: '', canVote: false, bgColor: 'bg-gray-500' }
+
+    // Check if voter has already voted
+    if (participationStatus?.hasVoted) {
+      return {
+        message: 'You have already voted in this election. Thank you for participating!',
+        canVote: false,
+        bgColor: 'bg-green-500'
+      }
+    }
+
+    // Check if voter has participated
+    if (!participationStatus?.hasParticipated) {
+      return {
+        message: 'You must confirm participation to vote in this election.',
+        canVote: false,
+        bgColor: 'bg-gray-500'
+      }
+    }
+
+    const now = new Date()
+    const electionDate = new Date(election.electionDate)
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const electionDay = new Date(electionDate.getFullYear(), electionDate.getMonth(), electionDate.getDate())
+
+    // Election is upcoming (date is in the future)
+    if (electionDay > today) {
+      const daysUntil = Math.ceil((electionDay - today) / (1000 * 60 * 60 * 24))
+      return {
+        message: `This election is upcoming. Voting starts in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}.`,
+        canVote: false,
+        bgColor: 'bg-blue-500'
+      }
+    }
+
+    // Election day is today
+    if (electionDay.getTime() === today.getTime()) {
+      // Check ballot times
+      if (election.ballotOpenTime && election.ballotCloseTime) {
+        const [openHours, openMinutes] = election.ballotOpenTime.split(':').map(Number)
+        const [closeHours, closeMinutes] = election.ballotCloseTime.split(':').map(Number)
+        
+        const openDateTime = new Date(electionDate)
+        openDateTime.setHours(openHours, openMinutes, 0, 0)
+        
+        const closeDateTime = new Date(electionDate)
+        closeDateTime.setHours(closeHours, closeMinutes, 0, 0)
+
+        // Before ballot open time
+        if (now < openDateTime) {
+          const timeDiff = openDateTime - now
+          const hoursUntil = Math.floor(timeDiff / (1000 * 60 * 60))
+          const minutesUntil = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60))
+          return {
+            message: `SSG election ballot will be open in ${hoursUntil}h ${minutesUntil}m`,
+            canVote: false,
+            bgColor: 'bg-yellow-500'
+          }
+        }
+
+        // After ballot close time
+        if (now > closeDateTime) {
+          return {
+            message: 'The election has ended.',
+            canVote: false,
+            bgColor: 'bg-gray-500'
+          }
+        }
+
+        // Within ballot hours - can vote
+        return {
+          message: 'Ballot is now open. Click to vote!',
+          canVote: true,
+          bgColor: 'bg-green-500'
+        }
+      }
+
+      // No specific ballot times, can vote all day
+      return {
+        message: 'Ballot is now open. Click to vote!',
+        canVote: true,
+        bgColor: 'bg-green-500'
+      }
+    }
+
+    // Election date has passed
+    if (election.status === 'completed' || electionDay < today) {
+      return {
+        message: 'The election has ended.',
+        canVote: false,
+        bgColor: 'bg-gray-500'
+      }
+    }
+
+    // Default fallback
+    return {
+      message: 'Voting is not currently available.',
+      canVote: false,
+      bgColor: 'bg-gray-500'
+    }
+  }
+
+  const buttonStatus = getButtonStatusMessage()
+
   if (loading) {
     return (
       <VoterLayout>
@@ -249,7 +437,6 @@ export default function VoterSSGElectionInfoPage() {
     )
   }
 
-  // Error state
   if (error) {
     return (
       <VoterLayout>
@@ -259,7 +446,7 @@ export default function VoterSSGElectionInfoPage() {
             <h2 className="text-2xl font-bold text-gray-800 mb-2 text-center">Error</h2>
             <p className="text-gray-600 mb-4 text-center">{error}</p>
             <button
-              onClick={() => router.push('/voter/ssg')}
+              onClick={() => router.push('/voter/ssg/elections')}
               className="w-full bg-[#001f65] hover:bg-[#003399] text-white px-6 py-2 rounded-lg transition-colors"
             >
               Back to Elections
@@ -270,7 +457,6 @@ export default function VoterSSGElectionInfoPage() {
     )
   }
 
-  // Confirmation Modal
   if (showConfirmModal && election) {
     return (
       <VoterLayout>
@@ -333,15 +519,14 @@ export default function VoterSSGElectionInfoPage() {
     )
   }
 
-  // Main content
   return (
     <VoterLayout>
-      {/* Header */}
+      {/* Header with Logout and Receipt */}
       <div className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/30 px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center">
             <button
-              onClick={() => router.push('/voter/ssg')}
+              onClick={() => router.push('/voter/ssg/elections')}
               className="mr-3 p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <ArrowLeft className="w-5 h-5 text-[#001f65]" />
@@ -351,58 +536,66 @@ export default function VoterSSGElectionInfoPage() {
               <p className="text-xs text-[#001f65]/70">Election Year {election?.electionYear}</p>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleOpenReceipt}
+              className="p-2 text-[#001f65] hover:bg-blue-50 rounded-lg transition-colors border border-blue-200 bg-white/60 backdrop-blur-sm"
+              title="View Voting Receipt"
+            >
+              <Receipt className="w-5 h-5" />
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center px-3 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50/80 rounded-lg transition-colors border border-red-200 bg-white/60 backdrop-blur-sm"
+            >
+              <LogOut className="w-4 h-4 mr-1 sm:mr-2" />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Main Content */}
       <div className="p-4 lg:p-6">
         <div className="min-h-[calc(100vh-120px)] max-w-6xl mx-auto">
-          
-          {/* Participation Confirmed Badge */}
-          {participationStatus?.hasParticipated && (
-            <div className="bg-green-500/20 backdrop-blur-sm rounded-xl p-4 mb-6 border border-green-500/30">
-              <div className="flex items-center text-green-100">
-                <CheckCircle className="w-5 h-5 mr-2" />
-                <span className="font-medium">You are registered to participate in this election</span>
-              </div>
-            </div>
-          )}
-          
+
           {/* Election Info Banner */}
-          <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-white/20">
-            <div className="flex items-start gap-4">
-              <Info className="w-6 h-6 text-white flex-shrink-0 mt-1" />
-              <div className="flex-1">
-                <h3 className="font-bold text-white text-lg mb-2">Election Information</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-white/90">
-                  <div className="flex items-center">
-                    <Calendar className="w-4 h-4 mr-2" />
-                    <span className="text-sm">
-                      {new Date(election?.electionDate).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                      })}
-                    </span>
-                  </div>
-                  {election?.ballotOpenTime && election?.ballotCloseTime && (
-                    <div className="flex items-center">
-                      <Clock className="w-4 h-4 mr-2" />
-                      <span className="text-sm">
-                        {formatTime(election.ballotOpenTime)} - {formatTime(election.ballotCloseTime)}
-                      </span>
-                    </div>
-                  )}
+          <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-8 mb-8 border border-white/20">
+            <div className="text-center">
+              <h2 className="text-4xl font-bold text-white mb-6">{election?.title}</h2>
+              <div className="inline-block">
+                <div className={`px-6 py-3 rounded-full text-lg font-bold mb-6 ${
+                  ballotStatus?.status === 'open' ? 'bg-green-500/30 text-green-100' :
+                  ballotStatus?.status === 'scheduled' ? 'bg-yellow-500/30 text-yellow-100' :
+                  'bg-gray-500/30 text-gray-100'
+                }`}>
+                  {election?.status}
                 </div>
-                {ballotStatus && (
-                  <div className="mt-3 flex items-center">
-                    <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      ballotStatus.status === 'open' ? 'bg-green-500/20 text-green-100' :
-                      ballotStatus.status === 'scheduled' ? 'bg-yellow-500/20 text-yellow-100' :
-                      'bg-red-500/20 text-red-100'
-                    }`}>
-                      {ballotStatus.message}
-                    </div>
+              </div>
+              <div className="space-y-4 text-white/90 text-lg">
+                <div className="flex items-center justify-center">
+                  <span className="font-semibold mr-2">Election ID:</span>
+                  <span>{election?.ssgElectionId}</span>
+                </div>
+                <div className="flex items-center justify-center">
+                  <Calendar className="w-5 h-5 mr-2" />
+                  <span className="font-semibold mr-2">Election Date:</span>
+                  <span>
+                    {new Date(election?.electionDate).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                      weekday: 'long'
+                    })}
+                  </span>
+                </div>
+                {election?.ballotOpenTime && election?.ballotCloseTime && (
+                  <div className="flex items-center justify-center">
+                    <Clock className="w-5 h-5 mr-2" />
+                    <span className="font-semibold mr-2">Ballot Hours:</span>
+                    <span>
+                      {formatTime(election.ballotOpenTime)} - {formatTime(election.ballotCloseTime)}
+                    </span>
                   </div>
                 )}
               </div>
@@ -411,11 +604,6 @@ export default function VoterSSGElectionInfoPage() {
 
           {/* Partylists Section */}
           <div className="mb-8">
-            <h2 className="text-2xl font-bold text-white mb-4 flex items-center">
-              <Users className="w-6 h-6 mr-2" />
-              Participating Partylists
-            </h2>
-            
             {partylists.length === 0 ? (
               <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 text-center border border-white/20">
                 <AlertCircle className="w-12 h-12 text-white/60 mx-auto mb-3" />
@@ -434,7 +622,7 @@ export default function VoterSSGElectionInfoPage() {
                         <img
                           src={partylistsAPI.voter.getLogoUrl(partylist._id)}
                           alt={partylist.partylistName}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-contain"
                         />
                       ) : (
                         <Users className="w-16 h-16 text-gray-400" />
@@ -452,35 +640,116 @@ export default function VoterSSGElectionInfoPage() {
             )}
           </div>
 
-          {/* Ballot Button */}
-          {ballotStatus?.status === 'open' && participationStatus?.hasParticipated && (
-            <div className="flex justify-center">
+          {/* Vote Now / Status Button */}
+          <div className="flex justify-center">
+            {buttonStatus.canVote ? (
               <button
                 onClick={handleBallotClick}
                 className="bg-gradient-to-r from-[#001f65] to-[#003399] hover:from-[#003399] hover:to-[#001f65] text-white px-12 py-4 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl font-bold text-lg flex items-center gap-3"
               >
                 <Vote className="w-6 h-6" />
-                Proceed to Ballot
+                Vote Now
               </button>
-            </div>
-          )}
-
-          {/* Ballot Status Message */}
-          {(ballotStatus?.status !== 'open' || !participationStatus?.hasParticipated) && (
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 text-center border border-white/20">
-              <Clock className="w-12 h-12 text-white/60 mx-auto mb-3" />
-              <p className="text-white font-medium text-lg">
-                {!participationStatus?.hasParticipated 
-                  ? 'You must confirm participation to vote in this election.'
-                  : ballotStatus?.status === 'scheduled' 
-                    ? 'Voting will open soon. Please check back later.'
-                    : 'Voting for this election has ended.'}
-              </p>
-            </div>
-          )}
+            ) : (
+              <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 text-center border border-white/20 max-w-2xl">
+                <Clock className="w-12 h-12 text-white/60 mx-auto mb-3" />
+                <p className="text-white font-medium text-lg">
+                  {buttonStatus.message}
+                </p>
+              </div>
+            )}
+          </div>
 
         </div>
       </div>
+
+      {/* Receipt Modal */}
+      {showReceiptModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 relative">
+            <button
+              onClick={() => setShowReceiptModal(false)}
+              className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-full flex items-center justify-center mx-auto mb-4">
+                <Receipt className="w-8 h-8 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold text-[#001f65] mb-2">Voting Receipt</h2>
+            </div>
+
+            {loadingReceipt ? (
+              <div className="text-center py-8">
+                <Loader2 className="animate-spin rounded-full h-12 w-12 mx-auto text-[#001f65]" />
+                <p className="mt-4 text-gray-600">Loading receipt...</p>
+              </div>
+            ) : votingStatus ? (
+              <div className="space-y-4">
+                <div className="bg-blue-50 rounded-xl p-4">
+                  <h3 className="font-bold text-[#001f65] mb-3">Voter Information</h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Name:</span>
+                      <span className="font-medium">{voter?.firstName} {voter?.lastName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">School ID:</span>
+                      <span className="font-medium">{voter?.schoolId}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Department:</span>
+                      <span className="font-medium">{voter?.department?.departmentCode || 'N/A'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`rounded-xl p-4 ${votingStatus.hasVoted ? 'bg-green-50' : 'bg-gray-50'}`}>
+                  <h3 className={`font-bold mb-3 ${votingStatus.hasVoted ? 'text-green-800' : 'text-gray-800'}`}>
+                    Voting Status
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Status:</span>
+                      <span className={`font-bold ${votingStatus.hasVoted ? 'text-green-600' : 'text-gray-600'}`}>
+                        {votingStatus.hasVoted ? 'VOTED' : 'NOT VOTED'}
+                      </span>
+                    </div>
+                    {votingStatus.hasVoted && votingStatus.submittedAt && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Voted At:</span>
+                        <span className="font-medium">{formatDateTime(votingStatus.submittedAt)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Election:</span>
+                      <span className="font-medium">{election?.title}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {votingStatus.hasVoted && (
+                  <button
+                    onClick={handleDownloadReceipt}
+                    className="w-full bg-[#001f65] hover:bg-[#003399] text-white px-6 py-3 rounded-lg transition-colors font-medium flex items-center justify-center gap-2"
+                  >
+                    <Download className="w-5 h-5" />
+                    Download Receipt (PDF)
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
+                <p className="text-gray-600">Failed to load voting status</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </VoterLayout>
   )
 }

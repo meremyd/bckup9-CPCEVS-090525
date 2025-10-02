@@ -274,5 +274,31 @@ export const chatSupportAPI = {
         `${request.voterId.firstName || ''} ${request.voterId.lastName || ''}`.trim() : 'Non-voter',
       statusLabel: request.status.charAt(0).toUpperCase() + request.status.slice(1).replace('-', ' ')
     }
+  },
+
+   getFAQs: async (params = {}) => {
+    try {
+      const queryParams = new URLSearchParams()
+      
+      if (params.limit) queryParams.append('limit', params.limit)
+      if (params.category) queryParams.append('category', params.category)
+      
+      const response = await api.get(`/chat-support/faqs?${queryParams.toString()}`)
+      return response.data
+    } catch (error) {
+      console.error('Error fetching FAQs:', error)
+      throw error
+    }
+  },
+
+  // Get FAQ categories (public)
+  getFAQCategories: async () => {
+    try {
+      const response = await api.get('/chat-support/faqs/categories')
+      return response.data
+    } catch (error) {
+      console.error('Error fetching FAQ categories:', error)
+      throw error
+    }
   }
 }

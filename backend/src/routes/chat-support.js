@@ -3,8 +3,10 @@ const chatSupportController = require("../controllers/chatSupportController")
 const { authMiddleware, authorizeRoles } = require("../middleware/authMiddleware")
 const router = express.Router()
 
-// Public route - submit support request (no auth required)
+// Public routes - MUST come first
 router.post("/", chatSupportController.submitRequest)
+router.get("/faqs", chatSupportController.getFAQs) // Public FAQ endpoint
+router.get("/faqs/categories", chatSupportController.getFAQCategories) // Public categories endpoint
 
 // Admin routes - MUST come before generic routes to avoid conflicts
 // Statistics and export routes should come first

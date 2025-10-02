@@ -90,7 +90,7 @@ const adminLimiter = rateLimit({
 // Voter operations limiter - restrictive to prevent voting manipulation
 const voterLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, 
-  max: 20, 
+  max: 20000, 
   message: {
     error: "Voter request limit exceeded",
     message: "Please wait a few minutes before making more requests",

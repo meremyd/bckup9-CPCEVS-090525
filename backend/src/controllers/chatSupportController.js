@@ -764,6 +764,158 @@ class ChatSupportController {
       next(error)
     }
   }
+
+  static async getFAQs(req, res, next) {
+    try {
+      const { limit = 10, category } = req.query
+
+      // Build filter for resolved requests with responses
+      const filter = {
+        status: "resolved",
+        response: { $exists: true, $ne: "" }
+      }
+
+      // Optional category filter by department
+      if (category) {
+        ChatSupportController.validateObjectId(category, 'category')
+        filter.departmentId = category
+      }
+
+      // Get frequently asked questions (most common messages)
+      const faqs = await ChatSupport.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: "$message",
+            question: { $first: "$message" },
+            answer: { $first: "$response" },
+            department: { $first: "$departmentId" },
+            count: { $sum: 1 },
+            lastUpdated: { $max: "$respondedAt" }
+          }
+        },
+        { $sort: { count: -1, lastUpdated: -1 } },
+        { $limit: parseInt(limit) },
+        {
+          $lookup: {
+            from: "departments",
+            localField: "department",
+            foreignField: "_id",
+            as: "departmentInfo"
+          }
+        },
+        {
+          $unwind: {
+            path: "$departmentInfo",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $project: {
+            _id: 0,
+            question: 1,
+            answer: 1,
+            count: 1,
+            lastUpdated: 1,
+            department: {
+              _id: "$departmentInfo._id",
+              departmentCode: "$departmentInfo.departmentCode",
+              degreeProgram: "$departmentInfo.degreeProgram",
+              college: "$departmentInfo.college"
+            }
+          }
+        }
+      ])
+
+      // Log FAQ access
+      await ChatSupportController.logAuditAction(
+        "SYSTEM_ACCESS",
+        { schoolId: "public" },
+        `FAQs accessed - Count: ${faqs.length}, Category: ${category || 'all'}`,
+        req
+      )
+
+      res.json({
+        success: true,
+        data: {
+          faqs,
+          total: faqs.length
+        },
+        message: "FAQs retrieved successfully"
+      })
+    } catch (error) {
+      console.error("Error fetching FAQs:", error)
+      
+      await ChatSupportController.logAuditAction(
+        "SYSTEM_ERROR",
+        { schoolId: "public" },
+        `Failed to access FAQs: ${error.message}`,
+        req
+      )
+      
+      const err = new Error(error.message || "Failed to fetch FAQs")
+      err.statusCode = error.statusCode || 500
+      next(err)
+    }
+  }
+
+  // Get FAQ categories (departments with FAQs)
+  static async getFAQCategories(req, res, next) {
+    try {
+      const categories = await ChatSupport.aggregate([
+        {
+          $match: {
+            status: "resolved",
+            response: { $exists: true, $ne: "" }
+          }
+        },
+        {
+          $group: {
+            _id: "$departmentId",
+            count: { $sum: 1 }
+          }
+        },
+        {
+          $lookup: {
+            from: "departments",
+            localField: "_id",
+            foreignField: "_id",
+            as: "department"
+          }
+        },
+        {
+          $unwind: "$department"
+        },
+        {
+          $project: {
+            _id: "$department._id",
+            departmentCode: "$department.departmentCode",
+            degreeProgram: "$department.degreeProgram",
+            college: "$department.college",
+            faqCount: "$count"
+          }
+        },
+        {
+          $sort: { faqCount: -1 }
+        }
+      ])
+
+      res.json({
+        success: true,
+        data: {
+          categories,
+          total: categories.length
+        },
+        message: "FAQ categories retrieved successfully"
+      })
+    } catch (error) {
+      console.error("Error fetching FAQ categories:", error)
+      
+      const err = new Error(error.message || "Failed to fetch FAQ categories")
+      err.statusCode = error.statusCode || 500
+      next(err)
+    }
+  }
 }
 
 module.exports = ChatSupportController
