@@ -1023,136 +1023,207 @@ class SSGElectionController {
 
 
   // Get SSG election results
-  static async getSSGElectionResults(req, res, next) {
-    try {
-      const { id } = req.params
+static async getSSGElectionResults(req, res, next) {
+  try {
+    const { id } = req.params
 
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
-          `Failed to get SSG election results - Invalid election ID: ${id}`,
-          req
-        )
-        const error = new Error("Invalid election ID format")
-        error.statusCode = 400
-        return next(error)
-      }
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election results - Invalid election ID: ${id}`,
+        req
+      )
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
+    }
 
-      const election = await SSGElection.findById(id)
-      if (!election) {
-        await AuditLog.logUserAction(
-          "SYSTEM_ACCESS",
-          req.user,
-          `Failed to get SSG election results - Election not found: ${id}`,
-          req
-        )
-        const error = new Error("SSG election not found")
-        error.statusCode = 404
-        return next(error)
-      }
+    const election = await SSGElection.findById(id)
+    if (!election) {
+      await AuditLog.logUserAction(
+        "SYSTEM_ACCESS",
+        req.user,
+        `Failed to get SSG election results - Election not found: ${id}`,
+        req
+      )
+      const error = new Error("SSG election not found")
+      error.statusCode = 404
+      return next(error)
+    }
 
-      // Get detailed results by position
-      const results = await Position.aggregate([
-        { $match: { ssgElectionId: new mongoose.Types.ObjectId(id), isActive: true } },
-        { $sort: { positionOrder: 1 } },
-        {
-          $lookup: {
-            from: "candidates",
-            let: { positionId: "$_id" },
-            pipeline: [
-              { $match: { 
+    // Get detailed results by position - FIXED: Exclude binary fields
+    const results = await Position.aggregate([
+      { $match: { ssgElectionId: new mongoose.Types.ObjectId(id), isActive: true } },
+      { $sort: { positionOrder: 1 } },
+      {
+        $lookup: {
+          from: "candidates",
+          let: { positionId: "$_id" },
+          pipeline: [
+            { 
+              $match: { 
                 $expr: { 
                   $and: [
-                    { $eq: ["$positionId", "$positionId"] },
+                    { $eq: ["$positionId", "$$positionId"] },
                     { $eq: ["$ssgElectionId", new mongoose.Types.ObjectId(id)] },
                     { $eq: ["$isActive", true] }
                   ]
                 }
-              }},
-              {
-                $lookup: {
-                  from: "voters",
-                  localField: "voterId",
-                  foreignField: "_id",
-                  as: "voter"
-                }
-              },
-              { $unwind: "$voter" },
-              {
-                $lookup: {
-                  from: "departments",
-                  localField: "voter.departmentId",
-                  foreignField: "_id",
-                  as: "voter.department"
-                }
-              },
-              {
-                $lookup: {
-                  from: "partylists",
-                  localField: "partylistId",
-                  foreignField: "_id",
-                  as: "partylist"
-                }
-              },
-              {
-                $addFields: {
-                  candidateName: {
-                    $concat: [
-                      "$voter.firstName",
-                      " ",
-                      { $ifNull: [{ $concat: ["$voter.middleName", " "] }, ""] },
-                      "$voter.lastName"
-                    ]
-                  },
-                  partylistName: { $arrayElemAt: ["$partylist.partylistName", 0] },
-                  department: { $arrayElemAt: ["$voter.department", 0] }
-                }
-              },
-              { $sort: { voteCount: -1, candidateNumber: 1 } }
-            ],
-            as: "candidates"
+              }
+            },
+            // CRITICAL FIX: Exclude binary fields to avoid size limits
+            {
+              $project: {
+                campaignPicture: 0,
+                credentials: 0
+              }
+            },
+            {
+              $lookup: {
+                from: "votes",
+                localField: "_id",
+                foreignField: "candidateId",
+                as: "votes"
+              }
+            },
+            {
+              $addFields: {
+                voteCount: { $size: "$votes" }
+              }
+            },
+            {
+              $lookup: {
+                from: "voters",
+                localField: "voterId",
+                foreignField: "_id",
+                as: "voter"
+              }
+            },
+            { $unwind: "$voter" },
+            {
+              $lookup: {
+                from: "departments",
+                localField: "voter.departmentId",
+                foreignField: "_id",
+                as: "voter.department"
+              }
+            },
+            {
+              $lookup: {
+                from: "partylists",
+                localField: "partylistId",
+                foreignField: "_id",
+                as: "partylist"
+              }
+            },
+            {
+              $addFields: {
+                candidateName: {
+                  $concat: [
+                    "$voter.firstName",
+                    " ",
+                    { $ifNull: [{ $concat: ["$voter.middleName", " "] }, ""] },
+                    "$voter.lastName"
+                  ]
+                },
+                partylistName: { $arrayElemAt: ["$partylist.partylistName", 0] },
+                department: { $arrayElemAt: ["$voter.department", 0] },
+                votePercentage: 0 // Will be calculated after
+              }
+            },
+            // Remove the votes array to reduce size
+            {
+              $project: {
+                votes: 0,
+                voter: 0,
+                partylist: 0
+              }
+            },
+            { $sort: { voteCount: -1, candidateNumber: 1 } }
+          ],
+          as: "candidates"
+        }
+      },
+      {
+        $addFields: {
+          totalVotesForPosition: { 
+            $sum: "$candidates.voteCount"
           }
+        }
+      },
+      {
+        $addFields: {
+          candidates: {
+            $map: {
+              input: "$candidates",
+              as: "candidate",
+              in: {
+                $mergeObjects: [
+                  "$$candidate",
+                  {
+                    votePercentage: {
+                      $cond: [
+                        { $gt: ["$totalVotesForPosition", 0] },
+                        {
+                          $round: [
+                            {
+                              $multiply: [
+                                { $divide: ["$$candidate.voteCount", "$totalVotesForPosition"] },
+                                100
+                              ]
+                            },
+                            2
+                          ]
+                        },
+                        0
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
+          winner: { $arrayElemAt: ["$candidates", 0] }
+        }
+      }
+    ])
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Accessed SSG election results - ${election.title} (${election.ssgElectionId}) - ${results.length} positions`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election: {
+          id: election._id,
+          title: election.title,
+          ssgElectionId: election.ssgElectionId,
+          status: election.status,
+          electionDate: election.electionDate,
+          electionType: "ssg"
         },
-        {
-          $addFields: {
-            totalVotesForPosition: { $sum: "$candidates.voteCount" },
-            winner: { $arrayElemAt: ["$candidates", 0] }
-          }
-        }
-      ])
-
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Accessed SSG election results - ${election.title} (${election.ssgElectionId}) - ${results.length} positions`,
-        req
-      )
-
-      res.json({
-        success: true,
-        data: {
-          election: {
-            id: election._id,
-            title: election.title,
-            ssgElectionId: election.ssgElectionId,
-            status: election.status,
-            electionDate: election.electionDate,
-            electionType: "ssg"
-          },
-          results
-        }
-      })
-    } catch (error) {
-      await AuditLog.logUserAction(
-        "SYSTEM_ACCESS",
-        req.user,
-        `Failed to retrieve SSG election results for ${req.params.id}: ${error.message}`,
-        req
-      )
-      next(error)
-    }
+        positionResults: results
+      }
+    })
+  } catch (error) {
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Failed to retrieve SSG election results for ${req.params.id}: ${error.message}`,
+      req
+    )
+    next(error)
   }
+}
 
   // Get SSG dashboard summary
   static async getSSGDashboardSummary(req, res, next) {

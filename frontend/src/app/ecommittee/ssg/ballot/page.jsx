@@ -544,7 +544,7 @@ export default function SSGBallotPage() {
             {/* College Logo */}
             <div className="absolute top-4 right-4 w-16 h-16 sm:w-20 sm:h-20 bg-white rounded-full flex items-center justify-center z-20">
               <img
-                src="/logo.png"
+                src="/cpclogo.png"
                 alt="CPC Logo"
                 className="w-12 h-12 sm:w-16 sm:h-16 object-contain rounded-full"
                 onError={(e) => {

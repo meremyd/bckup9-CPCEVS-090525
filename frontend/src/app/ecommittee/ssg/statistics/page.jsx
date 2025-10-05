@@ -141,24 +141,26 @@ export default function StatisticsPage() {
   }
 
   const fetchParticipationStats = async () => {
-    try {
-      const response = await electionParticipationAPI.getSSGStatistics(ssgElectionId)
-      setParticipationStats(response.data)
-    } catch (error) {
-      console.error("Error fetching participation statistics:", error)
-      handleAPIError(error, 'Failed to load participation statistics')
-    }
+  try {
+    const response = await electionParticipationAPI.getSSGStatistics(ssgElectionId)
+    console.log('📊 RAW Participation Response:', JSON.stringify(response, null, 2))
+    setParticipationStats(response.data)
+  } catch (error) {
+    console.error("Error fetching participation statistics:", error)
+    handleAPIError(error, 'Failed to load participation statistics')
   }
+}
 
   const fetchBallotStats = async () => {
-    try {
-      const response = await ballotAPI.getSelectedSSGElectionBallotStatistics(ssgElectionId)
-      setBallotStats(response.data)
-    } catch (error) {
-      console.error("Error fetching ballot statistics:", error)
-      handleAPIError(error, 'Failed to load ballot statistics')
-    }
+  try {
+    const response = await ballotAPI.getSelectedSSGElectionBallotStatistics(ssgElectionId)
+    console.log('📊 RAW Ballot Response:', JSON.stringify(response, null, 2))
+    setBallotStats(response.data)
+  } catch (error) {
+    console.error("Error fetching ballot statistics:", error)
+    handleAPIError(error, 'Failed to load ballot statistics')
   }
+}
 
   const fetchCandidatesData = async () => {
     try {
@@ -263,39 +265,39 @@ export default function StatisticsPage() {
 
   // Calculate statistics from available data
   const getStatistics = () => {
-    const stats = {
-      totalVotes: 0,
-      turnoutRate: 0,
-      totalCandidates: 0,
-      totalPositions: 0,
-      totalBallots: 0,
-      submittedBallots: 0,
-      activeBallots: 0,
-      expiredBallots: 0
-    }
-
-    // From participation stats
-    if (participationStats) {
-      stats.totalVotes = participationStats.totalVoted || 0
-      stats.turnoutRate = participationStats.turnoutPercentage || 0
-    }
-
-    // From ballot stats
-    if (ballotStats) {
-      stats.totalBallots = ballotStats.total || 0
-      stats.submittedBallots = ballotStats.submitted || 0
-      stats.activeBallots = ballotStats.active || 0
-      stats.expiredBallots = ballotStats.expired || 0
-    }
-
-    // From candidates data
-    if (candidatesData) {
-      stats.totalCandidates = candidatesData.data?.candidates?.length || 0
-      stats.totalPositions = candidatesData.data?.positions?.length || 0
-    }
-
-    return stats
+  const stats = {
+    totalVotes: 0,
+    turnoutRate: 0,
+    totalCandidates: 0,
+    totalPositions: 0,
+    totalBallots: 0,
+    submittedBallots: 0,
+    activeBallots: 0,
+    expiredBallots: 0
   }
+
+  // From participation stats - data is at root level after spreading
+  if (participationStats) {
+    stats.totalVotes = participationStats.totalVoted || 0
+    stats.turnoutRate = participationStats.voterTurnoutRate || 0
+  }
+
+  // From ballot stats - data is nested under statistics
+  if (ballotStats?.statistics) {
+    stats.totalBallots = ballotStats.statistics.totalBallots || 0
+    stats.submittedBallots = ballotStats.statistics.submittedBallots || 0
+    stats.activeBallots = ballotStats.statistics.activeBallots || 0
+    stats.expiredBallots = ballotStats.statistics.expiredBallots || 0
+  }
+
+  // From candidates data
+  if (candidatesData?.data) {
+    stats.totalCandidates = candidatesData.data.candidates?.length || 0
+    stats.totalPositions = candidatesData.data.positions?.length || 0
+  }
+
+  return stats
+}
 
   // Transform data for charts
   const getPresidentData = () => {

@@ -161,14 +161,30 @@ ballotSchema.statics.cleanupExpiredBallots = async function() {
   }
 }
 
-// Corrected compound indexes
-ballotSchema.index({ voterId: 1, deptElectionId: 1 }, { unique: true, sparse: true })
-ballotSchema.index({ voterId: 1, ssgElectionId: 1 }, { unique: true, sparse: true })
+
+// ballotSchema.index({ voterId: 1, deptElectionId: 1 }, { unique: true, sparse: true })
+// ballotSchema.index({ voterId: 1, ssgElectionId: 1 }, { unique: true, sparse: true })
 ballotSchema.index({ deptElectionId: 1, isSubmitted: 1 })
 ballotSchema.index({ ssgElectionId: 1, isSubmitted: 1 })
-ballotSchema.index({ ballotCloseTime: 1, isSubmitted: 1 }) // For expired ballot cleanup
-ballotSchema.index({ timerStarted: 1, ballotOpenTime: 1 }) // For active ballot queries
+ballotSchema.index({ ballotCloseTime: 1, isSubmitted: 1 }) 
+ballotSchema.index({ timerStarted: 1, ballotOpenTime: 1 }) 
 ballotSchema.index({ ballotToken: 1 }, { unique: true })
+ballotSchema.index(
+  { voterId: 1, deptElectionId: 1 },
+  { 
+    unique: true, 
+    partialFilterExpression: { deptElectionId: { $type: 'objectId' } },
+    name: 'voterId_1_deptElectionId_1'
+  }
+)
+ballotSchema.index(
+  { voterId: 1, ssgElectionId: 1 },
+  { 
+    unique: true, 
+    partialFilterExpression: { ssgElectionId: { $type: 'objectId' } },
+    name: 'voterId_1_ssgElectionId_1'
+  }
+)
 
 // Ensure virtual fields are serialized
 ballotSchema.set('toJSON', { virtuals: true })

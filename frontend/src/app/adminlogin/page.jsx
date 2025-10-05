@@ -53,7 +53,7 @@ export default function AdminLogin() {
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <Image src="/logo.png" alt="Vote Icon" width={64} height={64} className="w-16 h-16" />
+            <Image src="/cpclogo.png" alt="Vote Icon" width={64} height={64} className="w-16 h-16" />
           </div>
           <h1 className="text-3xl font-bold text-blue-900 mb-2">Admin Portal</h1>
           <p className="text-gray-600 text-sm">Please login with your credentials</p>

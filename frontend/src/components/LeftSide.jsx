@@ -10,7 +10,7 @@ export default function LeftSide() {
       }}
     >
       <img
-        src="/logo.png"
+        src="/cpclogo.png"
         alt="Cordova Public College Logo"
         className="w-32 h-32 mb-4 sm:w-52 sm:h-52 md:mb-10 md:w-64 md:h-64 lg:w-72 lg:h-72 xl:w-96 xl:h-96 xl:-mt-30  rounded-full shadow-lg"
       />
