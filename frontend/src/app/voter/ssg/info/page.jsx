@@ -14,18 +14,18 @@ import {
   Users,
   Clock,
   Calendar,
-  CheckCircle,
   AlertCircle,
-  Info,
   Receipt,
   Download,
   LogOut,
-  X
+  X,
+  Trophy
 } from "lucide-react"
 
 export default function VoterSSGElectionInfoPage() {
   const [election, setElection] = useState(null)
   const [partylists, setPartylists] = useState([])
+  const [partylistLogos, setPartylistLogos] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [voter, setVoter] = useState(null)
@@ -34,7 +34,7 @@ export default function VoterSSGElectionInfoPage() {
   const [ballotStatus, setBallotStatus] = useState(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [showReceiptModal, setShowReceiptModal] = useState(false)
-  const [votingStatus, setVotingStatus] = useState(null)
+  const [receiptData, setReceiptData] = useState(null)
   const [loadingReceipt, setLoadingReceipt] = useState(false)
   
   const router = useRouter()
@@ -129,7 +129,30 @@ export default function VoterSSGElectionInfoPage() {
   const loadPartylistsData = async () => {
     try {
       const partylistsResponse = await partylistsAPI.voter.getBySSGElection(electionId)
-      setPartylists(partylistsResponse?.data?.partylists || partylistsResponse?.partylists || [])
+      const partylistsData = partylistsResponse?.data?.partylists || partylistsResponse?.partylists || []
+      setPartylists(partylistsData)
+      
+      const logoPromises = partylistsData.map(async (partylist) => {
+        if (partylist.logo || partylist.hasLogo) {
+          try {
+            const logoBlob = await partylistsAPI.voter.getLogo(partylist._id)
+            const logoUrl = URL.createObjectURL(logoBlob)
+            return { id: partylist._id, url: logoUrl }
+          } catch (error) {
+            console.error(`Error loading logo for ${partylist.partylistName}:`, error)
+            return { id: partylist._id, url: null }
+          }
+        }
+        return { id: partylist._id, url: null }
+      })
+      
+      const logos = await Promise.all(logoPromises)
+      const logoMap = {}
+      logos.forEach(({ id, url }) => {
+        if (url) logoMap[id] = url
+      })
+      setPartylistLogos(logoMap)
+      
     } catch (error) {
       console.error("Error loading partylists:", error)
       setPartylists([])
@@ -194,12 +217,16 @@ export default function VoterSSGElectionInfoPage() {
     }
   }
 
-  const handlePartylistClick = (partylist) => {
-    router.push(`/voter/ssg/partylist?id=${partylist._id}&electionId=${electionId}`)
+  const handlePartylistClick = () => {
+    router.push(`/voter/ssg/partylist?id=${electionId}`)
   }
 
   const handleBallotClick = () => {
     router.push(`/voter/ssg/ballot?id=${electionId}`)
+  }
+
+  const handleResultsClick = () => {
+    router.push(`/voter/ssg/result?id=${electionId}`)
   }
 
   const handleLogout = async () => {
@@ -234,10 +261,11 @@ export default function VoterSSGElectionInfoPage() {
     setShowReceiptModal(true)
     
     try {
-      const status = await electionParticipationAPI.getSSGVotingStatus(electionId)
-      setVotingStatus(status)
+      // Use the new endpoint that returns full voter details
+      const data = await electionParticipationAPI.getSSGVotingReceiptDetails(electionId)
+      setReceiptData(data)
     } catch (error) {
-      console.error("Error loading voting status:", error)
+      console.error("Error loading voting receipt:", error)
       Swal.fire({
         icon: 'error',
         title: 'Error',
@@ -265,7 +293,7 @@ export default function VoterSSGElectionInfoPage() {
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `SSG_Voting_Receipt_${voter?.schoolId}_${election?.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
+      link.download = `SSG_Voting_Receipt_${receiptData?.voter?.schoolId || 'voter'}_${election?.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -318,11 +346,9 @@ export default function VoterSSGElectionInfoPage() {
     }
   }
 
-  // Updated function to get button status message
   const getButtonStatusMessage = () => {
     if (!election || !ballotStatus) return { message: '', canVote: false, bgColor: 'bg-gray-500' }
 
-    // Check if voter has already voted
     if (participationStatus?.hasVoted) {
       return {
         message: 'You have already voted in this election. Thank you for participating!',
@@ -331,7 +357,6 @@ export default function VoterSSGElectionInfoPage() {
       }
     }
 
-    // Check if voter has participated
     if (!participationStatus?.hasParticipated) {
       return {
         message: 'You must confirm participation to vote in this election.',
@@ -345,7 +370,6 @@ export default function VoterSSGElectionInfoPage() {
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const electionDay = new Date(electionDate.getFullYear(), electionDate.getMonth(), electionDate.getDate())
 
-    // Election is upcoming (date is in the future)
     if (electionDay > today) {
       const daysUntil = Math.ceil((electionDay - today) / (1000 * 60 * 60 * 24))
       return {
@@ -355,9 +379,7 @@ export default function VoterSSGElectionInfoPage() {
       }
     }
 
-    // Election day is today
     if (electionDay.getTime() === today.getTime()) {
-      // Check ballot times
       if (election.ballotOpenTime && election.ballotCloseTime) {
         const [openHours, openMinutes] = election.ballotOpenTime.split(':').map(Number)
         const [closeHours, closeMinutes] = election.ballotCloseTime.split(':').map(Number)
@@ -368,7 +390,6 @@ export default function VoterSSGElectionInfoPage() {
         const closeDateTime = new Date(electionDate)
         closeDateTime.setHours(closeHours, closeMinutes, 0, 0)
 
-        // Before ballot open time
         if (now < openDateTime) {
           const timeDiff = openDateTime - now
           const hoursUntil = Math.floor(timeDiff / (1000 * 60 * 60))
@@ -380,7 +401,6 @@ export default function VoterSSGElectionInfoPage() {
           }
         }
 
-        // After ballot close time
         if (now > closeDateTime) {
           return {
             message: 'The election has ended.',
@@ -389,7 +409,6 @@ export default function VoterSSGElectionInfoPage() {
           }
         }
 
-        // Within ballot hours - can vote
         return {
           message: 'Ballot is now open. Click to vote!',
           canVote: true,
@@ -397,7 +416,6 @@ export default function VoterSSGElectionInfoPage() {
         }
       }
 
-      // No specific ballot times, can vote all day
       return {
         message: 'Ballot is now open. Click to vote!',
         canVote: true,
@@ -405,7 +423,6 @@ export default function VoterSSGElectionInfoPage() {
       }
     }
 
-    // Election date has passed
     if (election.status === 'completed' || electionDay < today) {
       return {
         message: 'The election has ended.',
@@ -414,7 +431,6 @@ export default function VoterSSGElectionInfoPage() {
       }
     }
 
-    // Default fallback
     return {
       message: 'Voting is not currently available.',
       canVote: false,
@@ -521,22 +537,29 @@ export default function VoterSSGElectionInfoPage() {
 
   return (
     <VoterLayout>
-      {/* Header with Logout and Receipt */}
+      {/* Responsive Header with Logout, Receipt, and Results */}
       <div className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/30 px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between">
-          <div className="flex items-center">
+          <div className="flex items-center min-w-0">
             <button
               onClick={() => router.push('/voter/ssg/elections')}
-              className="mr-3 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="mr-2 sm:mr-3 p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
             >
               <ArrowLeft className="w-5 h-5 text-[#001f65]" />
             </button>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-[#001f65]">{election?.title}</h1>
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-bold text-[#001f65] truncate">{election?.title}</h1>
               <p className="text-xs text-[#001f65]/70">Election Year {election?.electionYear}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={handleResultsClick}
+              className="p-2 text-[#001f65] hover:bg-blue-50 rounded-lg transition-colors border border-blue-200 bg-white/60 backdrop-blur-sm"
+              title="View Results"
+            >
+              <Trophy className="w-5 h-5" />
+            </button>
             <button
               onClick={handleOpenReceipt}
               className="p-2 text-[#001f65] hover:bg-blue-50 rounded-lg transition-colors border border-blue-200 bg-white/60 backdrop-blur-sm"
@@ -546,9 +569,9 @@ export default function VoterSSGElectionInfoPage() {
             </button>
             <button
               onClick={handleLogout}
-              className="flex items-center px-3 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50/80 rounded-lg transition-colors border border-red-200 bg-white/60 backdrop-blur-sm"
+              className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50/80 rounded-lg transition-colors border border-red-200 bg-white/60 backdrop-blur-sm"
             >
-              <LogOut className="w-4 h-4 mr-1 sm:mr-2" />
+              <LogOut className="w-4 h-4 mr-0 sm:mr-2" />
               <span className="hidden sm:inline">Logout</span>
             </button>
           </div>
@@ -559,28 +582,28 @@ export default function VoterSSGElectionInfoPage() {
       <div className="p-4 lg:p-6">
         <div className="min-h-[calc(100vh-120px)] max-w-6xl mx-auto">
 
-          {/* Election Info Banner */}
-          <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-8 mb-8 border border-white/20">
+          {/* Election Info Banner*/}
+          <div className="rounded-2xl p-6 sm:p-8 mb-8">
             <div className="text-center">
-              <h2 className="text-4xl font-bold text-white mb-6">{election?.title}</h2>
+              <h2 className="text-2xl sm:text-3xl font-bold text-[#001f65] mb-4">{election?.title}</h2>
               <div className="inline-block">
-                <div className={`px-6 py-3 rounded-full text-lg font-bold mb-6 ${
-                  ballotStatus?.status === 'open' ? 'bg-green-500/30 text-green-100' :
-                  ballotStatus?.status === 'scheduled' ? 'bg-yellow-500/30 text-yellow-100' :
-                  'bg-gray-500/30 text-gray-100'
+                <div className={`px-4 sm:px-6 py-2 sm:py-3 rounded-full text-base sm:text-lg font-bold mb-4 sm:mb-6 ${
+                  ballotStatus?.status === 'open' ? 'bg-green-500/20 text-green-700 border-2 border-green-500' :
+                  ballotStatus?.status === 'scheduled' ? 'bg-yellow-500/20 text-yellow-700 border-2 border-yellow-500' :
+                  'bg-gray-500/20 text-gray-700 border-2 border-gray-500'
                 }`}>
                   {election?.status}
                 </div>
               </div>
-              <div className="space-y-4 text-white/90 text-lg">
-                <div className="flex items-center justify-center">
+              <div className="space-y-3 sm:space-y-4 text-[#001f65] text-sm sm:text-base">
+                <div className="flex items-center justify-center flex-wrap">
                   <span className="font-semibold mr-2">Election ID:</span>
                   <span>{election?.ssgElectionId}</span>
                 </div>
-                <div className="flex items-center justify-center">
-                  <Calendar className="w-5 h-5 mr-2" />
+                <div className="flex items-center justify-center flex-wrap">
+                  <Calendar className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
                   <span className="font-semibold mr-2">Election Date:</span>
-                  <span>
+                  <span className="text-center">
                     {new Date(election?.electionDate).toLocaleDateString('en-US', {
                       year: 'numeric',
                       month: 'long',
@@ -590,8 +613,8 @@ export default function VoterSSGElectionInfoPage() {
                   </span>
                 </div>
                 {election?.ballotOpenTime && election?.ballotCloseTime && (
-                  <div className="flex items-center justify-center">
-                    <Clock className="w-5 h-5 mr-2" />
+                  <div className="flex items-center justify-center flex-wrap">
+                    <Clock className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
                     <span className="font-semibold mr-2">Ballot Hours:</span>
                     <span>
                       {formatTime(election.ballotOpenTime)} - {formatTime(election.ballotCloseTime)}
@@ -610,32 +633,42 @@ export default function VoterSSGElectionInfoPage() {
                 <p className="text-white/80">No partylists available for this election</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {partylists.map((partylist) => (
-                  <div
-                    key={partylist._id}
-                    onClick={() => handlePartylistClick(partylist)}
-                    className="bg-white/20 backdrop-blur-sm rounded-2xl p-6 hover:bg-white/30 transition-all duration-200 cursor-pointer group border border-white/20 shadow-lg"
-                  >
-                    <div className="aspect-square bg-white rounded-xl mb-4 overflow-hidden flex items-center justify-center">
-                      {partylist.logo ? (
-                        <img
-                          src={partylistsAPI.voter.getLogoUrl(partylist._id)}
-                          alt={partylist.partylistName}
-                          className="w-full h-full object-contain"
-                        />
-                      ) : (
-                        <Users className="w-16 h-16 text-gray-400" />
-                      )}
+              <div className="flex justify-center">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-2 w-full max-w-6xl">
+                  {partylists.map((partylist) => (
+                    <div
+                      key={partylist._id}
+                      onClick={handlePartylistClick}
+                      className="bg-white/20 backdrop-blur-sm rounded-2xl p-4 hover:bg-white/30 transition-all duration-200 cursor-pointer group border border-white/20 shadow-lg mx-auto w-full max-w-[280px]"
+                    >
+                      <div className="bg-white rounded-xl mb-3 overflow-hidden flex items-center justify-center"
+                          style={{ aspectRatio: '3/4', width: '100%' }}>
+                        {partylistLogos[partylist._id] ? (
+                          <img
+                            src={partylistLogos[partylist._id]}
+                            alt={partylist.partylistName}
+                            className="w-full h-full object-contain"
+                            onError={(e) => {
+                              e.target.style.display = 'none'
+                              e.target.nextSibling.style.display = 'flex'
+                            }}
+                          />
+                        ) : (
+                          <Users className="w-16 h-16 text-gray-400" />
+                        )}
+                        <div style={{ display: 'none' }} className="w-full h-full flex items-center justify-center">
+                          <Users className="w-16 h-16 text-gray-400" />
+                        </div>
+                      </div>
+                      <h3 className="text-lg font-bold text-white text-center mb-1">
+                        {partylist.partylistName}
+                      </h3>
+                      <p className="text-blue-100 text-xs text-center">
+                        Click to view details
+                      </p>
                     </div>
-                    <h3 className="text-xl font-bold text-white text-center mb-2">
-                      {partylist.partylistName}
-                    </h3>
-                    <p className="text-blue-100 text-sm text-center">
-                      Click to view details
-                    </p>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -645,15 +678,15 @@ export default function VoterSSGElectionInfoPage() {
             {buttonStatus.canVote ? (
               <button
                 onClick={handleBallotClick}
-                className="bg-gradient-to-r from-[#001f65] to-[#003399] hover:from-[#003399] hover:to-[#001f65] text-white px-12 py-4 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl font-bold text-lg flex items-center gap-3"
+                className="bg-gradient-to-r from-[#001f65] to-[#003399] hover:from-[#003399] hover:to-[#001f65] text-white px-8 sm:px-12 py-3 sm:py-4 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl font-bold text-base sm:text-lg flex items-center gap-2 sm:gap-3"
               >
-                <Vote className="w-6 h-6" />
+                <Vote className="w-5 h-5 sm:w-6 sm:h-6" />
                 Vote Now
               </button>
             ) : (
-              <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 text-center border border-white/20 max-w-2xl">
-                <Clock className="w-12 h-12 text-white/60 mx-auto mb-3" />
-                <p className="text-white font-medium text-lg">
+              <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 sm:p-6 text-center border border-white/20 max-w-2xl">
+                <Clock className="w-10 h-10 sm:w-12 sm:h-12 text-white/60 mx-auto mb-3" />
+                <p className="text-white font-medium text-base sm:text-lg">
                   {buttonStatus.message}
                 </p>
               </div>
@@ -663,10 +696,10 @@ export default function VoterSSGElectionInfoPage() {
         </div>
       </div>
 
-      {/* Receipt Modal */}
+      {/* Receipt Modal - Fixed with proper voter info display */}
       {showReceiptModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 relative">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 relative max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowReceiptModal(false)}
               className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -686,51 +719,75 @@ export default function VoterSSGElectionInfoPage() {
                 <Loader2 className="animate-spin rounded-full h-12 w-12 mx-auto text-[#001f65]" />
                 <p className="mt-4 text-gray-600">Loading receipt...</p>
               </div>
-            ) : votingStatus ? (
+            ) : receiptData ? (
               <div className="space-y-4">
                 <div className="bg-blue-50 rounded-xl p-4">
                   <h3 className="font-bold text-[#001f65] mb-3">Voter Information</h3>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-gray-600">Name:</span>
-                      <span className="font-medium">{voter?.firstName} {voter?.lastName}</span>
+                      <span className="font-medium text-right">
+                        {receiptData.voter?.fullName || 'N/A'}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">School ID:</span>
-                      <span className="font-medium">{voter?.schoolId}</span>
+                      <span className="font-medium">{receiptData.voter?.schoolId || 'N/A'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">Department:</span>
-                      <span className="font-medium">{voter?.department?.departmentCode || 'N/A'}</span>
+                      <span className="font-medium text-right">
+                        {receiptData.voter?.department?.departmentCode || 'N/A'}
+                      </span>
                     </div>
+                    {receiptData.voter?.department?.degreeProgram && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Program:</span>
+                        <span className="font-medium text-right text-xs">
+                          {receiptData.voter.department.degreeProgram}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div className={`rounded-xl p-4 ${votingStatus.hasVoted ? 'bg-green-50' : 'bg-gray-50'}`}>
-                  <h3 className={`font-bold mb-3 ${votingStatus.hasVoted ? 'text-green-800' : 'text-gray-800'}`}>
+                <div className={`rounded-xl p-4 ${receiptData.hasVoted ? 'bg-green-50' : 'bg-gray-50'}`}>
+                  <h3 className={`font-bold mb-3 ${receiptData.hasVoted ? 'text-green-800' : 'text-gray-800'}`}>
                     Voting Status
                   </h3>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">Status:</span>
-                      <span className={`font-bold ${votingStatus.hasVoted ? 'text-green-600' : 'text-gray-600'}`}>
-                        {votingStatus.hasVoted ? 'VOTED' : 'NOT VOTED'}
+                      <span className={`font-bold ${receiptData.hasVoted ? 'text-green-600' : 'text-gray-600'}`}>
+                        {receiptData.hasVoted ? 'VOTED' : 'NOT VOTED'}
                       </span>
                     </div>
-                    {votingStatus.hasVoted && votingStatus.submittedAt && (
+                    {receiptData.hasVoted && receiptData.submittedAt && (
                       <div className="flex justify-between">
                         <span className="text-gray-600">Voted At:</span>
-                        <span className="font-medium">{formatDateTime(votingStatus.submittedAt)}</span>
+                        <span className="font-medium text-right text-xs">
+                          {formatDateTime(receiptData.submittedAt)}
+                        </span>
+                      </div>
+                    )}
+                    {receiptData.hasVoted && receiptData.ballotToken && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Ballot Token:</span>
+                        <span className="font-mono text-xs bg-white px-2 py-1 rounded">
+                          {receiptData.ballotToken}
+                        </span>
                       </div>
                     )}
                     <div className="flex justify-between">
                       <span className="text-gray-600">Election:</span>
-                      <span className="font-medium">{election?.title}</span>
+                      <span className="font-medium text-right text-xs">
+                        {receiptData.electionTitle || election?.title}
+                      </span>
                     </div>
                   </div>
                 </div>
 
-                {votingStatus.hasVoted && (
+                {receiptData.hasVoted ? (
                   <button
                     onClick={handleDownloadReceipt}
                     className="w-full bg-[#001f65] hover:bg-[#003399] text-white px-6 py-3 rounded-lg transition-colors font-medium flex items-center justify-center gap-2"
@@ -738,12 +795,18 @@ export default function VoterSSGElectionInfoPage() {
                     <Download className="w-5 h-5" />
                     Download Receipt (PDF)
                   </button>
+                ) : (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                    <p className="text-yellow-800 text-sm">
+                      You haven't voted in this election yet. Vote to generate your receipt.
+                    </p>
+                  </div>
                 )}
               </div>
             ) : (
               <div className="text-center py-8">
                 <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
-                <p className="text-gray-600">Failed to load voting status</p>
+                <p className="text-gray-600">Failed to load voting receipt</p>
               </div>
             )}
           </div>

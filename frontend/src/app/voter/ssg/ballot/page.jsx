@@ -15,7 +15,8 @@ import {
   CheckCircle,
   Loader2,
   User,
-  X
+  X,
+  ArrowLeft
 } from "lucide-react"
 
 export default function SSGVoterBallotPage() {
@@ -48,67 +49,63 @@ export default function SSGVoterBallotPage() {
   }, [electionId])
 
   const initializeBallot = async () => {
-  try {
-    setLoading(true)
+    try {
+      setLoading(true)
 
-    // Check ballot status
-    const statusResponse = await ballotAPI.voter.getVoterSelectedSSGBallotStatus(electionId)
-    
-    if (statusResponse.hasVoted) {
-      await showVotingReceipt()
-      return
-    }
+      const statusResponse = await ballotAPI.voter.getVoterSelectedSSGBallotStatus(electionId)
+      
+      if (statusResponse.hasVoted) {
+        await showVotingReceipt()
+        return
+      }
 
-    if (!statusResponse.canVote) {
+      if (!statusResponse.canVote) {
+        Swal.fire({
+          icon: 'info',
+          title: 'Cannot Vote',
+          text: statusResponse.voterEligibility?.message || 'You cannot vote at this time.',
+          confirmButtonColor: '#001f65'
+        }).then(() => {
+          router.push(`/voter/ssg/info?id=${electionId}`)
+        })
+        return
+      }
+
+      const startResponse = await ballotAPI.voter.startSSGBallot(electionId)
+      const ballotData = startResponse.ballot
+
+      setBallot(ballotData)
+      setElection(statusResponse.election)
+
+      const previewResponse = await ballotAPI.voter.previewSSGBallot(electionId)
+      setPositions(previewResponse.ballot)
+
+      if (ballotData.ballotCloseTime) {
+        const closeTime = new Date(ballotData.ballotCloseTime)
+        const now = new Date()
+        
+        if (closeTime < now) {
+          handleTimeExpired()
+          return
+        }
+        
+        startTimer(closeTime)
+      }
+
+    } catch (error) {
+      console.error('Error initializing ballot:', error)
       Swal.fire({
-        icon: 'info',
-        title: 'Cannot Vote',
-        text: statusResponse.voterEligibility?.message || 'You cannot vote at this time.',
+        icon: 'error',
+        title: 'Error',
+        text: error.response?.data?.message || 'Failed to load ballot. Please try again.',
         confirmButtonColor: '#001f65'
       }).then(() => {
         router.push(`/voter/ssg/info?id=${electionId}`)
       })
-      return
+    } finally {
+      setLoading(false)
     }
-
-    // Let the backend handle expired ballots - just start/continue ballot
-    const startResponse = await ballotAPI.voter.startSSGBallot(electionId)
-    const ballotData = startResponse.ballot
-
-    setBallot(ballotData)
-    setElection(statusResponse.election)
-
-    // Get ballot preview with candidates
-    const previewResponse = await ballotAPI.previewSSGBallot(electionId)
-    setPositions(previewResponse.ballot)
-
-    // Start timer if ballot has close time
-    if (ballotData.ballotCloseTime) {
-      const closeTime = new Date(ballotData.ballotCloseTime)
-      const now = new Date()
-      
-      if (closeTime < now) {
-        handleTimeExpired()
-        return
-      }
-      
-      startTimer(closeTime)
-    }
-
-  } catch (error) {
-    console.error('Error initializing ballot:', error)
-    Swal.fire({
-      icon: 'error',
-      title: 'Error',
-      text: error.response?.data?.message || 'Failed to load ballot. Please try again.',
-      confirmButtonColor: '#001f65'
-    }).then(() => {
-      router.push(`/voter/ssg/info?id=${electionId}`)
-    })
-  } finally {
-    setLoading(false)
   }
-}
 
   const startTimer = (closeTime) => {
     const updateTimer = () => {
@@ -148,10 +145,64 @@ export default function SSGVoterBallotPage() {
 
   const handleCandidateSelect = (candidateId) => {
     const currentPosition = positions[currentPositionIndex]
-    setSelectedVotes(prev => ({
-      ...prev,
-      [currentPosition.position._id]: candidateId
-    }))
+    const positionId = currentPosition.position._id
+    const maxVotes = currentPosition.position.maxVotes || 1
+
+    if (maxVotes > 1) {
+      // Multiple selection (e.g., senators)
+      const currentVotes = Object.entries(selectedVotes)
+        .filter(([key]) => key.startsWith(positionId))
+        .map(([_, value]) => value)
+
+      if (currentVotes.includes(candidateId)) {
+        // Remove vote
+        const newVotes = { ...selectedVotes }
+        const voteKey = Object.keys(newVotes).find(
+          key => newVotes[key] === candidateId && key.startsWith(positionId)
+        )
+        delete newVotes[voteKey]
+        setSelectedVotes(newVotes)
+      } else if (currentVotes.length < maxVotes) {
+        // Add vote
+        const voteKey = `${positionId}_${Date.now()}`
+        setSelectedVotes({
+          ...selectedVotes,
+          [voteKey]: candidateId
+        })
+      } else {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Maximum Selections Reached',
+          text: `You can only select up to ${maxVotes} candidates for this position.`,
+          confirmButtonColor: '#001f65'
+        })
+      }
+    } else {
+      // Single selection
+      setSelectedVotes({
+        ...selectedVotes,
+        [positionId]: candidateId
+      })
+    }
+  }
+
+  const isSelected = (candidateId) => {
+    const currentPosition = positions[currentPositionIndex]
+    const positionId = currentPosition.position._id
+    const maxVotes = currentPosition.position.maxVotes || 1
+
+    if (maxVotes > 1) {
+      return Object.values(selectedVotes).includes(candidateId)
+    }
+    return selectedVotes[positionId] === candidateId
+  }
+
+  const getSelectionCount = () => {
+    const currentPosition = positions[currentPositionIndex]
+    const positionId = currentPosition.position._id
+    return Object.values(selectedVotes).filter((vote) =>
+      currentPosition.candidates.some((c) => c._id === vote)
+    ).length
   }
 
   const handleNext = () => {
@@ -167,9 +218,8 @@ export default function SSGVoterBallotPage() {
   }
 
   const handleSubmit = async () => {
-    // Check if all positions have votes
     const unvotedPositions = positions.filter(
-      pos => !selectedVotes[pos.position._id]
+      pos => !Object.keys(selectedVotes).some(key => key.startsWith(pos.position._id))
     )
 
     if (unvotedPositions.length > 0) {
@@ -203,14 +253,23 @@ export default function SSGVoterBallotPage() {
     try {
       setSubmitting(true)
 
-      const votes = Object.entries(selectedVotes).map(([positionId, candidateId]) => ({
-        positionId,
-        candidateId
-      }))
+      const votes = []
+      positions.forEach(posData => {
+        const positionId = posData.position._id
+        const maxVotes = posData.position.maxVotes || 1
+
+        if (maxVotes > 1) {
+          Object.entries(selectedVotes)
+            .filter(([key]) => key.startsWith(positionId))
+            .forEach(([_, candidateId]) => {
+              votes.push({ positionId, candidateId })
+            })
+        } else if (selectedVotes[positionId]) {
+          votes.push({ positionId, candidateId: selectedVotes[positionId] })
+        }
+      })
 
       await ballotAPI.voter.submitSelectedSSGBallot(ballot._id, votes)
-
-      // Show voting receipt
       await showVotingReceipt()
 
     } catch (error) {
@@ -259,9 +318,7 @@ export default function SSGVoterBallotPage() {
     }
   }
 
-  // Helper function to get campaign picture URL
   const getCampaignPictureUrl = (candidate) => {
-    // Check if campaign picture data is embedded in candidate object
     if (candidate.campaignPicture) {
       if (candidate.campaignPicture.startsWith('data:')) {
         return candidate.campaignPicture
@@ -269,8 +326,6 @@ export default function SSGVoterBallotPage() {
         return `data:image/jpeg;base64,${candidate.campaignPicture}`
       }
     }
-    
-    // Fall back to API URL if no embedded data
     return candidatesAPI.voter.getCampaignPictureUrl(candidate._id)
   }
 
@@ -308,130 +363,179 @@ export default function SSGVoterBallotPage() {
   }
 
   const currentPosition = positions[currentPositionIndex]
-  const currentVote = selectedVotes[currentPosition.position._id]
+  const maxVotes = currentPosition.position.maxVotes || 1
+  const selectionCount = getSelectionCount()
 
   return (
     <VoterLayout>
-      {/* Header with Timer */}
-      <div className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/30 px-4 sm:px-6 py-4 sticky top-0 z-10">
-        <div className="flex items-center justify-between max-w-6xl mx-auto">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-[#001f65]">
-              {election?.title || 'SSG GENERAL ELECTION 2025'}
-            </h1>
-            <p className="text-sm text-gray-600">Cast your vote carefully</p>
-          </div>
-          <div className="flex items-center gap-4">
-            {timeRemaining !== null && (
-              <div className={`flex items-center gap-2 px-4 py-2 rounded-lg ${
-                timeRemaining < 60 ? 'bg-red-100 text-red-800' :
-                timeRemaining < 300 ? 'bg-yellow-100 text-yellow-800' :
-                'bg-green-100 text-green-800'
-              }`}>
-                <Clock className="w-5 h-5" />
-                <span className="font-mono font-bold text-lg">
-                  {formatTime(timeRemaining)}
-                </span>
-              </div>
-            )}
-          </div>
+      {/* Transparent Navbar with Back Button and Timer */}
+      <div className="fixed top-0 left-0 right-0 z-50 px-4 sm:px-6 py-4">
+        <div className="flex items-center justify-between max-w-7xl mx-auto">
+          <button
+            onClick={() => router.push(`/voter/ssg/info?id=${electionId}`)}
+            className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white rounded-lg transition-colors border border-white/30"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span className="hidden sm:inline">Back</span>
+          </button>
+          
+          {timeRemaining !== null && (
+            <div className={`flex items-center gap-2 px-4 py-2 rounded-lg backdrop-blur-md border ${
+              timeRemaining < 60 ? 'bg-red-500/90 text-white border-red-400' :
+              timeRemaining < 300 ? 'bg-yellow-500/90 text-white border-yellow-400' :
+              'bg-green-500/90 text-white border-green-400'
+            }`}>
+              <Clock className="w-5 h-5" />
+              <span className="font-mono font-bold text-lg">
+                {formatTime(timeRemaining)}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Main Ballot Content */}
-      <div className="p-4 lg:p-6">
-        <div className="max-w-6xl mx-auto">
+      {/* Main Content */}
+      <div className="pt-20 pb-6 px-4 lg:px-6">
+        <div className="max-w-7xl mx-auto">
           
-          {/* Position Header */}
-          <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-white/20">
-            <h2 className="text-3xl font-bold text-white text-center mb-2">
+          {/* Header with Logos and Election Title */}
+          <div className="relative mb-4 text-center">
+            <div className="flex items-center justify-center gap-4 mb-4">
+              <img 
+                src="/ssglogo.jpg" 
+                alt="SSG Logo" 
+                className="w-16 h-16 sm:w-20 sm:h-20 object-contain"
+                onError={(e) => e.target.style.display = 'none'}
+              />
+              <div>
+                <h1 className="text-3xl sm:text-4xl font-bold text-white">
+                  {election?.title || 'SSG GENERAL ELECTION 2025'}
+                </h1>
+                {election?.electionDate && (
+                  <p className="text-white/90 text-lg mt-2">
+                    {new Date(election.electionDate).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </p>
+                )}
+              </div>
+              <img 
+                src="/cpclogo.png" 
+                alt="CPC Logo" 
+                className="w-16 h-16 sm:w-20 sm:h-20 object-contain rounded-full"
+                onError={(e) => e.target.style.display = 'none'}
+              />
+            </div>
+            
+            {/* Position Name - Below election title, no background */}
+            <h2 className="text-2xl sm:text-3xl font-bold text-white mt-4">
               {currentPosition.position.positionName}
             </h2>
-            <p className="text-white/80 text-center">
-              Select one candidate for this position
+            <p className="text-white/80 text-base sm:text-lg mt-2">
+              {maxVotes > 1 
+                ? `Select up to ${maxVotes} candidates (${selectionCount}/${maxVotes} selected)`
+                : 'Select one candidate for this position'
+              }
             </p>
           </div>
 
-          {/* Candidates Grid with Navigation */}
-          <div className="relative">
-            {/* Left Arrow */}
+          {/* Sticky Navigation Arrows */}
+          <div className="fixed top-1/2 left-4 z-40 transform -translate-y-1/2">
             {currentPositionIndex > 0 && (
               <button
                 onClick={handlePrevious}
-                className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-16 z-10 bg-[#001f65] hover:bg-[#003399] text-white p-4 rounded-full shadow-lg transition-all duration-200"
+                className="p-4 bg-[#001f65]/90 hover:bg-[#001f65] rounded-full text-white transition-all duration-200 shadow-lg backdrop-blur-sm"
+                aria-label="Previous position"
               >
-                <ChevronLeft className="w-6 h-6" />
+                <ChevronLeft className="w-8 h-8" />
               </button>
             )}
+          </div>
 
-            {/* Candidates */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 px-4">
+          <div className="fixed top-1/2 right-4 z-40 transform -translate-y-1/2">
+            {currentPositionIndex < positions.length - 1 && (
+              <button
+                onClick={handleNext}
+                className="p-4 bg-[#001f65]/90 hover:bg-[#001f65] rounded-full text-white transition-all duration-200 shadow-lg backdrop-blur-sm"
+                aria-label="Next position"
+              >
+                <ChevronRight className="w-8 h-8" />
+              </button>
+            )}
+          </div>
+
+          {/* Candidates Grid */}
+          <div className="flex justify-center mb-8 px-4">
+            <div className={`grid gap-8 justify-items-center ${
+              currentPosition.candidates.length === 1
+                ? 'grid-cols-1'
+                : currentPosition.candidates.length === 2
+                ? 'grid-cols-1 sm:grid-cols-2 max-w-4xl'
+                : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 max-w-7xl'
+            }`}>
               {currentPosition.candidates.map((candidate) => {
-                const isSelected = currentVote === candidate._id
+                const selected = isSelected(candidate._id)
                 
                 return (
                   <div
                     key={candidate._id}
                     onClick={() => handleCandidateSelect(candidate._id)}
-                    className={`bg-white/95 backdrop-blur-sm rounded-2xl p-6 cursor-pointer transition-all duration-200 border-2 ${
-                      isSelected 
-                        ? 'border-[#001f65] shadow-xl scale-105' 
-                        : 'border-white/20 hover:border-blue-300 hover:shadow-lg'
+                    className={`relative cursor-pointer transition-all duration-300 w-full max-w-[320px] rounded-lg overflow-hidden ${
+                      selected
+                        ? 'ring-4 ring-white shadow-2xl scale-105'
+                        : 'shadow-lg hover:shadow-xl hover:scale-102'
                     }`}
                   >
-                    {/* Campaign Picture */}
-                    <div className="aspect-square bg-gray-200 rounded-xl mb-4 overflow-hidden flex items-center justify-center">
-                      {candidate.hasCampaignPicture ? (
-                        <img
-                          src={getCampaignPictureUrl(candidate)}
-                          alt={candidate.name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.target.style.display = 'none'
-                            e.target.nextElementSibling.style.display = 'flex'
-                          }}
-                        />
-                      ) : null}
-                      <User className={`w-20 h-20 text-gray-400 ${candidate.hasCampaignPicture ? 'hidden' : 'flex'}`} />
-                    </div>
-
-                    {/* Candidate Info */}
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-[#001f65] mb-1">
-                        {candidate.candidateNumber}
+                    <div className={`h-full flex flex-col transition-all duration-300 ${
+                      selected ? 'bg-[#001f65]' : 'bg-white'
+                    }`}>
+                      
+                      {/* Image Container */}
+                      <div className="relative w-full h-75 bg-gray-200 overflow-hidden flex-shrink-0">
+                        {candidate.hasCampaignPicture ? (
+                          <img
+                            src={getCampaignPictureUrl(candidate)}
+                            alt={candidate.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.target.style.display = 'none'
+                              e.target.nextElementSibling.style.display = 'flex'
+                            }}
+                          />
+                        ) : null}
+                        <div className={`w-full h-full flex items-center justify-center ${candidate.hasCampaignPicture ? 'hidden' : 'flex'}`}>
+                          <User className="w-24 h-24 text-gray-400" />
+                        </div>
+                        
+                        {selected && (
+                          <div className="absolute top-3 right-3 w-10 h-10 bg-white rounded-full flex items-center justify-center z-30 shadow-lg">
+                            <CheckCircle className="w-6 h-6 text-[#001f65] font-bold stroke-[3]" />
+                          </div>
+                        )}
                       </div>
-                      <h3 className="text-xl font-bold text-gray-800 mb-1">
-                        {candidate.name}
-                      </h3>
-                      <p className="text-sm text-gray-600 mb-2">
-                        {candidate.partylist}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {candidate.department} • {candidate.college}
-                      </p>
-                    </div>
 
-                    {/* Selection Indicator */}
-                    {isSelected && (
-                      <div className="mt-4 flex items-center justify-center text-[#001f65]">
-                        <CheckCircle className="w-6 h-6 mr-2" />
-                        <span className="font-bold">Selected</span>
+                      {/* Candidate Info */}
+                      <div className="flex-1 p-5 text-center flex flex-col justify-end">
+                        <div className={`-mx-5 -mb-5 p-4 transition-all duration-300 ${
+                          selected
+                            ? 'bg-[#001f65] text-white'
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}>
+                          <p className="text-base font-bold">
+                            {candidate.candidateNumber}. {candidate.name}
+                          </p>
+                          <p className="text-sm opacity-90 mt-1">
+                            {candidate.partylist || 'Independent'}
+                          </p>
+                        </div>
                       </div>
-                    )}
+                    </div>
                   </div>
                 )
               })}
             </div>
-
-            {/* Right Arrow */}
-            {currentPositionIndex < positions.length - 1 && (
-              <button
-                onClick={handleNext}
-                className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-16 z-10 bg-[#001f65] hover:bg-[#003399] text-white p-4 rounded-full shadow-lg transition-all duration-200"
-              >
-                <ChevronRight className="w-6 h-6" />
-              </button>
-            )}
           </div>
 
           {/* Position Progress */}
@@ -441,7 +545,7 @@ export default function SSGVoterBallotPage() {
             </p>
             <div className="mt-2 w-full max-w-md mx-auto bg-white/20 rounded-full h-2">
               <div 
-                className="bg-[#001f65] h-2 rounded-full transition-all duration-300"
+                className="bg-white h-2 rounded-full transition-all duration-300"
                 style={{ width: `${((currentPositionIndex + 1) / positions.length) * 100}%` }}
               />
             </div>

@@ -183,8 +183,27 @@ export const partylistsAPI = {
       } catch (error) {
         throw error.response?.data || error.message
       }
+    },
+
+    getWithCandidates: async (id) => {
+    try {
+      const response = await api.get(`/partylists/voter/${id}`)
+      return response.data
+    } catch (error) {
+      throw error.response?.data || error.message
     }
   },
+
+  getCredentials: async (id) => {
+    const response = await api.get(`/candidates/voter/${id}/credentials`, {
+      responseType: 'blob'
+    })
+    return response.data
+  }
+
+  },
+
+
 
   // ==================== UTILITY FUNCTIONS (UNCHANGED) ====================
 

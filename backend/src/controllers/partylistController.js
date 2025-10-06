@@ -146,51 +146,73 @@ class PartylistController {
   }
 
   // Get single partylist
-  static async getPartylist(req, res, next) {
-    try {
-      const { id } = req.params
+static async getPartylist(req, res, next) {
+  try {
+    const { id } = req.params
+    const isVoterRoute = req.path.includes('/voter/')
 
-      const partylist = await Partylist.findById(id)
-        .populate("ssgElectionId", "title ssgElectionId electionYear status electionDate")
+    const partylist = await Partylist.findById(id)
+      .populate("ssgElectionId", "title ssgElectionId electionYear status electionDate")
 
-      if (!partylist) {
-        const error = new Error("Partylist not found")
-        error.statusCode = 404
-        return next(error)
-      }
+    if (!partylist) {
+      const error = new Error("Partylist not found")
+      error.statusCode = 404
+      return next(error)
+    }
 
-      // Get candidates for this partylist
-      const candidates = await Candidate.find({ 
-        partylistId: id,
-        isActive: true
-      })
-        .populate("voterId", "firstName middleName lastName schoolId departmentId yearLevel")
-        .populate("positionId", "positionName positionOrder")
-        .sort({ candidateNumber: 1 })
+    // Get candidates for this partylist
+    const candidates = await Candidate.find({ 
+      partylistId: id,
+      isActive: true
+    })
+      .populate("voterId", "firstName middleName lastName schoolId")
+      .populate("positionId", "positionName positionOrder")
+      .select('_id candidateNumber voterId positionId credentials')
+      .sort({ 'positionId.positionOrder': 1, candidateNumber: 1 })
 
-      // Calculate statistics
-      const totalVotes = candidates.reduce((sum, candidate) => sum + (candidate.voteCount || 0), 0)
+    // Format candidates without exposing buffer data
+    const formattedCandidates = candidates.map(candidate => ({
+      _id: candidate._id,
+      candidateNumber: candidate.candidateNumber,
+      name: `${candidate.voterId.firstName} ${candidate.voterId.middleName || ''} ${candidate.voterId.lastName}`.trim(),
+      schoolId: candidate.voterId.schoolId,
+      position: candidate.positionId.positionName,
+      positionOrder: candidate.positionId.positionOrder,
+      hasCredentials: !!candidate.credentials && candidate.credentials.length > 0
+    }))
 
+    const responseData = {
+      ...partylist.toObject(),
+      logo: undefined,
+      platform: undefined,
+      hasLogo: !!partylist.logo && partylist.logo.length > 0,
+      hasPlatform: !!partylist.platform && partylist.platform.length > 0,
+      candidates: formattedCandidates,
+      candidateCount: formattedCandidates.length
+    }
+
+    // FIXED: Proper audit logging
+    if (isVoterRoute && req.user?.voterId) {
+      await AuditLog.logVoterAction(
+        "SYSTEM_ACCESS",
+        { _id: req.user.voterId, schoolId: req.user.schoolId },
+        `Retrieved partylist: ${partylist.partylistName} (${partylist.partylistId})`,
+        req
+      )
+    } else if (req.user) {
       await AuditLog.logUserAction(
         "SYSTEM_ACCESS",
         req.user,
         `Retrieved partylist: ${partylist.partylistName} (${partylist.partylistId})`,
         req
       )
-
-      res.json({
-        partylist,
-        candidates,
-        statistics: {
-          candidateCount: candidates.length,
-          totalVotes,
-          averageVotesPerCandidate: candidates.length > 0 ? (totalVotes / candidates.length).toFixed(2) : 0
-        }
-      })
-    } catch (error) {
-      next(error)
     }
+
+    res.json(responseData)
+  } catch (error) {
+    next(error)
   }
+}
 
   // Get partylist logo
   static async getPartylistLogo(req, res, next) {

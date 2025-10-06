@@ -26,6 +26,7 @@ router.put("/user/departmental/position/:positionId/year-restriction", authorize
 // ==================== VOTER ROUTES - SSG BALLOTS ====================
 router.use('/voter/ssg', voterAuthMiddleware)
 
+router.get("/voter/ssg/:electionId/preview", BallotController.previewSSGBallot)
 router.get("/voter/ssg/:electionId/voter-status", BallotController.getVoterSelectedSSGBallotStatus)
 router.get("/voter/ssg/ballot/:ballotId/votes", BallotController.getSelectedSSGBallotWithVotes)
 router.post("/voter/ssg/start", BallotController.startSSGBallot)

@@ -134,7 +134,12 @@ export const ballotAPI = {
     startDepartmentalBallot: async (electionId, positionId) => {
       const response = await api.post('/ballots/voter/departmental/start', { electionId, positionId })
       return response.data
-    }
+    },
+
+    previewSSGBallot: async (electionId) => {
+      const response = await api.get(`/ballots/voter/ssg/${electionId}/preview`)
+      return response.data
+    } 
   },
 
   // ==================== UTILITY FUNCTIONS (UNCHANGED) ====================

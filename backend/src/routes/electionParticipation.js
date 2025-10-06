@@ -14,6 +14,8 @@ router.get("/voter/receipt/ssg/:ssgElectionId", ElectionParticipationController.
 router.get("/voter/receipt/departmental/:deptElectionId", ElectionParticipationController.getDepartmentalVotingReceipt)
 router.get("/voter/receipt/ssg/:ssgElectionId/pdf", ElectionParticipationController.exportSSGVotingReceiptPDF)
 router.get("/voter/receipt/departmental/:deptElectionId/pdf", ElectionParticipationController.exportDepartmentalVotingReceiptPDF)
+router.get("/voter/receipt/ssg/:ssgElectionId/details", ElectionParticipationController.getSSGVotingReceiptDetails)
+router.get("/voter/receipt/departmental/:deptElectionId/details", ElectionParticipationController.getDepartmentalVotingReceiptDetails)
 
 router.use('/user', authMiddleware)
 router.get("/user/participants/ssg/:ssgElectionId", authorizeRoles("election_committee", "sao"), ElectionParticipationController.getSSGParticipants)

@@ -1310,6 +1310,127 @@ static async exportDepartmentalVotingReceiptPDF(req, res, next) {
   }
 }
 
+// Get voter's complete voting receipt with full details for SSG election
+static async getSSGVotingReceiptDetails(req, res, next) {
+  try {
+    const { ssgElectionId } = req.params
+    const voterId = req.user.voterId
+
+    const receipt = await ElectionParticipation.generateVotingReceipt(
+      voterId, 
+      ssgElectionId, 
+      'ssg'
+    )
+
+    // Get election info
+    const ssgElection = await SSGElection.findById(ssgElectionId, 'title electionDate status electionYear')
+    if (!ssgElection) {
+      return res.status(404).json({ message: "SSG Election not found" })
+    }
+
+    // Get FULL voter info with populated department
+    const voter = await Voter.findById(voterId)
+      .select('schoolId firstName middleName lastName')
+      .populate('departmentId', 'departmentCode degreeProgram college')
+
+    if (!voter) {
+      return res.status(404).json({ message: "Voter not found" })
+    }
+
+    res.json({
+      electionId: ssgElectionId,
+      electionTitle: ssgElection.title,
+      electionYear: ssgElection.electionYear,
+      electionDate: ssgElection.electionDate,
+      electionType: "SSG",
+      hasVoted: receipt.hasVoted,
+      votingStatus: receipt.hasVoted ? 'voted' : 'not_voted',
+      submittedAt: receipt.submittedAt || null,
+      ballotToken: receipt.ballotToken || null,
+      totalVotes: receipt.totalVotes || 0,
+      reason: receipt.reason || null,
+      voter: {
+        schoolId: voter.schoolId,
+        firstName: voter.firstName,
+        middleName: voter.middleName,
+        lastName: voter.lastName,
+        fullName: voter.middleName 
+          ? `${voter.firstName} ${voter.middleName} ${voter.lastName}`
+          : `${voter.firstName} ${voter.lastName}`,
+        department: voter.departmentId ? {
+          departmentCode: voter.departmentId.departmentCode,
+          degreeProgram: voter.departmentId.degreeProgram,
+          college: voter.departmentId.college
+        } : null
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// Get voter's complete voting receipt with full details for Departmental election
+static async getDepartmentalVotingReceiptDetails(req, res, next) {
+  try {
+    const { deptElectionId } = req.params
+    const voterId = req.user.voterId
+
+    const receipt = await ElectionParticipation.generateVotingReceipt(
+      voterId, 
+      deptElectionId, 
+      'departmental'
+    )
+
+    // Get election info
+    const deptElection = await DepartmentalElection.findById(deptElectionId, 'title electionDate status electionYear')
+      .populate('departmentId', 'departmentCode degreeProgram college')
+    if (!deptElection) {
+      return res.status(404).json({ message: "Departmental Election not found" })
+    }
+
+    // Get FULL voter info with populated department
+    const voter = await Voter.findById(voterId)
+      .select('schoolId firstName middleName lastName isClassOfficer')
+      .populate('departmentId', 'departmentCode degreeProgram college')
+
+    if (!voter) {
+      return res.status(404).json({ message: "Voter not found" })
+    }
+
+    res.json({
+      electionId: deptElectionId,
+      electionTitle: deptElection.title,
+      electionYear: deptElection.electionYear,
+      electionDate: deptElection.electionDate,
+      electionType: "DEPARTMENTAL",
+      department: deptElection.departmentId,
+      hasVoted: receipt.hasVoted,
+      votingStatus: receipt.hasVoted ? 'voted' : 'not_voted',
+      submittedAt: receipt.submittedAt || null,
+      ballotToken: receipt.ballotToken || null,
+      totalVotes: receipt.totalVotes || 0,
+      reason: receipt.reason || null,
+      voter: {
+        schoolId: voter.schoolId,
+        firstName: voter.firstName,
+        middleName: voter.middleName,
+        lastName: voter.lastName,
+        fullName: voter.middleName 
+          ? `${voter.firstName} ${voter.middleName} ${voter.lastName}`
+          : `${voter.firstName} ${voter.lastName}`,
+        isClassOfficer: voter.isClassOfficer,
+        department: voter.departmentId ? {
+          departmentCode: voter.departmentId.departmentCode,
+          degreeProgram: voter.departmentId.degreeProgram,
+          college: voter.departmentId.college
+        } : null
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
 }
 
 module.exports = ElectionParticipationController

@@ -281,15 +281,48 @@ exportDepartmentalVotingReceiptPDF: async (deptElectionId) => {
   }
 },
 
-// Update the ssg and departmental convenience methods by adding:
+// Get SSG voting receipt with full voter details
+getSSGVotingReceiptDetails: async (ssgElectionId) => {
+  try {
+    const response = await api.get(`/election-participation/voter/receipt/ssg/${ssgElectionId}/details`)
+    return response.data
+  } catch (error) {
+    console.error('Error fetching SSG voting receipt details:', error)
+    throw error
+  }
+},
+
+// Get Departmental voting receipt with full voter details
+getDepartmentalVotingReceiptDetails: async (deptElectionId) => {
+  try {
+    const response = await api.get(`/election-participation/voter/receipt/departmental/${deptElectionId}/details`)
+    return response.data
+  } catch (error) {
+    console.error('Error fetching Departmental voting receipt details:', error)
+    throw error
+  }
+},
+
 ssg: {
-  // ... existing methods
+  confirmParticipation: (electionId) => electionParticipationAPI.confirmSSGParticipation(electionId),
+  checkStatus: (electionId) => electionParticipationAPI.checkSSGStatus(electionId),
+  getReceipt: (electionId) => electionParticipationAPI.getSSGVotingReceipt(electionId),
+  getReceiptDetails: (electionId) => electionParticipationAPI.getSSGVotingReceiptDetails(electionId), // NEW
+  getParticipants: (electionId, params) => electionParticipationAPI.getSSGParticipants(electionId, params),
+  getStatistics: (electionId) => electionParticipationAPI.getSSGStatistics(electionId),
+  exportPDF: (electionId, params) => electionParticipationAPI.exportSSGParticipantsPDF(electionId, params),
   getVotingStatus: (electionId) => electionParticipationAPI.getSSGVotingStatus(electionId),
   exportReceiptPDF: (electionId) => electionParticipationAPI.exportSSGVotingReceiptPDF(electionId)
 },
 
 departmental: {
-  // ... existing methods  
+  confirmParticipation: (electionId) => electionParticipationAPI.confirmDepartmentalParticipation(electionId),
+  checkStatus: (electionId) => electionParticipationAPI.checkDepartmentalStatus(electionId),
+  getReceipt: (electionId) => electionParticipationAPI.getDepartmentalVotingReceipt(electionId),
+  getReceiptDetails: (electionId) => electionParticipationAPI.getDepartmentalVotingReceiptDetails(electionId), // NEW
+  getParticipants: (electionId, params) => electionParticipationAPI.getDepartmentalParticipants(electionId, params),
+  getStatistics: (electionId) => electionParticipationAPI.getDepartmentalStatistics(electionId),
+  exportPDF: (electionId, params) => electionParticipationAPI.exportDepartmentalParticipantsPDF(electionId, params),
   getVotingStatus: (electionId) => electionParticipationAPI.getDepartmentalVotingStatus(electionId),
   exportReceiptPDF: (electionId) => electionParticipationAPI.exportDepartmentalVotingReceiptPDF(electionId)
 },

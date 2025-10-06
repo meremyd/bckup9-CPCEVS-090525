@@ -790,7 +790,7 @@ export default function DepartmentalBallotPage() {
             {/* College Logo */}
             <div className="absolute top-16 right-4 w-20 h-20 bg-white rounded-full flex items-center justify-center z-10">
               <img
-                src="/logo.png"
+                src="/cpclogo.png"
                 alt="CPC Logo"
                 className="w-16 h-16 object-contain rounded-full"
                 onError={(e) => {
