@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { votingAPI } from "@/lib/api/voting"
 import { ssgElectionsAPI } from "@/lib/api/ssgElections"
+import { departmentsAPI } from "@/lib/api/departments"
 import VoterLayout from '@/components/VoterLayout'
 import Swal from 'sweetalert2'
 import { 
@@ -13,15 +14,20 @@ import {
   LogOut,
   Users,
   Award,
-  TrendingUp
+  TrendingUp,
+  Building2,
+  ChevronRight
 } from "lucide-react"
 
 export default function VoterSSGResultsPage() {
   const [election, setElection] = useState(null)
   const [results, setResults] = useState(null)
+  const [departments, setDepartments] = useState([])
+  const [selectedDepartment, setSelectedDepartment] = useState(null)
+  const [departmentResults, setDepartmentResults] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [loadingDepartment, setLoadingDepartment] = useState(false)
   const [error, setError] = useState("")
-  const [selectedPosition, setSelectedPosition] = useState(null)
   
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -46,6 +52,7 @@ export default function VoterSSGResultsPage() {
       }
 
       await loadResults()
+      await loadDepartments()
     } catch (error) {
       console.error("Auth check error:", error)
       setError("Authentication error occurred")
@@ -57,7 +64,6 @@ export default function VoterSSGResultsPage() {
     try {
       setLoading(true)
       
-      // Get election details
       const electionResponse = await ssgElectionsAPI.getForVoters(electionId)
       const electionData = electionResponse?.data?.election || electionResponse?.election
       
@@ -69,7 +75,6 @@ export default function VoterSSGResultsPage() {
 
       setElection(electionData)
 
-      // Get live results
       const resultsResponse = await votingAPI.getSSGElectionLiveResultsForVoter(electionId)
       
       if (resultsResponse?.success) {
@@ -89,6 +94,39 @@ export default function VoterSSGResultsPage() {
       }
       
       setLoading(false)
+    }
+  }
+
+  const loadDepartments = async () => {
+    try {
+      const response = await departmentsAPI.getAll()
+      const depts = response?.data || response?.departments || []
+      setDepartments(depts)
+    } catch (error) {
+      console.error("Error loading departments:", error)
+    }
+  }
+
+  const loadDepartmentResults = async (departmentId) => {
+    try {
+      setLoadingDepartment(true)
+      setSelectedDepartment(departmentId)
+      
+      const response = await votingAPI.getSSGElectionResultsByDepartmentForVoter(electionId, departmentId)
+      
+      if (response?.success) {
+        setDepartmentResults(response.data)
+      }
+      
+      setLoadingDepartment(false)
+    } catch (error) {
+      console.error("Error loading department results:", error)
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'Failed to load department results'
+      })
+      setLoadingDepartment(false)
     }
   }
 
@@ -134,6 +172,23 @@ export default function VoterSSGResultsPage() {
     }
   }
 
+  const getCandidateDisplay = (candidate, index) => {
+    const isCompleted = election?.status === 'completed'
+    
+    if (isCompleted) {
+      return {
+        name: candidate.name,
+        partylist: candidate.partylist || 'Independent'
+      }
+    } else {
+      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+      return {
+        name: `Candidate ${alphabet[index] || index + 1}`,
+        partylist: ' '
+      }
+    }
+  }
+
   const getPositionCategory = (positionName) => {
     const name = positionName.toLowerCase()
     if (name.includes('president') && !name.includes('vice')) return 'presidential'
@@ -141,8 +196,8 @@ export default function VoterSSGResultsPage() {
     return 'senatorial'
   }
 
-  const groupPositionsByCategory = () => {
-    if (!results?.positions) return { presidential: [], vicePresidential: [], senatorial: [] }
+  const groupPositionsByCategory = (positions) => {
+    if (!positions) return { presidential: [], vicePresidential: [], senatorial: [] }
     
     const grouped = {
       presidential: [],
@@ -150,7 +205,7 @@ export default function VoterSSGResultsPage() {
       senatorial: []
     }
     
-    results.positions.forEach(pos => {
+    positions.forEach(pos => {
       const category = getPositionCategory(pos.position.positionName)
       if (category === 'presidential') {
         grouped.presidential.push(pos)
@@ -164,18 +219,87 @@ export default function VoterSSGResultsPage() {
     return grouped
   }
 
-  const getRankSuffix = (rank) => {
-    if (rank === 1) return 'st'
-    if (rank === 2) return 'nd'
-    if (rank === 3) return 'rd'
-    return 'th'
-  }
+  const renderPositionResults = (positions, title, showDepartmentName = false) => {
+    if (positions.length === 0) return null
 
-  const getWinnerBadgeColor = (rank) => {
-    if (rank === 1) return 'bg-yellow-500'
-    if (rank === 2) return 'bg-gray-400'
-    if (rank === 3) return 'bg-amber-600'
-    return 'bg-blue-500'
+    return (
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold text-white mb-4 text-center">
+          {title}
+          {showDepartmentName && selectedDepartment && (
+            <span className="block text-lg text-blue-200 mt-2">
+              {departments.find(d => d._id === selectedDepartment)?.departmentCode}
+            </span>
+          )}
+        </h2>
+        <p className="text-center text-blue-100 mb-6 text-sm">
+          As of {new Date().toLocaleString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true 
+          })}
+        </p>
+        
+        {positions.map((position) => (
+          <div key={position.position._id} className="space-y-3 mb-6">
+            {position.candidates.map((candidate, index) => {
+              const display = getCandidateDisplay(candidate, index)
+              const voteCount = showDepartmentName ? candidate.departmentVoteCount : candidate.voteCount
+              const totalVotes = showDepartmentName ? position.totalDepartmentVotes : position.totalVotes
+              
+              return (
+                <div 
+                  key={candidate._id}
+                  className="bg-white/95 backdrop-blur-sm rounded-xl p-4 sm:p-6 shadow-lg border border-white/20 hover:shadow-xl transition-shadow"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4 min-w-0 flex-1">
+                      <div className={`flex-shrink-0 w-12 h-12 sm:w-16 sm:h-16 ${
+                        index === 0 ? 'bg-red-600' : 
+                        index === 1 ? 'bg-blue-600' : 
+                        'bg-gray-600'
+                      } text-white rounded-lg flex items-center justify-center`}>
+                        <span className="text-2xl sm:text-3xl font-bold">{index + 1}</span>
+                      </div>
+                      
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-lg sm:text-xl font-bold text-[#001f65] truncate">
+                          {display.name}
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          {display.partylist}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="text-right flex-shrink-0 ml-4">
+                      <div className="text-2xl sm:text-3xl font-bold text-[#001f65]">
+                        {voteCount.toLocaleString()}
+                      </div>
+                      {totalVotes > 0 && (
+                        <div className="text-sm text-gray-500">
+                          {candidate.percentage}%
+                        </div>
+                      )}
+                      {index === 0 && voteCount > 0 && (
+                        <div className="mt-1">
+                          <span className="inline-block px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded">
+                            LEADING
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    )
   }
 
   if (loading) {
@@ -211,7 +335,8 @@ export default function VoterSSGResultsPage() {
     )
   }
 
-  const groupedPositions = groupPositionsByCategory()
+  const groupedPositions = groupPositionsByCategory(results?.positions)
+  const groupedDepartmentPositions = departmentResults ? groupPositionsByCategory(departmentResults.positions) : null
 
   return (
     <VoterLayout>
@@ -259,198 +384,92 @@ export default function VoterSSGResultsPage() {
             )}
           </div>
 
-          {/* Presidential Race */}
-          {groupedPositions.presidential.length > 0 && (
-            <div className="mb-8">
-              <h2 className="text-2xl font-bold text-white mb-4 text-center">PRESIDENTIAL RACE</h2>
-              <p className="text-center text-blue-100 mb-6 text-sm">
-                As of {new Date().toLocaleString('en-US', { 
-                  month: 'short', 
-                  day: 'numeric', 
-                  year: 'numeric',
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  hour12: true 
-                })}
-              </p>
-              
-              {groupedPositions.presidential.map((position) => (
-                <div key={position.position._id} className="space-y-3">
-                  {position.candidates.map((candidate, index) => (
-                    <div 
-                      key={candidate._id}
-                      className="bg-white/95 backdrop-blur-sm rounded-xl p-4 sm:p-6 shadow-lg border border-white/20 hover:shadow-xl transition-shadow"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4 min-w-0 flex-1">
-                          <div className={`flex-shrink-0 w-12 h-12 sm:w-16 sm:h-16 ${index === 0 ? 'bg-red-600' : index === 1 ? 'bg-blue-600' : 'bg-gray-600'} text-white rounded-lg flex items-center justify-center`}>
-                            <span className="text-2xl sm:text-3xl font-bold">{index + 1}</span>
-                          </div>
-                          
-                          <div className="min-w-0 flex-1">
-                            <h3 className="text-lg sm:text-xl font-bold text-[#001f65] truncate">
-                              {candidate.name}
-                            </h3>
-                            <p className="text-sm text-gray-600">
-                              {candidate.partylist || 'Independent'}
-                            </p>
-                          </div>
-                        </div>
-                        
-                        <div className="text-right flex-shrink-0 ml-4">
-                          <div className="text-2xl sm:text-3xl font-bold text-[#001f65]">
-                            {candidate.voteCount.toLocaleString()}
-                          </div>
-                          {position.totalVotes > 0 && (
-                            <div className="text-sm text-gray-500">
-                              {candidate.percentage}%
-                            </div>
-                          )}
-                          {index === 0 && candidate.voteCount > 0 && (
-                            <div className="mt-1">
-                              <span className="inline-block px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded">
-                                LEADING
-                              </span>
-                            </div>
-                          )}
-                        </div>
+          {/* Department Cards */}
+          <div className="mb-8">
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {departments.map((dept) => (
+                <button
+                  key={dept._id}
+                  onClick={() => loadDepartmentResults(dept._id)}
+                  className={`bg-white/95 backdrop-blur-sm rounded-xl p-4 shadow-lg border-2 transition-all hover:shadow-xl hover:scale-105 ${
+                    selectedDepartment === dept._id 
+                      ? 'border-[#001f65] bg-blue-50' 
+                      : 'border-white/20'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="flex-shrink-0 w-10 h-10 bg-[#001f65] text-white rounded-lg flex items-center justify-center">
+                        <Building2 className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0 flex-1 text-left">
+                        <h3 className="font-bold text-[#001f65] text-sm truncate">
+                          {dept.departmentCode}
+                        </h3>
+                        <p className="text-xs text-gray-600 truncate">
+                          {dept.college}
+                        </p>
                       </div>
                     </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Vice Presidential Race */}
-          {groupedPositions.vicePresidential.length > 0 && (
-            <div className="mb-8">
-              <h2 className="text-2xl font-bold text-white mb-4 text-center">VICE PRESIDENTIAL RACE</h2>
-              <p className="text-center text-blue-100 mb-6 text-sm">
-                As of {new Date().toLocaleString('en-US', { 
-                  month: 'short', 
-                  day: 'numeric', 
-                  year: 'numeric',
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  hour12: true 
-                })}
-              </p>
-              
-              {groupedPositions.vicePresidential.map((position) => (
-                <div key={position.position._id} className="space-y-3">
-                  {position.candidates.map((candidate, index) => (
-                    <div 
-                      key={candidate._id}
-                      className="bg-white/95 backdrop-blur-sm rounded-xl p-4 sm:p-6 shadow-lg border border-white/20 hover:shadow-xl transition-shadow"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4 min-w-0 flex-1">
-                          <div className={`flex-shrink-0 w-12 h-12 sm:w-16 sm:h-16 ${index === 0 ? 'bg-red-600' : index === 1 ? 'bg-blue-600' : 'bg-gray-600'} text-white rounded-lg flex items-center justify-center`}>
-                            <span className="text-2xl sm:text-3xl font-bold">{index + 1}</span>
-                          </div>
-                          
-                          <div className="min-w-0 flex-1">
-                            <h3 className="text-lg sm:text-xl font-bold text-[#001f65] truncate">
-                              {candidate.name}
-                            </h3>
-                            <p className="text-sm text-gray-600">
-                              {candidate.partylist || 'Independent'}
-                            </p>
-                          </div>
-                        </div>
-                        
-                        <div className="text-right flex-shrink-0 ml-4">
-                          <div className="text-2xl sm:text-3xl font-bold text-[#001f65]">
-                            {candidate.voteCount.toLocaleString()}
-                          </div>
-                          {position.totalVotes > 0 && (
-                            <div className="text-sm text-gray-500">
-                              {candidate.percentage}%
-                            </div>
-                          )}
-                          {index === 0 && candidate.voteCount > 0 && (
-                            <div className="mt-1">
-                              <span className="inline-block px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded">
-                                LEADING
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Senatorial Race (Other Positions) */}
-          {groupedPositions.senatorial.length > 0 && (
-            <div className="mb-8">
-              <h2 className="text-2xl font-bold text-white mb-4 text-center">OTHER POSITIONS</h2>
-              <p className="text-center text-blue-100 mb-6 text-sm">
-                As of {new Date().toLocaleString('en-US', { 
-                  month: 'short', 
-                  day: 'numeric', 
-                  year: 'numeric',
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  hour12: true 
-                })}
-              </p>
-              
-              {groupedPositions.senatorial.map((position) => (
-                <div key={position.position._id} className="mb-6">
-                  <h3 className="text-xl font-bold text-white mb-3 text-center">
-                    {position.position.positionName}
-                  </h3>
-                  <div className="space-y-3">
-                    {position.candidates.map((candidate, index) => (
-                      <div 
-                        key={candidate._id}
-                        className="bg-white/95 backdrop-blur-sm rounded-xl p-4 sm:p-6 shadow-lg border border-white/20 hover:shadow-xl transition-shadow"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4 min-w-0 flex-1">
-                            <div className={`flex-shrink-0 w-12 h-12 sm:w-16 sm:h-16 ${index === 0 ? 'bg-red-600' : index === 1 ? 'bg-blue-600' : 'bg-gray-600'} text-white rounded-lg flex items-center justify-center`}>
-                              <span className="text-2xl sm:text-3xl font-bold">{index + 1}</span>
-                            </div>
-                            
-                            <div className="min-w-0 flex-1">
-                              <h3 className="text-lg sm:text-xl font-bold text-[#001f65] truncate">
-                                {candidate.name}
-                              </h3>
-                              <p className="text-sm text-gray-600">
-                                {candidate.partylist || 'Independent'}
-                              </p>
-                            </div>
-                          </div>
-                          
-                          <div className="text-right flex-shrink-0 ml-4">
-                            <div className="text-2xl sm:text-3xl font-bold text-[#001f65]">
-                              {candidate.voteCount.toLocaleString()}
-                            </div>
-                            {position.totalVotes > 0 && (
-                              <div className="text-sm text-gray-500">
-                                {candidate.percentage}%
-                              </div>
-                            )}
-                            {index === 0 && candidate.voteCount > 0 && (
-                              <div className="mt-1">
-                                <span className="inline-block px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded">
-                                  LEADING
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                    <ChevronRight className="w-5 h-5 text-[#001f65] flex-shrink-0 ml-2" />
                   </div>
-                </div>
+                </button>
               ))}
             </div>
+            
+            {selectedDepartment && (
+              <div className="mt-4 text-center">
+                <button
+                  onClick={() => {
+                    setSelectedDepartment(null)
+                    setDepartmentResults(null)
+                  }}
+                  className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors border border-white/30"
+                >
+                  Clear Department Filter
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Loading Department Results */}
+          {loadingDepartment && (
+            <div className="text-center py-8">
+              <Loader2 className="animate-spin rounded-full h-12 w-12 mx-auto text-white mb-4" />
+              <p className="text-white font-medium">Loading department results...</p>
+            </div>
+          )}
+
+          {/* Department Results */}
+          {!loadingDepartment && departmentResults && (
+            <div className="mb-12">
+              <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 mb-6 border border-white/20">
+                <h2 className="text-2xl font-bold text-white text-center mb-2">
+                  Department Results
+                </h2>
+                <p className="text-blue-100 text-center">
+                  {departmentResults.department?.departmentCode} - {departmentResults.department?.degreeProgram}
+                </p>
+              </div>
+
+              {renderPositionResults(groupedDepartmentPositions.presidential, 'PRESIDENTIAL RACE', true)}
+              {renderPositionResults(groupedDepartmentPositions.vicePresidential, 'VICE PRESIDENTIAL RACE', true)}
+              {renderPositionResults(groupedDepartmentPositions.senatorial, 'SENATORIAL RACE', true)}
+            </div>
+          )}
+
+          {/* Overall Results */}
+          {!selectedDepartment && (
+            <>
+              <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 mb-6 border border-white/20">
+                <h2 className="text-2xl font-bold text-white text-center">Overall Election Results</h2>
+              </div>
+
+              {renderPositionResults(groupedPositions.presidential, 'PRESIDENTIAL RACE')}
+              {renderPositionResults(groupedPositions.vicePresidential, 'VICE PRESIDENTIAL RACE')}
+              {renderPositionResults(groupedPositions.senatorial, 'SENATORIAL RACE')}
+            </>
           )}
 
         </div>

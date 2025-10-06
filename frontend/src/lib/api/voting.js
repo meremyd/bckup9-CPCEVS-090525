@@ -532,6 +532,53 @@ formatLiveResults: (results, electionType) => {
   }
 },
 
+getSSGElectionResultsByDepartmentForVoter: async (electionId, departmentId) => {
+  try {
+    const response = await api.get(`/voting/voter/ssg-elections/${electionId}/department-results`, {
+      params: { departmentId }
+    })
+    return response.data
+  } catch (error) {
+    console.error(`Error fetching SSG department results for voter ${electionId}:`, error)
+    throw error
+  }
+},
+
+// Get SSG election results by department (Staff)
+getSSGElectionResultsByDepartment: async (electionId, departmentId) => {
+  try {
+    const response = await api.get(`/voting/user/ssg-elections/${electionId}/department-results`, {
+      params: { departmentId }
+    })
+    return response.data
+  } catch (error) {
+    console.error(`Error fetching SSG department results for ${electionId}:`, error)
+    throw error
+  }
+},
+
+// Export SSG election results (Staff)
+exportSSGElectionResults: async (electionId) => {
+  try {
+    const response = await api.get(`/voting/user/ssg-elections/${electionId}/export`)
+    return response.data
+  } catch (error) {
+    console.error(`Error exporting SSG election results for ${electionId}:`, error)
+    throw error
+  }
+},
+
+// Export departmental election results (Staff)
+exportDepartmentalElectionResults: async (electionId) => {
+  try {
+    const response = await api.get(`/voting/user/departmental-elections/${electionId}/export`)
+    return response.data
+  } catch (error) {
+    console.error(`Error exporting departmental election results for ${electionId}:`, error)
+    throw error
+  }
+},
+
   // Helper to get count from API responses
   getCountFromResponse: (response, countKeys = ['length', 'total', 'count']) => {
     if (Array.isArray(response)) {

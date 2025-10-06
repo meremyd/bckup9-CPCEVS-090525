@@ -1773,6 +1773,389 @@ static async getDepartmentalElectionLiveResultsForVoter(req, res, next) {
   }
 }
 
+// Get SSG election results by department
+static async getSSGElectionResultsByDepartment(req, res, next) {
+  try {
+    const { id } = req.params
+    const { departmentId } = req.query
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid SSG election ID")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    if (!departmentId || !mongoose.Types.ObjectId.isValid(departmentId)) {
+      const error = new Error("Invalid department ID")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await SSGElection.findById(id)
+    if (!election) {
+      const error = new Error("SSG election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Get department info
+    const department = await Department.findById(departmentId)
+    if (!department) {
+      const error = new Error("Department not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Get positions for this election
+    const positions = await Position.find({
+      ssgElectionId: id,
+      isActive: true
+    }).sort({ positionOrder: 1 })
+
+    const departmentResults = await Promise.all(
+      positions.map(async (position) => {
+        const candidates = await Candidate.find({
+          ssgElectionId: id,
+          positionId: position._id,
+          isActive: true
+        })
+        .populate({
+          path: 'voterId',
+          select: 'firstName middleName lastName schoolId departmentId',
+          populate: {
+            path: 'departmentId',
+            select: 'departmentCode degreeProgram college'
+          }
+        })
+        .populate('partylistId', 'partylistName')
+        .sort({ candidateNumber: 1 })
+
+        // Get vote counts filtered by department
+        const candidatesWithDeptVotes = await Promise.all(
+          candidates.map(async (candidate) => {
+            // Get ballots from voters in the specific department
+            const departmentBallots = await Ballot.find({
+              ssgElectionId: id,
+              isSubmitted: true,
+              voterId: { 
+                $in: await Voter.find({ departmentId }).distinct('_id') 
+              }
+            }).distinct('_id')
+
+            // Count votes from those ballots for this candidate
+            const deptVoteCount = await Vote.countDocuments({
+              candidateId: candidate._id,
+              ssgElectionId: id,
+              ballotId: { $in: departmentBallots }
+            })
+
+            // Get total vote count
+            const totalVoteCount = await Vote.countDocuments({
+              candidateId: candidate._id,
+              ssgElectionId: id
+            })
+
+            return {
+              ...candidate.toObject(),
+              departmentVoteCount: deptVoteCount,
+              totalVoteCount: totalVoteCount,
+              percentage: 0 // Will calculate after
+            }
+          })
+        )
+
+        // Calculate total department votes for this position
+        const totalDeptVotes = candidatesWithDeptVotes.reduce(
+          (sum, candidate) => sum + candidate.departmentVoteCount, 0
+        )
+
+        // Calculate percentages
+        candidatesWithDeptVotes.forEach(candidate => {
+          candidate.percentage = totalDeptVotes > 0 ? 
+            Math.round((candidate.departmentVoteCount / totalDeptVotes) * 100) : 0
+        })
+
+        // Sort by department vote count
+        candidatesWithDeptVotes.sort((a, b) => b.departmentVoteCount - a.departmentVoteCount)
+
+        return {
+          position: {
+            _id: position._id,
+            positionName: position.positionName,
+            positionOrder: position.positionOrder,
+            maxVotes: position.maxVotes
+          },
+          candidates: candidatesWithDeptVotes,
+          totalDepartmentVotes: totalDeptVotes,
+          leading: candidatesWithDeptVotes[0] || null
+        }
+      })
+    )
+
+    // Get total ballots from this department
+    const totalDeptBallots = await Ballot.countDocuments({
+      ssgElectionId: id,
+      isSubmitted: true,
+      voterId: { 
+        $in: await Voter.find({ departmentId }).distinct('_id') 
+      }
+    })
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Accessed department-filtered SSG results for ${department.departmentCode}: ${election.title}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election: {
+          _id: election._id,
+          title: election.title,
+          status: election.status,
+          electionDate: election.electionDate
+        },
+        department: {
+          _id: department._id,
+          departmentCode: department.departmentCode,
+          degreeProgram: department.degreeProgram,
+          college: department.college
+        },
+        positions: departmentResults,
+        summary: {
+          totalDepartmentBallots: totalDeptBallots,
+          totalPositions: positions.length,
+          lastUpdated: new Date()
+        }
+      },
+      message: `Department-filtered results for ${department.departmentCode} retrieved successfully`
+    })
+  } catch (error) {
+    console.error("Get SSG department results error:", error)
+    next(error)
+  }
+}
+
+// Export SSG election results as PDF data
+static async exportSSGElectionResults(req, res, next) {
+  try {
+    const { id } = req.params
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid SSG election ID")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await SSGElection.findById(id)
+    if (!election) {
+      const error = new Error("SSG election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Get positions with candidates and vote counts
+    const positions = await Position.find({
+      ssgElectionId: id,
+      isActive: true
+    }).sort({ positionOrder: 1 })
+
+    const exportData = await Promise.all(
+      positions.map(async (position) => {
+        const candidates = await Candidate.find({
+          ssgElectionId: id,
+          positionId: position._id,
+          isActive: true
+        })
+        .populate({
+          path: 'voterId',
+          select: 'firstName middleName lastName schoolId'
+        })
+        .populate('partylistId', 'partylistName')
+        .sort({ candidateNumber: 1 })
+
+        const candidatesWithVotes = await Promise.all(
+          candidates.map(async (candidate) => {
+            const voteCount = await Vote.countDocuments({
+              candidateId: candidate._id,
+              ssgElectionId: id
+            })
+
+            const candidateName = candidate.voterId ? 
+              `${candidate.voterId.firstName} ${candidate.voterId.middleName || ''} ${candidate.voterId.lastName}`.replace(/\s+/g, ' ').trim() : 
+              'Unknown Candidate'
+
+            return {
+              candidateNumber: candidate.candidateNumber,
+              candidateName: candidateName,
+              partylist: candidate.partylistId?.partylistName || 'Independent',
+              voteCount: voteCount
+            }
+          })
+        )
+
+        // Sort by vote count descending
+        candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount)
+
+        return {
+          positionName: position.positionName,
+          positionOrder: position.positionOrder,
+          candidates: candidatesWithVotes
+        }
+      })
+    )
+
+    // Get total statistics
+    const totalBallots = await Ballot.countDocuments({
+      ssgElectionId: id,
+      isSubmitted: true
+    })
+
+    await AuditLog.logUserAction(
+      "DATA_EXPORT",
+      req.user,
+      `Exported SSG election results: ${election.title}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election: {
+          title: election.title,
+          electionYear: election.electionYear,
+          electionDate: election.electionDate,
+          status: election.status
+        },
+        positions: exportData,
+        summary: {
+          totalBallots: totalBallots,
+          totalPositions: positions.length,
+          exportedAt: new Date()
+        }
+      },
+      message: "SSG election results exported successfully"
+    })
+  } catch (error) {
+    console.error("Export SSG election results error:", error)
+    next(error)
+  }
+}
+
+// Export departmental election results as PDF data
+static async exportDepartmentalElectionResults(req, res, next) {
+  try {
+    const { id } = req.params
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const error = new Error("Invalid departmental election ID")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await DepartmentalElection.findById(id)
+      .populate('departmentId', 'departmentCode degreeProgram college')
+    if (!election) {
+      const error = new Error("Departmental election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Get all positions
+    const positions = await Position.find({
+      deptElectionId: id,
+      isActive: true
+    }).sort({ positionOrder: 1 })
+
+    const exportData = await Promise.all(
+      positions.map(async (position) => {
+        const candidates = await Candidate.find({
+          deptElectionId: id,
+          positionId: position._id,
+          isActive: true
+        })
+        .populate({
+          path: 'voterId',
+          select: 'firstName middleName lastName schoolId yearLevel'
+        })
+        .sort({ candidateNumber: 1 })
+
+        const candidatesWithVotes = await Promise.all(
+          candidates.map(async (candidate) => {
+            const voteCount = await Vote.countDocuments({
+              candidateId: candidate._id,
+              deptElectionId: id,
+              positionId: position._id
+            })
+
+            const candidateName = candidate.voterId ? 
+              `${candidate.voterId.firstName} ${candidate.voterId.middleName || ''} ${candidate.voterId.lastName}`.replace(/\s+/g, ' ').trim() : 
+              'Unknown Candidate'
+
+            return {
+              candidateNumber: candidate.candidateNumber,
+              candidateName: candidateName,
+              voteCount: voteCount
+            }
+          })
+        )
+
+        // Sort by vote count descending
+        candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount)
+
+        return {
+          positionName: position.positionName,
+          positionOrder: position.positionOrder,
+          candidates: candidatesWithVotes
+        }
+      })
+    )
+
+    // Get total statistics
+    const totalBallots = await Ballot.countDocuments({
+      deptElectionId: id,
+      isSubmitted: true
+    })
+
+    await AuditLog.logUserAction(
+      "DATA_EXPORT",
+      req.user,
+      `Exported departmental election results: ${election.title}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        election: {
+          title: election.title,
+          electionYear: election.electionYear,
+          electionDate: election.electionDate,
+          status: election.status,
+          department: {
+            departmentCode: election.departmentId.departmentCode,
+            degreeProgram: election.departmentId.degreeProgram,
+            college: election.departmentId.college
+          }
+        },
+        positions: exportData,
+        summary: {
+          totalBallots: totalBallots,
+          totalPositions: positions.length,
+          exportedAt: new Date()
+        }
+      },
+      message: "Departmental election results exported successfully"
+    })
+  } catch (error) {
+    console.error("Export departmental election results error:", error)
+    next(error)
+  }
+}
+
+
 }
 
 module.exports = VotingController

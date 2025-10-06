@@ -14,15 +14,18 @@ router.get("/voter/departmental-elections/status", VotingController.getDepartmen
 router.get("/voter/departmental-elections/my-votes", VotingController.getMyDepartmentalVotes)
 router.get("/voter/ssg-elections/:id/live-results", VotingController.getSSGElectionLiveResultsForVoter)
 router.get("/voter/departmental-elections/:id/live-results", VotingController.getDepartmentalElectionLiveResultsForVoter)
-
+router.get("/voter/ssg-elections/:id/department-results", VotingController.getSSGElectionResultsByDepartment)
 
 router.use('/user', authMiddleware)
 router.get("/user/ssg-elections/:id/details", authorizeRoles("election_committee", "sao"), VotingController.getSSGElectionDetails)
 router.get("/user/ssg-elections/:id/candidates", authorizeRoles("election_committee", "sao"), VotingController.getSSGElectionCandidates)
+router.get("/user/ssg-elections/:id/department-results", authorizeRoles("election_committee", "sao"), VotingController.getSSGElectionResultsByDepartment)
+router.get("/user/ssg-elections/:id/export", authorizeRoles("election_committee", "sao"), VotingController.exportSSGElectionResults)
 router.get("/user/departmental-elections/:id/details", authorizeRoles("election_committee", "sao"), VotingController.getDepartmentalElectionDetails)
 router.get("/user/departmental-elections/:id/candidates", authorizeRoles("election_committee", "sao"), VotingController.getDepartmentalElectionCandidates)
 router.get("/user/ssg-elections/:id/live-results", authorizeRoles("election_committee", "sao"), VotingController.getSSGElectionLiveResults)
 router.get("/user/departmental-elections/:id/live-results", authorizeRoles("election_committee", "sao"), VotingController.getDepartmentalElectionLiveResults)
+router.get("/user/departmental-elections/:id/export", authorizeRoles("election_committee", "sao"), VotingController.exportDepartmentalElectionResults)
 
 router.get("/", authMiddleware, (req, res) => {
   if (req.user.userType === 'voter') {

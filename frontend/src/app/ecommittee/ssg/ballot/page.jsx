@@ -64,7 +64,7 @@ export default function SSGBallotPage() {
     if (ssgElectionId) {
       initializeBallot()
     } else {
-      router.push('/ecommittee/dashboard')
+      router.push('/ecommittee/ssg')
     }
 
     return () => {
@@ -97,7 +97,7 @@ export default function SSGBallotPage() {
         text: error.response?.data?.message || 'Failed to load ballot. Please try again.',
         confirmButtonColor: '#001f65'
       }).then(() => {
-        router.push('/ecommittee/dashboard')
+        router.push('/ecommittee/ssg')
       })
     } finally {
       setLoading(false)
@@ -373,7 +373,7 @@ export default function SSGBallotPage() {
             <h2 className="text-2xl font-bold text-gray-800 mb-2 text-center">Error</h2>
             <p className="text-gray-600 mb-4 text-center">Failed to load ballot</p>
             <button
-              onClick={() => router.push('/ecommittee/dashboard')}
+              onClick={() => router.push('/ecommittee/ssg')}
               className="w-full bg-[#001f65] hover:bg-[#003399] text-white px-6 py-2 rounded-lg transition-colors"
             >
               Go Back
