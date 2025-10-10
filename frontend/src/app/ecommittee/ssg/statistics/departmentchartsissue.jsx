@@ -49,6 +49,7 @@ export default function SSGStatisticsPage() {
   const [departmentResults, setDepartmentResults] = useState(null)
   const [loading, setLoading] = useState(false)
   const [loadingDepartment, setLoadingDepartment] = useState(false)
+  const [partylistColors, setPartylistColors] = useState({})
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState('')
 
@@ -56,13 +57,6 @@ export default function SSGStatisticsPage() {
   const searchParams = useSearchParams()
   const ssgElectionId = searchParams.get('ssgElectionId')
 
-  // Color schemes for charts
-  const COLORS = {
-    primary: ['#001f65', '#003399', '#0052cc', '#0066ff', '#3385ff', '#66a3ff', '#99c2ff'],
-    success: ['#059669', '#10b981', '#34d399', '#6ee7b7', '#a7f3d0'],
-    warning: ['#d97706', '#f59e0b', '#fbbf24', '#fcd34d', '#fde68a'],
-    info: ['#0ea5e9', '#38bdf8', '#7dd3fc', '#bae6fd', '#e0f2fe']
-  }
 
   useEffect(() => {
     const token = localStorage.getItem("token")
@@ -138,13 +132,16 @@ export default function SSGStatisticsPage() {
   }
 
   const fetchResultsData = async () => {
-    try {
-      const response = await ssgElectionsAPI.getResults(ssgElectionId)
-      setResultsData(response.data)
-    } catch (error) {
-      console.error("Error fetching results:", error)
-    }
+  try {
+    const response = await ssgElectionsAPI.getResults(ssgElectionId)
+    setResultsData(response.data)
+    
+    // Pre-assign partylist colors when results are loaded
+    assignPartylistColors(response.data)
+  } catch (error) {
+    console.error("Error fetching results:", error)
   }
+}
 
   const fetchDepartments = async () => {
     try {
@@ -167,6 +164,36 @@ export default function SSGStatisticsPage() {
       if (response?.success) {
         setDepartmentResults(response.data)
       }
+
+      if (response?.data?.positions) {
+  const deptPartylists = new Set()
+  response.data.positions.forEach(position => {
+    position.candidates?.forEach(candidate => {
+      const partylistName = candidate.partylistName || candidate.candidate?.partylistId?.partylistName
+      if (partylistName && partylistName !== 'Independent') {
+        deptPartylists.add(partylistName)
+      }
+    })
+  })
+  
+  // Assign any new partylists not already colored
+  setPartylistColors(prev => {
+    const updates = { ...prev }
+    const partylistColorPalette = [
+      '#EC4899', '#3B82F6', '#10B981', '#F59E0B', 
+      '#8B5CF6', '#EF4444', '#14B8A6', '#F97316'
+    ]
+    
+    Array.from(deptPartylists).forEach(name => {
+      if (!updates[name]) {
+        const colorIndex = Object.keys(updates).length % partylistColorPalette.length
+        updates[name] = partylistColorPalette[colorIndex]
+      }
+    })
+    
+    return updates
+  })
+}
       
       setLoadingDepartment(false)
     } catch (error) {
@@ -179,6 +206,88 @@ export default function SSGStatisticsPage() {
       setLoadingDepartment(false)
     }
   }
+
+  const getPartylistColor = (partylistName) => {
+  if (!partylistName || partylistName === 'Independent') {
+    return '#6B7280' // Gray for Independent
+  }
+  
+  // If color already assigned, return it
+  if (partylistColors[partylistName]) {
+    return partylistColors[partylistName]
+  }
+  
+  // Predefined colors for first few partylists (pink and blue tones)
+  const partylistColorPalette = [
+    '#EC4899', // Pink
+    '#3B82F6', // Blue
+    '#10B981', // Green
+    '#F59E0B', // Amber
+    '#8B5CF6', // Purple
+    '#EF4444', // Red
+    '#14B8A6', // Teal
+    '#F97316', // Orange
+  ]
+  
+  // Get existing partylists count to determine next color
+  // IMPORTANT: Check partylistColors state directly
+  const existingPartylistNames = Object.keys(partylistColors)
+  const colorIndex = existingPartylistNames.length % partylistColorPalette.length
+  const newColor = partylistColorPalette[colorIndex]
+  
+  // Store the color for consistency
+  // Use functional update to ensure we're working with latest state
+  setPartylistColors(prev => {
+    // Double-check it wasn't just added
+    if (prev[partylistName]) {
+      return prev
+    }
+    
+    return {
+      ...prev,
+      [partylistName]: newColor
+    }
+  })
+  
+  return newColor
+}
+
+// Pre-assign colors to all partylists when data is loaded
+const assignPartylistColors = (resultsData) => {
+  if (!resultsData?.positionResults) return
+
+  const partylistColorPalette = [
+    '#EC4899', // Pink
+    '#3B82F6', // Blue
+    '#10B981', // Green
+    '#F59E0B', // Amber
+    '#8B5CF6', // Purple
+    '#EF4444', // Red
+    '#14B8A6', // Teal
+    '#F97316', // Orange
+  ]
+
+  const allPartylists = new Set()
+  
+  // Collect all unique partylist names
+  resultsData.positionResults.forEach(position => {
+    position.candidates?.forEach(candidate => {
+      const partylistName = candidate.partylistName
+      if (partylistName && partylistName !== 'Independent') {
+        allPartylists.add(partylistName)
+      }
+    })
+  })
+
+  // Assign colors to partylists
+  const colorAssignments = {}
+  Array.from(allPartylists).forEach((partylistName, index) => {
+    const colorIndex = index % partylistColorPalette.length
+    colorAssignments[partylistName] = partylistColorPalette[colorIndex]
+  })
+
+  setPartylistColors(colorAssignments)
+}
 
   const handleDownloadStatistics = async () => {
     try {
@@ -442,23 +551,27 @@ export default function SSGStatisticsPage() {
   }
 
   // Custom Legend Component for Pie Charts
-  const CustomPieLegend = ({ data, colors }) => {
-    return (
-      <div className="mt-4 grid grid-cols-1 gap-2">
-        {data.map((entry, index) => (
-          <div key={`legend-${index}`} className="flex items-center gap-2">
-            <div 
-              className="w-4 h-4 rounded" 
-              style={{ backgroundColor: colors[index % colors.length] }}
-            />
-            <span className="text-sm text-gray-700">
-              {entry.name} - {entry.votes.toLocaleString()} votes ({entry.percentage.toFixed(1)}%)
-            </span>
-          </div>
-        ))}
-      </div>
-    )
-  }
+  // Custom Legend Component for Pie Charts
+const CustomPieLegend = ({ data }) => {
+  return (
+    <div className="mt-4 grid grid-cols-1 gap-2">
+      {data.map((entry, index) => (
+        <div key={`legend-${index}`} className="flex items-center gap-2">
+          <div 
+            className="w-4 h-4 rounded" 
+            style={{ backgroundColor: getPartylistColor(entry.partylist) }}
+          />
+          <span className="text-sm text-gray-700">
+            {entry.name} - {entry.votes.toLocaleString()} votes ({entry.percentage.toFixed(1)}%)
+            {entry.partylist && entry.partylist !== 'Independent' && (
+              <span className="text-xs text-gray-500 ml-1">({entry.partylist})</span>
+            )}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
 
   // Authentication screen
   if (!isAuthenticated) {
@@ -689,21 +802,21 @@ export default function SSGStatisticsPage() {
                       <ResponsiveContainer width="100%" height={250}>
                         <PieChart>
                           <Pie
-                            data={deptChartData.president}
-                            cx="50%"
-                            cy="50%"
-                            outerRadius={80}
-                            fill="#8884d8"
-                            dataKey="votes"
-                          >
-                            {deptChartData.president.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS.primary[index % COLORS.primary.length]} />
-                            ))}
-                          </Pie>
+  data={deptChartData.president}
+  cx="50%"
+  cy="50%"
+  outerRadius={80}
+  fill="#8884d8"
+  dataKey="votes"
+>
+  {deptChartData.president.map((entry, index) => (
+    <Cell key={`cell-${index}`} fill={getPartylistColor(entry.partylist)} />
+  ))}
+</Pie>
                           <Tooltip content={<CustomTooltip />} />
                         </PieChart>
                       </ResponsiveContainer>
-                      <CustomPieLegend data={deptChartData.president} colors={COLORS.primary} />
+                      <CustomPieLegend data={deptChartData.president}  />
                     </div>
                   )}
 
@@ -714,21 +827,21 @@ export default function SSGStatisticsPage() {
                       <ResponsiveContainer width="100%" height={250}>
                         <PieChart>
                           <Pie
-                            data={deptChartData.vicePresident}
-                            cx="50%"
-                            cy="50%"
-                            outerRadius={80}
-                            fill="#8884d8"
-                            dataKey="votes"
-                          >
-                            {deptChartData.vicePresident.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS.info[index % COLORS.info.length]} />
-                            ))}
-                          </Pie>
+  data={deptChartData.vicePresident}
+  cx="50%"
+  cy="50%"
+  outerRadius={80}
+  fill="#8884d8"
+  dataKey="votes"
+>
+  {deptChartData.vicePresident.map((entry, index) => (
+    <Cell key={`cell-${index}`} fill={getPartylistColor(entry.partylist)} />
+  ))}
+</Pie>
                           <Tooltip content={<CustomTooltip />} />
                         </PieChart>
                       </ResponsiveContainer>
-                      <CustomPieLegend data={deptChartData.vicePresident} colors={COLORS.info} />
+                      <CustomPieLegend data={deptChartData.vicePresident} />
                     </div>
                   )}
                 </div>
@@ -749,7 +862,11 @@ export default function SSGStatisticsPage() {
                         />
                         <YAxis />
                         <Tooltip content={<CustomTooltip />} />
-                        <Bar dataKey="votes" fill="#059669" />
+                        <Bar dataKey="votes">
+  {deptChartData.senators.map((entry, index) => (
+    <Cell key={`cell-${index}`} fill={getPartylistColor(entry.partylist)} />
+  ))}
+</Bar>
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -774,21 +891,21 @@ export default function SSGStatisticsPage() {
                       <ResponsiveContainer width="100%" height={250}>
                         <PieChart>
                           <Pie
-                            data={presidentData}
-                            cx="50%"
-                            cy="50%"
-                            outerRadius={80}
-                            fill="#8884d8"
-                            dataKey="votes"
-                          >
-                            {presidentData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS.primary[index % COLORS.primary.length]} />
-                            ))}
-                          </Pie>
+  data={presidentData}
+  cx="50%"
+  cy="50%"
+  outerRadius={80}
+  fill="#8884d8"
+  dataKey="votes"
+>
+  {presidentData.map((entry, index) => (
+    <Cell key={`cell-${index}`} fill={getPartylistColor(entry.partylist)} />
+  ))}
+</Pie>
                           <Tooltip content={<CustomTooltip />} />
                         </PieChart>
                       </ResponsiveContainer>
-                      <CustomPieLegend data={presidentData} colors={COLORS.primary} />
+                      <CustomPieLegend data={presidentData} />
                     </div>
                   )}
 
@@ -802,21 +919,21 @@ export default function SSGStatisticsPage() {
                       <ResponsiveContainer width="100%" height={250}>
                         <PieChart>
                           <Pie
-                            data={vicePresidentData}
-                            cx="50%"
-                            cy="50%"
-                            outerRadius={80}
-                            fill="#8884d8"
-                            dataKey="votes"
-                          >
-                            {vicePresidentData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS.info[index % COLORS.info.length]} />
-                            ))}
-                          </Pie>
+  data={vicePresidentData}
+  cx="50%"
+  cy="50%"
+  outerRadius={80}
+  fill="#8884d8"
+  dataKey="votes"
+>
+  {vicePresidentData.map((entry, index) => (
+    <Cell key={`cell-${index}`} fill={getPartylistColor(entry.partylist)} />
+  ))}
+</Pie>
                           <Tooltip content={<CustomTooltip />} />
                         </PieChart>
                       </ResponsiveContainer>
-                      <CustomPieLegend data={vicePresidentData} colors={COLORS.info} />
+                      <CustomPieLegend data={vicePresidentData} />
                     </div>
                   )}
                 </div>
@@ -840,7 +957,11 @@ export default function SSGStatisticsPage() {
                         />
                         <YAxis />
                         <Tooltip content={<CustomTooltip />} />
-                        <Bar dataKey="votes" fill="#059669" />
+                        <Bar dataKey="votes">
+  {senatorData.map((entry, index) => (
+    <Cell key={`cell-${index}`} fill={getPartylistColor(entry.partylist)} />
+  ))}
+</Bar>
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -876,7 +997,7 @@ export default function SSGStatisticsPage() {
               onClick={() => setError('')}
               className="ml-auto text-red-500 hover:text-red-700"
             >
-             
+              Ã—
             </button>
           </div>
         )}

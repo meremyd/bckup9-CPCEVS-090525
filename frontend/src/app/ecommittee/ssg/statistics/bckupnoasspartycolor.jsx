@@ -876,7 +876,7 @@ export default function SSGStatisticsPage() {
               onClick={() => setError('')}
               className="ml-auto text-red-500 hover:text-red-700"
             >
-             
+              Ãƒâ€”
             </button>
           </div>
         )}
