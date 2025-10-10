@@ -390,37 +390,14 @@ class SSGElectionController {
     delete updateData.createdBy
     delete updateData.totalVotes
     delete updateData.voterTurnout
-
-    // Validate status if provided
-    if (updateData.status) {
-      const validStatuses = ["upcoming", "active", "completed", "cancelled"]
-      if (!validStatuses.includes(updateData.status)) {
-        await AuditLog.logUserAction(
-          "UPDATE_SSG_ELECTION",
-          req.user,
-          `Failed to update SSG election - Invalid status: ${updateData.status}`,
-          req
-        )
-        const error = new Error(`Invalid status. Must be one of: ${validStatuses.join(', ')}`)
-        error.statusCode = 400
-        return next(error)
-      }
-    }
+    
+    // REMOVE STATUS FROM UPDATE - Status will be automatically calculated
+    delete updateData.status
 
     // Validate election date if provided
     if (updateData.electionDate) {
       const electionDateObj = new Date(updateData.electionDate)
-      if (electionDateObj < new Date() && updateData.status !== 'completed') {
-        await AuditLog.logUserAction(
-          "UPDATE_SSG_ELECTION",
-          req.user,
-          `Failed to update SSG election - Election date in the past: ${updateData.electionDate}`,
-          req
-        )
-        const error = new Error("Election date cannot be in the past unless status is 'completed'")
-        error.statusCode = 400
-        return next(error)
-      }
+      // Allow past dates for completed elections
       updateData.electionDate = electionDateObj
     }
 
@@ -493,18 +470,57 @@ class SSGElectionController {
       }
     }
 
-    // Prevent updates to elections with submitted ballots
+    // Check for submitted ballots to apply restrictions
     const submittedBallots = await Ballot.countDocuments({ ssgElectionId: id, isSubmitted: true })
-    if (submittedBallots > 0 && (updateData.electionDate || updateData.ballotOpenTime !== undefined || updateData.ballotCloseTime !== undefined)) {
-      await AuditLog.logUserAction(
-        "UPDATE_SSG_ELECTION",
-        req.user,
-        `Failed to update SSG election - Cannot modify election with ${submittedBallots} submitted ballots: ${existingElection.title}`,
-        req
-      )
-      const error = new Error("Cannot modify election date or ballot times after votes have been submitted")
-      error.statusCode = 400
-      return next(error)
+    
+    // UPDATED LOGIC: Allow extending ballot close time, but prevent moving it earlier or changing election date after voting starts
+    if (submittedBallots > 0) {
+      // Block election date changes
+      if (updateData.electionDate) {
+        await AuditLog.logUserAction(
+          "UPDATE_SSG_ELECTION",
+          req.user,
+          `Failed to update SSG election - Cannot change election date after ${submittedBallots} ballots submitted: ${existingElection.title}`,
+          req
+        )
+        const error = new Error("Cannot modify election date after votes have been submitted")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Block moving ballot open time (can only be set if not already set)
+      if (updateData.ballotOpenTime !== undefined && existingElection.ballotOpenTime && updateData.ballotOpenTime !== existingElection.ballotOpenTime) {
+        await AuditLog.logUserAction(
+          "UPDATE_SSG_ELECTION",
+          req.user,
+          `Failed to update SSG election - Cannot change ballot open time after voting started: ${existingElection.title}`,
+          req
+        )
+        const error = new Error("Cannot modify ballot open time after votes have been submitted")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Allow extending ballot close time (moving it later), but not moving it earlier
+      if (updateData.ballotCloseTime !== undefined && existingElection.ballotCloseTime) {
+        const [existingCloseHours, existingCloseMinutes] = existingElection.ballotCloseTime.split(':').map(Number)
+        const [newCloseHours, newCloseMinutes] = updateData.ballotCloseTime.split(':').map(Number)
+        
+        const existingCloseTimeInMinutes = existingCloseHours * 60 + existingCloseMinutes
+        const newCloseTimeInMinutes = newCloseHours * 60 + newCloseMinutes
+        
+        if (newCloseTimeInMinutes < existingCloseTimeInMinutes) {
+          await AuditLog.logUserAction(
+            "UPDATE_SSG_ELECTION",
+            req.user,
+            `Failed to update SSG election - Cannot move ballot close time earlier after voting started: ${existingElection.title}`,
+            req
+          )
+          const error = new Error("Cannot move ballot close time earlier after votes have been submitted. You can only extend voting time.")
+          error.statusCode = 400
+          return next(error)
+        }
+      }
     }
 
     const election = await SSGElection.findByIdAndUpdate(id, updateData, {

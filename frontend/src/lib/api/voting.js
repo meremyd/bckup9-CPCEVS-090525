@@ -560,7 +560,9 @@ getSSGElectionResultsByDepartment: async (electionId, departmentId) => {
 // Export SSG election results (Staff)
 exportSSGElectionResults: async (electionId) => {
   try {
-    const response = await api.get(`/voting/user/ssg-elections/${electionId}/export`)
+    const response = await api.get(`/voting/user/ssg-elections/${electionId}/export`, {
+      responseType: 'blob' 
+    })
     return response.data
   } catch (error) {
     console.error(`Error exporting SSG election results for ${electionId}:`, error)
@@ -571,7 +573,9 @@ exportSSGElectionResults: async (electionId) => {
 // Export departmental election results (Staff)
 exportDepartmentalElectionResults: async (electionId) => {
   try {
-    const response = await api.get(`/voting/user/departmental-elections/${electionId}/export`)
+    const response = await api.get(`/voting/user/departmental-elections/${electionId}/export`, {
+      responseType: 'blob' 
+    })
     return response.data
   } catch (error) {
     console.error(`Error exporting departmental election results for ${electionId}:`, error)

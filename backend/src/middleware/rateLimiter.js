@@ -110,7 +110,7 @@ const voterLimiter = rateLimit({
 // Voting action limiter - extremely strict for ballot submissions
 const votingLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10, // Very few voting-related requests per hour
+  max: 1000, // Very few voting-related requests per hour
   message: {
     error: "Voting limit exceeded",
     message: "Too many voting attempts. Please contact support if you need assistance.",

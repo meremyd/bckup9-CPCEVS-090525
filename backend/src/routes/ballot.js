@@ -11,6 +11,7 @@ router.get("/user/ssg/:electionId/statistics", authorizeRoles("election_committe
 router.get("/user/ssg/:electionId/preview", authorizeRoles("election_committee", "admin"), BallotController.previewSSGBallot)
 router.get("/user/ssg/ballot/:ballotId/votes", authorizeRoles("election_committee", "admin"), BallotController.getSelectedSSGBallotWithVotes)
 router.put("/user/ssg/:ballotId/timer", authorizeRoles("election_committee", "admin"), BallotController.updateSSGBallotTimer)
+router.put("/user/ssg/:electionId/ballot-duration", authorizeRoles("election_committee", "admin"), BallotController.updateSSGBallotDuration)
 router.post("/user/ssg/:ballotId/submit", authorizeRoles("election_committee"), BallotController.submitSelectedSSGBallot)
 
 // ==================== STAFF/ADMIN ROUTES - DEPARTMENTAL BALLOTS ====================

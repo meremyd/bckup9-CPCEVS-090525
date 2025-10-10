@@ -1,9 +1,10 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ballotAPI } from "@/lib/api/ballots"
 import { candidatesAPI } from "@/lib/api/candidates"
+import { ssgElectionsAPI } from "@/lib/api/ssgElections"
 import SSGLayout from "@/components/SSGLayout"
 import Swal from 'sweetalert2'
 import { 
@@ -14,30 +15,29 @@ import {
   CheckCircle,
   Loader2,
   User,
-  ArrowLeft,
   Shield,
   Settings,
   Plus,
   Minus,
-  Timer
+  Timer,
+  Save
 } from "lucide-react"
 
-export default function SSGBallotPage() {
-  const [ballot, setBallot] = useState(null)
+export default function SSGBallotPreviewPage() {
   const [election, setElection] = useState(null)
   const [positions, setPositions] = useState([])
   const [currentPositionIndex, setCurrentPositionIndex] = useState(0)
   const [selectedVotes, setSelectedVotes] = useState({})
-  const [timeRemaining, setTimeRemaining] = useState(null)
+  const [displayMinutes, setDisplayMinutes] = useState(10)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [showTimerForm, setShowTimerForm] = useState(false)
   const [timerMinutes, setTimerMinutes] = useState(10)
+  const [savingDuration, setSavingDuration] = useState(false)
   
   const router = useRouter()
   const searchParams = useSearchParams()
   const ssgElectionId = searchParams.get('ssgElectionId')
-  const timerInterval = useRef(null)
 
   useEffect(() => {
     // Check for admin/committee authentication
@@ -62,39 +62,37 @@ export default function SSGBallotPage() {
     }
 
     if (ssgElectionId) {
-      initializeBallot()
+      initializeBallotPreview()
     } else {
       router.push('/ecommittee/ssg')
     }
-
-    return () => {
-      if (timerInterval.current) {
-        clearInterval(timerInterval.current)
-      }
-    }
   }, [ssgElectionId])
 
-  const initializeBallot = async () => {
+  const initializeBallotPreview = async () => {
     try {
       setLoading(true)
 
-      // Get ballot preview (using staff endpoint)
+      // Get election details to fetch ballot duration
+      const electionResponse = await ssgElectionsAPI.getById(ssgElectionId)
+      const electionData = electionResponse.data || electionResponse
+
+      // Use STAFF endpoint for preview
       const previewResponse = await ballotAPI.previewSSGBallot(ssgElectionId)
       
       setElection(previewResponse.election)
       setPositions(previewResponse.ballot)
 
-      // Start a simulated timer for testing (30 minutes default)
-      const closeTime = new Date()
-      closeTime.setMinutes(closeTime.getMinutes() + 30)
-      startTimer(closeTime)
+      // Get ballot duration from election settings
+      const duration = electionData.ballotDuration || 10
+      setDisplayMinutes(duration)
+      setTimerMinutes(duration)
 
     } catch (error) {
-      console.error('Error initializing ballot:', error)
+      console.error('Error initializing ballot preview:', error)
       Swal.fire({
         icon: 'error',
         title: 'Error',
-        text: error.response?.data?.message || 'Failed to load ballot. Please try again.',
+        text: error.response?.data?.message || 'Failed to load ballot preview.',
         confirmButtonColor: '#001f65'
       }).then(() => {
         router.push('/ecommittee/ssg')
@@ -104,65 +102,50 @@ export default function SSGBallotPage() {
     }
   }
 
-  const startTimer = (closeTime) => {
-    const updateTimer = () => {
-      const now = new Date()
-      const remaining = Math.max(0, Math.floor((closeTime - now) / 1000))
-      
-      setTimeRemaining(remaining)
-      
-      if (remaining <= 0) {
-        clearInterval(timerInterval.current)
-        handleTimeExpired()
-      }
+  const formatTime = (minutes) => {
+    const hrs = Math.floor(minutes / 60)
+    const mins = minutes % 60
+    if (hrs > 0) {
+      return `${hrs}h ${mins}m`
     }
-
-    updateTimer()
-    timerInterval.current = setInterval(updateTimer, 1000)
+    return `${mins} minutes`
   }
 
-  const handleTimeExpired = () => {
-    Swal.fire({
-      icon: 'warning',
-      title: 'Time Expired',
-      text: 'The ballot timer has expired. This is a test scenario.',
-      confirmButtonColor: '#001f65'
-    })
-  }
-
-  const formatTime = (seconds) => {
-    if (seconds === null) return '00:00'
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-  }
-
-  const handleTimerUpdate = async () => {
+  const handleSaveBallotDuration = async () => {
     try {
-      // Update timer
-      const newCloseTime = new Date()
-      newCloseTime.setMinutes(newCloseTime.getMinutes() + timerMinutes)
+      setSavingDuration(true)
       
-      if (timerInterval.current) {
-        clearInterval(timerInterval.current)
-      }
-      startTimer(newCloseTime)
-
-      Swal.fire({
+      await ballotAPI.updateSSGBallotDuration(ssgElectionId, timerMinutes)
+      
+      setDisplayMinutes(timerMinutes)
+      setShowTimerForm(false)
+      
+      await Swal.fire({
         icon: 'success',
-        title: 'Timer Updated',
-        text: `Ballot timer updated to ${timerMinutes} minutes.`,
+        title: 'Ballot Duration Updated',
+        html: `
+          <div style="text-align: left; padding: 20px;">
+            <p style="margin-bottom: 10px;">Ballot duration has been updated to <strong>${timerMinutes} minutes</strong>.</p>
+            <p style="margin-bottom: 10px; color: #059669;">✓ All new ballots will use this duration</p>
+            <p style="color: #6b7280; font-size: 14px;">Note: Active ballots will continue with their original duration</p>
+          </div>
+        `,
         confirmButtonColor: '#001f65'
       })
-      setShowTimerForm(false)
+
+      // Refresh election data
+      await initializeBallotPreview()
+      
     } catch (error) {
-      console.error('Error updating timer:', error)
+      console.error('Error saving ballot duration:', error)
       Swal.fire({
         icon: 'error',
-        title: 'Update Failed',
-        text: 'Failed to update timer',
+        title: 'Save Failed',
+        text: error.response?.data?.message || 'Failed to update ballot duration.',
         confirmButtonColor: '#001f65'
       })
+    } finally {
+      setSavingDuration(false)
     }
   }
 
@@ -172,7 +155,6 @@ export default function SSGBallotPage() {
     const maxVotes = currentPosition.position.maxVotes || 1
 
     if (maxVotes > 1) {
-      // Multiple selection (e.g., senators)
       const currentVotes = Object.entries(selectedVotes)
         .filter(([key]) => key.startsWith(positionId))
         .map(([_, value]) => value)
@@ -245,11 +227,11 @@ export default function SSGBallotPage() {
       const result = await Swal.fire({
         icon: 'warning',
         title: 'Incomplete Ballot',
-        text: `You haven't voted for ${unvotedPositions.length} position(s). Do you want to continue?`,
+        text: `You haven't selected candidates for ${unvotedPositions.length} position(s). Do you want to continue with the preview?`,
         showCancelButton: true,
         confirmButtonColor: '#001f65',
         cancelButtonColor: '#6b7280',
-        confirmButtonText: 'Continue',
+        confirmButtonText: 'Continue Preview',
         cancelButtonText: 'Go Back'
       })
 
@@ -258,12 +240,19 @@ export default function SSGBallotPage() {
 
     const confirmResult = await Swal.fire({
       icon: 'question',
-      title: 'Submit Test Ballot',
-      text: 'This will simulate a ballot submission for testing purposes. Continue?',
+      title: 'Preview Test Ballot',
+      html: `
+        <div style="text-align: left; padding: 20px;">
+          <p style="margin-bottom: 15px; font-weight: bold; color: #d97706;">⚠️ PREVIEW MODE - NO VOTES WILL BE RECORDED</p>
+          <p style="margin-bottom: 10px;">This is a ballot preview for testing purposes only.</p>
+          <p style="margin-bottom: 10px;"><strong>NO actual votes will be submitted</strong> to the database.</p>
+          <p>Continue to see your selection summary?</p>
+        </div>
+      `,
       showCancelButton: true,
       confirmButtonColor: '#001f65',
       cancelButtonColor: '#6b7280',
-      confirmButtonText: 'Yes, Submit Test',
+      confirmButtonText: 'View Summary',
       cancelButtonText: 'Cancel'
     })
 
@@ -281,48 +270,76 @@ export default function SSGBallotPage() {
           Object.entries(selectedVotes)
             .filter(([key]) => key.startsWith(positionId))
             .forEach(([_, candidateId]) => {
-              votes.push({ positionId, candidateId })
+              const candidate = posData.candidates.find(c => c._id === candidateId)
+              if (candidate) {
+                votes.push({ 
+                  position: posData.position.positionName,
+                  candidate: candidate.name,
+                  partylist: candidate.partylist || 'Independent'
+                })
+              }
             })
         } else if (selectedVotes[positionId]) {
-          votes.push({ positionId, candidateId: selectedVotes[positionId] })
+          const candidate = posData.candidates.find(c => c._id === selectedVotes[positionId])
+          if (candidate) {
+            votes.push({ 
+              position: posData.position.positionName,
+              candidate: candidate.name,
+              partylist: candidate.partylist || 'Independent'
+            })
+          }
         }
       })
 
-      // Show test submission success
       await Swal.fire({
         icon: 'success',
-        title: 'Test Ballot Submitted!',
+        title: 'Ballot Preview Summary',
         html: `
           <div style="text-align: left; padding: 20px;">
+            <div style="background: #fef3c7; border: 2px solid #f59e0b; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+              <p style="margin: 0; font-weight: bold; color: #92400e;">🔒 PREVIEW MODE - NOT SUBMITTED</p>
+              <p style="margin: 5px 0 0 0; font-size: 14px; color: #78350f;">No votes were recorded in the database.</p>
+            </div>
+            
             <p style="margin-bottom: 15px;"><strong>Election:</strong> ${election?.title || 'SSG Election'}</p>
-            <p style="margin-bottom: 15px;"><strong>Total Votes:</strong> ${votes.length}</p>
-            <p style="margin-bottom: 15px;"><strong>Status:</strong> <span style="color: #10b981; font-weight: bold;">TEST SUBMITTED</span></p>
+            <p style="margin-bottom: 15px;"><strong>Total Selections:</strong> ${votes.length} out of ${positions.length} positions</p>
+            
             <div style="margin-top: 20px;">
-              <strong>Selected Votes:</strong>
-              <ul style="margin-top: 10px;">
-                ${votes.map(vote => {
-                  const position = positions.find(p => p.position._id === vote.positionId)
-                  const candidate = position?.candidates.find(c => c._id === vote.candidateId)
-                  return `<li>${position?.position.positionName}: ${candidate?.name || 'Unknown'}</li>`
-                }).join('')}
+              <strong>Your Selections:</strong>
+              <ul style="margin-top: 10px; list-style: none; padding: 0;">
+                ${votes.map(vote => `
+                  <li style="padding: 10px; margin: 5px 0; background: #f3f4f6; border-radius: 6px;">
+                    <strong>${vote.position}:</strong><br>
+                    ${vote.candidate} <span style="color: #6b7280; font-size: 14px;">(${vote.partylist})</span>
+                  </li>
+                `).join('')}
               </ul>
             </div>
+            
+            ${unvotedPositions.length > 0 ? `
+              <div style="margin-top: 20px; padding: 10px; background: #fee2e2; border-radius: 6px;">
+                <strong style="color: #991b1b;">Unvoted Positions (${unvotedPositions.length}):</strong>
+                <ul style="margin-top: 5px; color: #7f1d1d;">
+                  ${unvotedPositions.map(pos => `<li>${pos.position.positionName}</li>`).join('')}
+                </ul>
+              </div>
+            ` : ''}
           </div>
         `,
         confirmButtonColor: '#001f65',
-        confirmButtonText: 'Close'
+        confirmButtonText: 'Close Preview',
+        width: '600px'
       })
 
-      // Reset selections for another test
       setSelectedVotes({})
       setCurrentPositionIndex(0)
 
     } catch (error) {
-      console.error('Error submitting ballot:', error)
+      console.error('Error in preview:', error)
       Swal.fire({
         icon: 'error',
-        title: 'Submission Failed',
-        text: error.response?.data?.message || 'Failed to submit test ballot.',
+        title: 'Preview Error',
+        text: 'An error occurred while generating the preview.',
         confirmButtonColor: '#001f65'
       })
     } finally {
@@ -352,7 +369,7 @@ export default function SSGBallotPage() {
         <div className="min-h-screen flex items-center justify-center">
           <div className="text-center bg-white/10 backdrop-blur-md p-8 rounded-2xl border border-white/20">
             <Loader2 className="animate-spin rounded-full h-12 w-12 mx-auto text-white" />
-            <p className="mt-4 text-white font-medium">Loading ballot...</p>
+            <p className="mt-4 text-white font-medium">Loading ballot preview...</p>
           </div>
         </div>
       </SSGLayout>
@@ -371,7 +388,7 @@ export default function SSGBallotPage() {
           <div className="bg-white/95 backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-md mx-auto">
             <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-gray-800 mb-2 text-center">Error</h2>
-            <p className="text-gray-600 mb-4 text-center">Failed to load ballot</p>
+            <p className="text-gray-600 mb-4 text-center">Failed to load ballot preview</p>
             <button
               onClick={() => router.push('/ecommittee/ssg')}
               className="w-full bg-[#001f65] hover:bg-[#003399] text-white px-6 py-2 rounded-lg transition-colors"
@@ -395,98 +412,122 @@ export default function SSGBallotPage() {
       subtitle="Election Committee Testing Interface"
       activeItem="ballot"
     >
-      {/* Transparent Navbar with Back Button, Timer, and Settings */}
-      <div className="fixed top-0 left-0 right-0 z-50 px-4 sm:px-6 py-4">
-        <div className="flex items-center justify-between max-w-7xl mx-auto">
-          <button
-            onClick={() => router.push('/ecommittee/dashboard')}
-            className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white rounded-lg transition-colors border border-white/30"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span className="hidden sm:inline">Back</span>
-          </button>
-          
-          <div className="flex items-center gap-2">
-            <div className="bg-blue-100/90 backdrop-blur-md text-blue-800 px-3 py-1 rounded-full text-sm flex items-center border border-blue-200">
-              <Shield className="w-4 h-4 mr-1" />
-              Testing Mode
-            </div>
-            
-            {timeRemaining !== null && (
-              <div className={`flex items-center gap-2 px-4 py-2 rounded-lg backdrop-blur-md border ${
-                timeRemaining < 60 ? 'bg-red-500/90 text-white border-red-400' :
-                timeRemaining < 300 ? 'bg-yellow-500/90 text-white border-yellow-400' :
-                'bg-green-500/90 text-white border-green-400'
-              }`}>
-                <Clock className="w-5 h-5" />
-                <span className="font-mono font-bold text-lg">
-                  {formatTime(timeRemaining)}
-                </span>
-              </div>
-            )}
-            
-            <button
-              onClick={() => setShowTimerForm(!showTimerForm)}
-              className="p-2 bg-orange-600/90 hover:bg-orange-700 backdrop-blur-md text-white rounded-lg transition-colors border border-orange-500"
-              title="Timer Settings"
-            >
-              <Settings className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Timer Settings Form */}
-        {showTimerForm && (
-          <div className="mt-4 max-w-7xl mx-auto">
-            <div className="bg-orange-50/95 backdrop-blur-md border border-orange-200 rounded-lg p-4">
-              <h4 className="font-semibold text-orange-800 mb-3 flex items-center">
-                <Timer className="w-4 h-4 mr-2" />
-                Ballot Timer Settings
-              </h4>
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setTimerMinutes(Math.max(5, timerMinutes - 5))}
-                    className="p-1 bg-orange-200 hover:bg-orange-300 rounded"
-                  >
-                    <Minus className="w-4 h-4" />
-                  </button>
-                  <span className="px-3 py-1 bg-white border border-orange-200 rounded text-center min-w-[60px]">
-                    {timerMinutes} min
-                  </span>
-                  <button
-                    onClick={() => setTimerMinutes(Math.min(180, timerMinutes + 5))}
-                    className="p-1 bg-orange-200 hover:bg-orange-300 rounded"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleTimerUpdate}
-                    className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors"
-                  >
-                    Update Timer
-                  </button>
-                  <button
-                    onClick={() => setShowTimerForm(false)}
-                    className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Main Content */}
-      <div className="pt-20 pb-6 px-4 lg:px-6">
+      <div className="pt-6 pb-6 px-4 lg:px-6">
         <div className="max-w-7xl mx-auto">
           
+          {/* Header Controls - Testing Mode and Timer */}
+          <div className="mb-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="bg-blue-100/90 backdrop-blur-md text-blue-800 px-4 py-2 rounded-full text-sm flex items-center border border-blue-200">
+                <Shield className="w-4 h-4 mr-2" />
+                Testing Mode - No Votes Recorded
+              </div>
+              
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 px-4 py-2 rounded-lg backdrop-blur-md border bg-blue-500/90 text-white border-blue-400">
+                  <Clock className="w-5 h-5" />
+                  <span className="font-bold text-lg">
+                    {formatTime(displayMinutes)}
+                  </span>
+                  <span className="text-xs ml-2">(Current Setting)</span>
+                </div>
+                
+                <button
+                  onClick={() => setShowTimerForm(!showTimerForm)}
+                  className="p-2 bg-orange-600/90 hover:bg-orange-700 backdrop-blur-md text-white rounded-lg transition-colors border border-orange-500 flex items-center gap-2 px-4"
+                  title="Ballot Timer Settings"
+                >
+                  <Settings className="w-5 h-5" />
+                  <span className="hidden sm:inline">Timer Settings</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Ballot Timer Settings Form */}
+            {showTimerForm && (
+              <div className="bg-orange-50/95 backdrop-blur-md border-2 border-orange-300 rounded-lg p-6 shadow-lg">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-bold text-orange-900 flex items-center text-lg">
+                    <Timer className="w-5 h-5 mr-2" />
+                    Configure Ballot Duration
+                  </h4>
+                  <button
+                    onClick={() => setShowTimerForm(false)}
+                    className="text-orange-600 hover:text-orange-800"
+                  >
+                    ✕
+                  </button>
+                </div>
+                
+                <div className="bg-orange-100 border border-orange-300 rounded-lg p-4 mb-4">
+                  <p className="text-orange-900 text-sm">
+                    ⚠️ This setting affects <strong>all new ballots</strong> created for this election. Active ballots will continue with their original duration.
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                  <div className="flex items-center gap-3 bg-white rounded-lg p-2 border border-orange-200">
+                    <button
+                      onClick={() => setTimerMinutes(Math.max(5, timerMinutes - 5))}
+                      className="p-2 bg-orange-200 hover:bg-orange-300 rounded-lg transition-colors"
+                      disabled={timerMinutes <= 5}
+                    >
+                      <Minus className="w-5 h-5 text-orange-800" />
+                    </button>
+                    <div className="text-center min-w-[120px]">
+                      <div className="text-2xl font-bold text-orange-900">{timerMinutes}</div>
+                      <div className="text-xs text-orange-700">minutes</div>
+                    </div>
+                    <button
+                      onClick={() => setTimerMinutes(Math.min(180, timerMinutes + 5))}
+                      className="p-2 bg-orange-200 hover:bg-orange-300 rounded-lg transition-colors"
+                      disabled={timerMinutes >= 180}
+                    >
+                      <Plus className="w-5 h-5 text-orange-800" />
+                    </button>
+                  </div>
+
+                  <div className="flex gap-2 flex-1">
+                    <button
+                      onClick={handleSaveBallotDuration}
+                      disabled={savingDuration || timerMinutes === displayMinutes}
+                      className="flex-1 px-6 py-3 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-semibold flex items-center justify-center gap-2"
+                    >
+                      {savingDuration ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-5 h-5" />
+                          Save Duration
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setTimerMinutes(displayMinutes)
+                        setShowTimerForm(false)
+                      }}
+                      className="px-6 py-3 bg-gray-500 hover:bg-gray-600 text-white rounded-lg transition-colors font-semibold"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 text-sm text-orange-800">
+                  <p>• Minimum: 5 minutes</p>
+                  <p>• Maximum: 180 minutes (3 hours)</p>
+                  <p>• Recommended: 10-30 minutes for most elections</p>
+                </div>
+              </div>
+            )}
+          </div>
+          
           {/* Header with Logos and Election Title */}
-          <div className="relative mb-4 text-center">
+          <div className="relative mb-6 text-center">
             <div className="flex items-center justify-center gap-4 mb-4">
               <img 
                 src="/ssglogo.jpg" 
@@ -527,33 +568,33 @@ export default function SSGBallotPage() {
             </p>
           </div>
 
-          {/* Sticky Navigation Arrows */}
-          <div className="fixed top-1/2 left-4 z-40 transform -translate-y-1/2">
-            {currentPositionIndex > 0 && (
-              <button
-                onClick={handlePrevious}
-                className="p-4 bg-[#001f65]/90 hover:bg-[#001f65] rounded-full text-white transition-all duration-200 shadow-lg backdrop-blur-sm"
-                aria-label="Previous position"
-              >
-                <ChevronLeft className="w-8 h-8" />
-              </button>
-            )}
-          </div>
+          {/* Navigation Arrows - Above ballot content */}
+          <div className="flex items-center justify-between mb-6">
+            <button
+              onClick={handlePrevious}
+              disabled={currentPositionIndex === 0}
+              className="flex items-center gap-2 px-6 py-3 bg-[#001f65]/90 hover:bg-[#001f65] disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-white transition-all duration-200 shadow-lg"
+            >
+              <ChevronLeft className="w-6 h-6" />
+              <span className="hidden sm:inline">Previous</span>
+            </button>
 
-          <div className="fixed top-1/2 right-4 z-40 transform -translate-y-1/2">
-            {currentPositionIndex < positions.length - 1 && (
-              <button
-                onClick={handleNext}
-                className="p-4 bg-[#001f65]/90 hover:bg-[#001f65] rounded-full text-white transition-all duration-200 shadow-lg backdrop-blur-sm"
-                aria-label="Next position"
-              >
-                <ChevronRight className="w-8 h-8" />
-              </button>
-            )}
+            <div className="text-white font-medium text-lg">
+              Position {currentPositionIndex + 1} of {positions.length}
+            </div>
+
+            <button
+              onClick={handleNext}
+              disabled={currentPositionIndex === positions.length - 1}
+              className="flex items-center gap-2 px-6 py-3 bg-[#001f65]/90 hover:bg-[#001f65] disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg text-white transition-all duration-200 shadow-lg"
+            >
+              <span className="hidden sm:inline">Next</span>
+              <ChevronRight className="w-6 h-6" />
+            </button>
           </div>
 
           {/* Candidates Grid */}
-          <div className="flex justify-center mb-8 px-4">
+          <div className="flex justify-center mb-8">
             <div className={`grid gap-8 justify-items-center ${
               currentPosition.candidates.length === 1
                 ? 'grid-cols-1'
@@ -622,12 +663,9 @@ export default function SSGBallotPage() {
             </div>
           </div>
 
-          {/* Position Progress */}
+          {/* Position Progress Bar */}
           <div className="mt-8 text-center">
-            <p className="text-white font-medium text-lg">
-              Position {currentPositionIndex + 1} of {positions.length}
-            </p>
-            <div className="mt-2 w-full max-w-md mx-auto bg-white/20 rounded-full h-2">
+            <div className="w-full max-w-md mx-auto bg-white/20 rounded-full h-2">
               <div 
                 className="bg-white h-2 rounded-full transition-all duration-300"
                 style={{ width: `${((currentPositionIndex + 1) / positions.length) * 100}%` }}
@@ -640,18 +678,18 @@ export default function SSGBallotPage() {
             <div className="mt-8 flex justify-center">
               <button
                 onClick={handleSubmit}
-                disabled={submitting || Object.keys(selectedVotes).length === 0}
+                disabled={submitting}
                 className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 disabled:from-gray-400 disabled:to-gray-500 text-white px-12 py-4 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl font-bold text-lg flex items-center gap-3 disabled:cursor-not-allowed"
               >
                 {submitting ? (
                   <>
                     <Loader2 className="animate-spin w-6 h-6" />
-                    Submitting...
+                    Processing...
                   </>
                 ) : (
                   <>
                     <CheckCircle className="w-6 h-6" />
-                    Submit Test Ballot
+                    View Selection Summary
                   </>
                 )}
               </button>

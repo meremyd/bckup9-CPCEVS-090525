@@ -16,7 +16,8 @@ import {
   Edit,
   Loader2,
   Building2,
-  Vote
+  Vote,
+  Info
 } from "lucide-react"
 
 export default function SSGStatusPage() {
@@ -29,7 +30,6 @@ export default function SSGStatusPage() {
     ssgElectionId: '',
     electionYear: new Date().getFullYear(),
     title: '',
-    status: 'upcoming',
     electionDate: '',
     ballotOpenTime: '',
     ballotCloseTime: ''
@@ -38,6 +38,44 @@ export default function SSGStatusPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const ssgElectionId = searchParams.get('ssgElectionId')
+
+  // Helper function to calculate automatic status based on dates and times
+  const calculateAutomaticStatus = (electionDate, ballotOpenTime, ballotCloseTime) => {
+    if (!electionDate) return 'upcoming'
+    
+    const now = new Date()
+    const elecDate = new Date(electionDate)
+    
+    // Set times to start/end of day for comparison
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const elecDateStart = new Date(elecDate.getFullYear(), elecDate.getMonth(), elecDate.getDate())
+    
+    // Before election date
+    if (todayStart < elecDateStart) {
+      return 'upcoming'
+    }
+    
+    // On election date
+    if (todayStart.getTime() === elecDateStart.getTime()) {
+      // If ballot times are set, check if voting has closed
+      if (ballotCloseTime) {
+        const [closeHours, closeMinutes] = ballotCloseTime.split(':').map(Number)
+        const closeDateTime = new Date(elecDate)
+        closeDateTime.setHours(closeHours, closeMinutes, 0, 0)
+        
+        // If current time is past close time, mark as completed
+        if (now > closeDateTime) {
+          return 'completed'
+        }
+      }
+      
+      // Otherwise, it's active on election day
+      return 'active'
+    }
+    
+    // After election date
+    return 'completed'
+  }
 
   // Helper function to format time for display (24-hour to 12-hour)
   const formatTimeDisplay = (time24) => {
@@ -113,7 +151,6 @@ export default function SSGStatusPage() {
               ssgElectionId: parsed.ssgElectionId || '',
               electionYear: parsed.electionYear || new Date().getFullYear(),
               title: parsed.title || '',
-              status: parsed.status || 'upcoming',
               electionDate: parsed.electionDate ? 
                 new Date(parsed.electionDate).toISOString().slice(0, 10) : '',
               ballotOpenTime: parsed.ballotOpenTime || '',
@@ -156,7 +193,6 @@ export default function SSGStatusPage() {
         ssgElectionId: electionData.ssgElectionId || '',
         electionYear: electionData.electionYear || new Date().getFullYear(),
         title: electionData.title || '',
-        status: electionData.status || 'upcoming',
         electionDate: electionData.electionDate ? 
           new Date(electionData.electionDate).toISOString().slice(0, 10) : '',
         ballotOpenTime: electionData.ballotOpenTime || '',
@@ -226,12 +262,11 @@ export default function SSGStatusPage() {
         throw new Error(timeValidation.error)
       }
 
-      // Prepare update data
+      // Prepare update data - NO STATUS FIELD (will be calculated automatically by backend)
       const updatePayload = {
         ssgElectionId: formData.ssgElectionId,
         electionYear: formData.electionYear,
         title: formData.title,
-        status: formData.status,
         electionDate: formData.electionDate,
         ballotOpenTime: formData.ballotOpenTime || null,
         ballotCloseTime: formData.ballotCloseTime || null
@@ -264,7 +299,6 @@ export default function SSGStatusPage() {
           ssgElectionId: updatedElectionData.ssgElectionId || '',
           electionYear: updatedElectionData.electionYear || new Date().getFullYear(),
           title: updatedElectionData.title || '',
-          status: updatedElectionData.status || 'upcoming',
           electionDate: updatedElectionData.electionDate ? 
             new Date(updatedElectionData.electionDate).toISOString().slice(0, 10) : '',
           ballotOpenTime: updatedElectionData.ballotOpenTime || '',
@@ -273,12 +307,12 @@ export default function SSGStatusPage() {
       }
       
       setIsEditing(false)
-      setSuccess('Election updated successfully!')
+      setSuccess('Election updated successfully! Status is automatically managed based on dates.')
       
       Swal.fire({
         icon: 'success',
         title: 'Success!',
-        text: 'Election updated successfully!',
+        text: 'Election updated successfully! Status is automatically managed.',
         timer: 2000,
         showConfirmButton: false,
         toast: true,
@@ -327,7 +361,6 @@ export default function SSGStatusPage() {
             ssgElectionId: election.ssgElectionId || '',
             electionYear: election.electionYear || new Date().getFullYear(),
             title: election.title || '',
-            status: election.status || 'upcoming',
             electionDate: election.electionDate ? 
               new Date(election.electionDate).toISOString().slice(0, 10) : '',
             ballotOpenTime: election.ballotOpenTime || '',
@@ -348,8 +381,8 @@ export default function SSGStatusPage() {
         return 'bg-yellow-500/20 text-yellow-700 border-yellow-300'
       case 'completed':
         return 'bg-blue-500/20 text-blue-700 border-blue-300'
-      case 'draft':
-        return 'bg-gray-500/20 text-gray-700 border-gray-300'
+      case 'cancelled':
+        return 'bg-red-500/20 text-red-700 border-red-300'
       default:
         return 'bg-gray-500/20 text-gray-700 border-gray-300'
     }
@@ -363,8 +396,8 @@ export default function SSGStatusPage() {
         return <Clock className="w-5 h-5 text-yellow-600" />
       case 'completed':
         return <CheckCircle className="w-5 h-5 text-blue-600" />
-      case 'draft':
-        return <Edit className="w-5 h-5 text-gray-600" />
+      case 'cancelled':
+        return <XCircle className="w-5 h-5 text-red-600" />
       default:
         return <XCircle className="w-5 h-5 text-gray-600" />
     }
@@ -411,6 +444,11 @@ export default function SSGStatusPage() {
     }
   }
 
+  // Calculate what the current automatic status should be
+  const currentAutomaticStatus = election ? 
+    calculateAutomaticStatus(election.electionDate, election.ballotOpenTime, election.ballotCloseTime) : 
+    'upcoming'
+
   if (!ssgElectionId) {
     return (
       <SSGLayout
@@ -444,6 +482,8 @@ export default function SSGStatusPage() {
       activeItem="status"
     >
       <div className="max-w-4xl mx-auto space-y-6">
+
+
         {/* Status Overview Card */}
         <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
           <div className="flex items-center justify-between mb-6">
@@ -636,26 +676,6 @@ export default function SSGStatusPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Status *
-                </label>
-                <select
-                  required
-                  value={formData.status}
-                  onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
-                >
-                  <option value="draft">Draft</option>
-                  <option value="upcoming">Upcoming</option>
-                  <option value="active">Active</option>
-                  <option value="completed">Completed</option>
-                </select>
-                <p className="text-xs text-gray-500 mt-1">
-                  Draft: Election is being prepared • Upcoming: Ready but not started • Active: Currently running • Completed: Finished
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Election Date *
                 </label>
                 <input
@@ -665,9 +685,11 @@ export default function SSGStatusPage() {
                   onChange={(e) => setFormData(prev => ({ ...prev, electionDate: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Status is automatically set: Upcoming (before), Active (on date), Completed (after close time)
+                </p>
               </div>
 
-              {/* FIXED: Using time input instead of datetime-local */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Ballot Open Time
@@ -683,7 +705,6 @@ export default function SSGStatusPage() {
                 </p>
               </div>
 
-              {/* FIXED: Using time input instead of datetime-local */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Ballot Close Time
@@ -695,7 +716,7 @@ export default function SSGStatusPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  What time voting ends on the election date (24-hour format, e.g., 17:00)
+                  What time voting ends on the election date (24-hour format, e.g., 17:00). Can be extended even after voting starts.
                 </p>
               </div>
 

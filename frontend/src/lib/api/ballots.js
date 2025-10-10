@@ -39,6 +39,11 @@ export const ballotAPI = {
     const response = await api.put(`/ballots/user/ssg/${ballotId}/timer`, { additionalMinutes })
     return response.data
   },
+   // Update SSG ballot duration for election (Election Committee)
+  updateSSGBallotDuration: async (electionId, ballotDuration) => {
+    const response = await api.put(`/ballots/user/ssg/${electionId}/ballot-duration`, { ballotDuration })
+    return response.data
+  },
 
   // Submit SSG ballot (Election Committee - for testing)
   submitSelectedSSGBallot: async (ballotId, votes) => {

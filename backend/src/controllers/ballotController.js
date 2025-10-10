@@ -248,7 +248,8 @@ class BallotController {
           status: election.status,
           electionDate: election.electionDate,
           ballotOpenTime: election.ballotOpenTime,
-          ballotCloseTime: election.ballotCloseTime
+          ballotCloseTime: election.ballotCloseTime,
+          ballotDuration: election.ballotDuration || 10
         },
         ballot: ballotPreview,
         totalPositions: positions.length,
@@ -393,6 +394,7 @@ class BallotController {
           status: election.status,
           ballotOpenTime: election.ballotOpenTime,
           ballotCloseTime: election.ballotCloseTime,
+          ballotDuration: election.ballotDuration || 10,
           isVotingTime
         },
         hasVoted: ballot ? ballot.isSubmitted : false,
@@ -537,6 +539,44 @@ class BallotController {
         ballotCloseTime: ballot.ballotCloseTime,
         ballotDuration: ballot.ballotDuration,
         timeRemaining: ballot.timeRemaining
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Update SSG election ballot duration (Election Committee)
+  static async updateSSGBallotDuration(req, res, next) {
+    try {
+      const { electionId } = req.params
+      const { ballotDuration } = req.body
+
+      // Validate duration
+      if (!ballotDuration || ballotDuration < 5 || ballotDuration > 180) {
+        return res.status(400).json({ 
+          message: "Ballot duration must be between 5 and 180 minutes" 
+        })
+      }
+
+      const election = await SSGElection.findById(electionId)
+      if (!election) {
+        return res.status(404).json({ message: "SSG Election not found" })
+      }
+
+      // Update election ballot duration
+      election.ballotDuration = ballotDuration
+      await election.save()
+
+      await AuditLog.logUserAction(
+        "UPDATE_SSG_ELECTION",
+        req.user,
+        `Updated SSG election ${election.title} ballot duration to ${ballotDuration} minutes`,
+        req
+      )
+
+      res.json({
+        message: "Ballot duration updated successfully",
+        ballotDuration: election.ballotDuration
       })
     } catch (error) {
       next(error)
@@ -1322,7 +1362,8 @@ static async startSSGBallot(req, res, next) {
     })
 
     await ballot.save()
-    await ballot.startTimer(10)
+    const ballotDuration = election.ballotDuration || 10
+    await ballot.startTimer(ballotDuration)
 
     await AuditLog.logVoterAction(
       "BALLOT_STARTED",

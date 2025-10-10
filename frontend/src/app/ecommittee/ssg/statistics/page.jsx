@@ -3,17 +3,14 @@
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ssgElectionsAPI } from "@/lib/api/ssgElections"
-import { ballotAPI } from "@/lib/api/ballots"
-import { electionParticipationAPI } from "@/lib/api/electionParticipation"
-import { candidatesAPI } from "@/lib/api/candidates"
+import { votingAPI } from "@/lib/api/voting"
+import { departmentsAPI } from "@/lib/api/departments"
 import SSGLayout from "@/components/SSGLayout"
 import Swal from 'sweetalert2'
 import { 
   PieChart, 
   Pie, 
   Cell, 
-  LineChart, 
-  Line, 
   XAxis, 
   YAxis, 
   CartesianGrid, 
@@ -34,23 +31,25 @@ import {
   Eye,
   EyeOff,
   Trophy,
-  Medal,
-  Crown,
-  CheckCircle2,
-  RefreshCw
+  Building2,
+  Download,
+  RefreshCw,
+  FileDown
 } from "lucide-react"
 
-export default function StatisticsPage() {
+export default function SSGStatisticsPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [authError, setAuthError] = useState('')
   const [ssgElectionData, setSSGElectionData] = useState(null)
-  const [participationStats, setParticipationStats] = useState(null)
-  const [ballotStats, setBallotStats] = useState(null)
-  const [candidatesData, setCandidatesData] = useState(null)
   const [resultsData, setResultsData] = useState(null)
+  const [departments, setDepartments] = useState([])
+  const [selectedDepartment, setSelectedDepartment] = useState(null)
+  const [departmentResults, setDepartmentResults] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [loadingDepartment, setLoadingDepartment] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState('')
 
   const router = useRouter()
@@ -118,10 +117,8 @@ export default function StatisticsPage() {
     try {
       await Promise.all([
         fetchElectionData(),
-        fetchParticipationStats(),
-        fetchBallotStats(),
-        fetchCandidatesData(),
-        fetchResultsData()
+        fetchResultsData(),
+        fetchDepartments()
       ])
     } catch (error) {
       console.error("Error fetching data:", error)
@@ -140,45 +137,90 @@ export default function StatisticsPage() {
     }
   }
 
-  const fetchParticipationStats = async () => {
-  try {
-    const response = await electionParticipationAPI.getSSGStatistics(ssgElectionId)
-    console.log('📊 RAW Participation Response:', JSON.stringify(response, null, 2))
-    setParticipationStats(response.data)
-  } catch (error) {
-    console.error("Error fetching participation statistics:", error)
-    handleAPIError(error, 'Failed to load participation statistics')
-  }
-}
-
-  const fetchBallotStats = async () => {
-  try {
-    const response = await ballotAPI.getSelectedSSGElectionBallotStatistics(ssgElectionId)
-    console.log('📊 RAW Ballot Response:', JSON.stringify(response, null, 2))
-    setBallotStats(response.data)
-  } catch (error) {
-    console.error("Error fetching ballot statistics:", error)
-    handleAPIError(error, 'Failed to load ballot statistics')
-  }
-}
-
-  const fetchCandidatesData = async () => {
-    try {
-      const response = await candidatesAPI.ssg.getByElection(ssgElectionId)
-      setCandidatesData(response.data)
-    } catch (error) {
-      console.error("Error fetching candidates data:", error)
-      handleAPIError(error, 'Failed to load candidates data')
-    }
-  }
-
   const fetchResultsData = async () => {
     try {
       const response = await ssgElectionsAPI.getResults(ssgElectionId)
       setResultsData(response.data)
     } catch (error) {
       console.error("Error fetching results:", error)
-      // Don't show error for results as they might not be available yet
+    }
+  }
+
+  const fetchDepartments = async () => {
+    try {
+      const response = await departmentsAPI.getAll()
+      const depts = response?.data || response?.departments || []
+      setDepartments(depts)
+    } catch (error) {
+      console.error("Error loading departments:", error)
+    }
+  }
+
+  const loadDepartmentResults = async (departmentId) => {
+    try {
+      setLoadingDepartment(true)
+      setSelectedDepartment(departmentId)
+      
+      // Use correct staff endpoint
+      const response = await votingAPI.getSSGElectionResultsByDepartment(ssgElectionId, departmentId)
+      
+      if (response?.success) {
+        setDepartmentResults(response.data)
+      }
+      
+      setLoadingDepartment(false)
+    } catch (error) {
+      console.error("Error loading department results:", error)
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'Failed to load department results'
+      })
+      setLoadingDepartment(false)
+    }
+  }
+
+  const handleDownloadStatistics = async () => {
+    try {
+      setDownloading(true)
+      
+      // Use the votingAPI export method (uses staff endpoint)
+      const blob = await votingAPI.exportSSGElectionResults(ssgElectionId)
+      
+      // Create safe filename
+      const electionTitle = ssgElectionData?.title || ssgElectionData?.ssgElectionId || 'Election'
+      const safeTitle = electionTitle.replace(/[^a-zA-Z0-9]/g, '_')
+      const timestamp = new Date().toISOString().split('T')[0]
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `SSG_Election_Statistics_${safeTitle}_${timestamp}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Downloaded!',
+        text: 'Statistics have been downloaded successfully.',
+        timer: 2000,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end'
+      })
+    } catch (error) {
+      console.error("Error downloading statistics:", error)
+      Swal.fire({
+        icon: 'error',
+        title: 'Download Failed',
+        text: error.response?.data?.message || 'Failed to download statistics. Please try again.',
+        confirmButtonColor: '#001f65'
+      })
+    } finally {
+      setDownloading(false)
     }
   }
 
@@ -225,36 +267,52 @@ export default function StatisticsPage() {
       return
     }
 
-    let summaryHTML = '<div class="text-left space-y-4">'
+    let summaryHTML = '<div class="text-left space-y-4 max-h-96 overflow-y-auto">'
     
     resultsData.positionResults.forEach((position) => {
       if (position.candidates && position.candidates.length > 0) {
-        const winner = position.candidates[0] // Assuming sorted by votes
+        const maxVotes = position.position?.maxVotes || 1 // Get maxVotes from position
+        
         summaryHTML += `
           <div class="border-b pb-3 mb-3 last:border-b-0">
-            <h4 class="font-bold text-[#001f65] text-lg">${position.positionName}</h4>
-            <div class="mt-2">
-              <div class="flex items-center">
-                <span class="inline-block w-3 h-3 bg-yellow-500 rounded-full mr-2"></span>
-                <span class="font-semibold text-gray-900">${winner.candidateName}</span>
+            <h4 class="font-bold text-[#001f65] text-lg mb-2">
+              ${position.positionName} 
+              <span class="text-sm font-normal text-gray-600">(Top ${maxVotes})</span>
+            </h4>
+        `
+        
+        position.candidates.forEach((candidate, idx) => {
+          // Highlight winners based on maxVotes
+          const isWinner = idx < maxVotes
+          const medal = idx === 0 ? ' ' : idx === 1 ? ' ' : idx === 2 ? ' ' : ''
+          
+          summaryHTML += `
+            <div class="flex items-center justify-between py-1 ${isWinner ? 'bg-yellow-50' : ''}">
+              <div class="flex items-center gap-2">
+                <span class="text-lg">${medal}</span>
+                <div>
+                  <span class="font-semibold text-gray-900 ${isWinner ? 'text-[#001f65]' : ''}">${candidate.candidateName}</span>
+                  ${candidate.partylistName ? `<span class="text-xs text-gray-600 ml-2">${candidate.partylistName}</span>` : ''}
+                </div>
               </div>
-              <div class="text-sm text-gray-600 ml-5">
-                ${winner.partylistName ? `${winner.partylistName} • ` : ''}
-                ${winner.voteCount?.toLocaleString() || 0} votes
-                ${winner.votePercentage ? ` (${winner.votePercentage.toFixed(1)}%)` : ''}
+              <div class="text-right">
+                <div class="font-bold ${isWinner ? 'text-[#001f65]' : 'text-gray-700'}">${candidate.voteCount?.toLocaleString() || 0}</div>
+                <div class="text-xs text-gray-500">${candidate.votePercentage ? `${candidate.votePercentage.toFixed(1)}%` : '0%'}</div>
               </div>
             </div>
-          </div>
-        `
+          `
+        })
+        
+        summaryHTML += '</div>'
       }
     })
     
     summaryHTML += '</div>'
 
     Swal.fire({
-      title: `${ssgElectionData?.title || 'Election'} Results Summary`,
+      title: `${ssgElectionData?.title || 'Election'} - Top Results`,
       html: summaryHTML,
-      width: '600px',
+      width: '700px',
       confirmButtonText: 'Close',
       confirmButtonColor: '#001f65',
       customClass: {
@@ -262,42 +320,6 @@ export default function StatisticsPage() {
       }
     })
   }
-
-  // Calculate statistics from available data
-  const getStatistics = () => {
-  const stats = {
-    totalVotes: 0,
-    turnoutRate: 0,
-    totalCandidates: 0,
-    totalPositions: 0,
-    totalBallots: 0,
-    submittedBallots: 0,
-    activeBallots: 0,
-    expiredBallots: 0
-  }
-
-  // From participation stats - data is at root level after spreading
-  if (participationStats) {
-    stats.totalVotes = participationStats.totalVoted || 0
-    stats.turnoutRate = participationStats.voterTurnoutRate || 0
-  }
-
-  // From ballot stats - data is nested under statistics
-  if (ballotStats?.statistics) {
-    stats.totalBallots = ballotStats.statistics.totalBallots || 0
-    stats.submittedBallots = ballotStats.statistics.submittedBallots || 0
-    stats.activeBallots = ballotStats.statistics.activeBallots || 0
-    stats.expiredBallots = ballotStats.statistics.expiredBallots || 0
-  }
-
-  // From candidates data
-  if (candidatesData?.data) {
-    stats.totalCandidates = candidatesData.data.candidates?.length || 0
-    stats.totalPositions = candidatesData.data.positions?.length || 0
-  }
-
-  return stats
-}
 
   // Transform data for charts
   const getPresidentData = () => {
@@ -310,7 +332,7 @@ export default function StatisticsPage() {
     
     if (!presidentPosition?.candidates) return []
     
-    return presidentPosition.candidates.map((candidate, index) => ({
+    return presidentPosition.candidates.map((candidate) => ({
       name: candidate.candidateName,
       votes: candidate.voteCount || 0,
       percentage: candidate.votePercentage || 0,
@@ -327,7 +349,7 @@ export default function StatisticsPage() {
     
     if (!vicePresidentPosition?.candidates) return []
     
-    return vicePresidentPosition.candidates.map((candidate, index) => ({
+    return vicePresidentPosition.candidates.map((candidate) => ({
       name: candidate.candidateName,
       votes: candidate.voteCount || 0,
       percentage: candidate.votePercentage || 0,
@@ -353,20 +375,42 @@ export default function StatisticsPage() {
     }))
   }
 
-  // Get ballot status distribution for pie chart
-  const getBallotStatusData = () => {
-    if (!ballotStats) return []
+  const getDepartmentChartData = () => {
+    if (!departmentResults?.positions) return { president: [], vicePresident: [], senators: [] }
+    
+    const president = departmentResults.positions.find(
+      pos => pos.position.positionName?.toLowerCase().includes('president') && 
+             !pos.position.positionName?.toLowerCase().includes('vice')
+    )
+    
+    const vicePresident = departmentResults.positions.find(
+      pos => pos.position.positionName?.toLowerCase().includes('vice president')
+    )
+    
+    const senators = departmentResults.positions.find(
+      pos => pos.position.positionName?.toLowerCase().includes('senator')
+    )
 
-    return [
-      { name: 'Submitted', value: ballotStats.submitted || 0, color: '#059669' },
-      { name: 'Active', value: ballotStats.active || 0, color: '#0066ff' },
-      { name: 'Expired', value: ballotStats.expired || 0, color: '#dc2626' },
-      { name: 'Not Started', value: (ballotStats.total || 0) - (ballotStats.submitted || 0) - (ballotStats.active || 0) - (ballotStats.expired || 0), color: '#6b7280' }
-    ].filter(item => item.value > 0)
+    return {
+      president: president?.candidates.map(c => ({
+        name: c.candidateName || 'Unknown',
+        votes: c.departmentVoteCount || 0,
+        percentage: c.percentage || 0
+      })) || [],
+      vicePresident: vicePresident?.candidates.map(c => ({
+        name: c.candidateName || 'Unknown',
+        votes: c.departmentVoteCount || 0,
+        percentage: c.percentage || 0
+      })) || [],
+      senators: senators?.candidates.map(c => ({
+        name: c.candidateName || 'Unknown',
+        votes: c.departmentVoteCount || 0,
+        percentage: c.percentage || 0
+      })) || []
+    }
   }
 
-  // Custom tooltip for charts
-  const CustomTooltip = ({ active, payload, label }) => {
+  const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload
       return (
@@ -382,6 +426,25 @@ export default function StatisticsPage() {
       )
     }
     return null
+  }
+
+  // Custom Legend Component for Pie Charts
+  const CustomPieLegend = ({ data, colors }) => {
+    return (
+      <div className="mt-4 grid grid-cols-1 gap-2">
+        {data.map((entry, index) => (
+          <div key={`legend-${index}`} className="flex items-center gap-2">
+            <div 
+              className="w-4 h-4 rounded" 
+              style={{ backgroundColor: colors[index % colors.length] }}
+            />
+            <span className="text-sm text-gray-700">
+              {entry.name} - {entry.votes.toLocaleString()} votes ({entry.percentage.toFixed(1)}%)
+            </span>
+          </div>
+        ))}
+      </div>
+    )
   }
 
   // Authentication screen
@@ -407,7 +470,7 @@ export default function StatisticsPage() {
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="   "
+                  placeholder="Enter password"
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent pr-12"
                   required
                 />
@@ -465,11 +528,10 @@ export default function StatisticsPage() {
     )
   }
 
-  const statistics = getStatistics()
   const presidentData = getPresidentData()
   const vicePresidentData = getVicePresidentData()
   const senatorData = getSenatorData()
-  const ballotStatusData = getBallotStatusData()
+  const deptChartData = getDepartmentChartData()
 
   return (
     <SSGLayout
@@ -478,24 +540,24 @@ export default function StatisticsPage() {
       subtitle="Statistical Analysis & Results"
       activeItem="statistics"
     >
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header with Results Button */}
+      <div className="max-w-7xl mx-auto space-y-6 p-4">
+        {/* Header with Action Buttons */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-white mb-2">Election Statistics</h2>
+            <h2 className="text-2xl font-bold text-white mb-2"></h2>
             <p className="text-white/80">
-              {ssgElectionData?.title} - {ssgElectionData?.electionYear}
+              {/* {ssgElectionData?.title} - {ssgElectionData?.electionYear} */}
             </p>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button
               onClick={refreshData}
               disabled={loading}
               className="flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
             >
               {loading ? (
-                <Loader2 className="animate-spin rounded-full h-4 w-4 mr-2" />
+                <Loader2 className="animate-spin h-4 w-4 mr-2" />
               ) : (
                 <RefreshCw className="w-4 h-4 mr-2" />
               )}
@@ -504,199 +566,279 @@ export default function StatisticsPage() {
             
             <button
               onClick={showResultsSummary}
-              className="flex items-center px-6 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors shadow-lg"
+              className="flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors shadow-lg"
             >
               <Trophy className="w-4 h-4 mr-2" />
-              View Results Summary
+              Summary
+            </button>
+
+            <button
+              onClick={handleDownloadStatistics}
+              disabled={downloading}
+              className="flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+            >
+              {downloading ? (
+                <Loader2 className="animate-spin h-4 w-4 mr-2" />
+              ) : (
+                <FileDown className="w-4 h-4 mr-2" />
+              )}
+              Download
+            </button>
+
+            <button
+              onClick={() => router.push(`/ecommittee/ssg/results?ssgElectionId=${ssgElectionId}`)}
+              disabled={ssgElectionData?.status !== 'completed'}
+              className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+            >
+              <BarChart3 className="w-4 h-4 mr-2" />
+              Results
             </button>
           </div>
         </div>
 
-        {/* Overview Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium text-gray-600 mb-1">Total Votes</h3>
-                <p className="text-2xl font-bold text-[#001f65]">
-                  {statistics.totalVotes.toLocaleString()}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">Ballots submitted</p>
-              </div>
-              <Users className="w-10 h-10 text-[#001f65]/20" />
-            </div>
+        {/* Department Cards */}
+        <div className="mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {departments.map((dept) => (
+              <button
+                key={dept._id}
+                onClick={() => loadDepartmentResults(dept._id)}
+                className={`bg-white/95 backdrop-blur-sm rounded-xl p-4 shadow-lg border-2 transition-all hover:shadow-xl hover:scale-105 ${
+                  selectedDepartment === dept._id 
+                    ? 'border-[#001f65] bg-blue-50' 
+                    : 'border-white/20'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex-shrink-0 w-10 h-10 bg-[#001f65] text-white rounded-lg flex items-center justify-center">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1 text-left">
+                    <h3 className="font-bold text-[#001f65] text-sm truncate">
+                      {dept.departmentCode}
+                    </h3>
+                    <p className="text-xs text-gray-600 truncate">
+                      {dept.college}
+                    </p>
+                  </div>
+                </div>
+              </button>
+            ))}
           </div>
-
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium text-gray-600 mb-1">Turnout Rate</h3>
-                <p className="text-2xl font-bold text-green-600">
-                  {statistics.turnoutRate.toFixed(1)}%
-                </p>
-                <p className="text-xs text-gray-500 mt-1">Voter participation</p>
-              </div>
-              <TrendingUp className="w-10 h-10 text-green-600/20" />
+          
+          {selectedDepartment && (
+            <div className="mt-4 text-center">
+              <button
+                onClick={() => {
+                  setSelectedDepartment(null)
+                  setDepartmentResults(null)
+                }}
+                className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors border border-white/30"
+              >
+                Clear Department Filter
+              </button>
             </div>
-          </div>
-
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium text-gray-600 mb-1">Total Candidates</h3>
-                <p className="text-2xl font-bold text-blue-600">
-                  {statistics.totalCandidates}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">Running for positions</p>
-              </div>
-              <Award className="w-10 h-10 text-blue-600/20" />
-            </div>
-          </div>
-
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium text-gray-600 mb-1">Total Ballots</h3>
-                <p className="text-2xl font-bold text-purple-600">
-                  {statistics.totalBallots}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">Submitted: {statistics.submittedBallots}</p>
-              </div>
-              <BarChart3 className="w-10 h-10 text-purple-600/20" />
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Loading State */}
-        {loading && (
+        {(loading || loadingDepartment) && (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="animate-spin rounded-full h-8 w-8 text-white" />
-            <span className="ml-3 text-white">Loading statistics...</span>
+            <Loader2 className="animate-spin h-8 w-8 text-white mr-3" />
+            <span className="text-white">Loading data...</span>
           </div>
         )}
 
         {/* Charts Section */}
-        {!loading && (
+        {!loading && !loadingDepartment && (
           <div className="space-y-6">
-            {/* Ballot Status Distribution */}
-            {ballotStatusData.length > 0 && (
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-                <div className="flex items-center mb-4">
-                  <BarChart3 className="w-6 h-6 text-[#001f65] mr-2" />
-                  <h3 className="text-lg font-bold text-[#001f65]">Ballot Status Distribution</h3>
+            {selectedDepartment && departmentResults ? (
+              <>
+                {/* Department Results Header */}
+                <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
+                  <h2 className="text-2xl font-bold text-white text-center mb-2">
+                    Department Results
+                  </h2>
+                  <p className="text-blue-100 text-center">
+                    {departmentResults.department?.departmentCode} - {departmentResults.department?.degreeProgram}
+                  </p>
+                  <p className="text-blue-200 text-center text-sm mt-2">
+                    Total Ballots: {departmentResults.summary?.totalDepartmentBallots || 0}
+                  </p>
                 </div>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={ballotStatusData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({name, value}) => `${name} (${value})`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {ballotStatusData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            )}
 
-            {/* President and Vice President - Pie Charts */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* President Chart */}
-              {presidentData.length > 0 && (
-                <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-                  <div className="flex items-center mb-4">
-                    <Crown className="w-6 h-6 text-yellow-600 mr-2" />
-                    <h3 className="text-lg font-bold text-[#001f65]">President</h3>
+                {/* Department Charts Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Department President Chart */}
+                  {deptChartData.president.length > 0 && (
+                    <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+                      <h3 className="text-lg font-bold text-[#001f65] mb-4">President</h3>
+                      <ResponsiveContainer width="100%" height={250}>
+                        <PieChart>
+                          <Pie
+                            data={deptChartData.president}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={80}
+                            fill="#8884d8"
+                            dataKey="votes"
+                          >
+                            {deptChartData.president.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS.primary[index % COLORS.primary.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip content={<CustomTooltip />} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <CustomPieLegend data={deptChartData.president} colors={COLORS.primary} />
+                    </div>
+                  )}
+
+                  {/* Department Vice President Chart */}
+                  {deptChartData.vicePresident.length > 0 && (
+                    <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+                      <h3 className="text-lg font-bold text-[#001f65] mb-4">Vice President</h3>
+                      <ResponsiveContainer width="100%" height={250}>
+                        <PieChart>
+                          <Pie
+                            data={deptChartData.vicePresident}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={80}
+                            fill="#8884d8"
+                            dataKey="votes"
+                          >
+                            {deptChartData.vicePresident.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS.info[index % COLORS.info.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip content={<CustomTooltip />} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <CustomPieLegend data={deptChartData.vicePresident} colors={COLORS.info} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Department Senators Bar Chart */}
+                {deptChartData.senators.length > 0 && (
+                  <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+                    <h3 className="text-lg font-bold text-[#001f65] mb-4">Senators</h3>
+                    <ResponsiveContainer width="100%" height={400}>
+                      <BarChart data={deptChartData.senators}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis 
+                          dataKey="name" 
+                          angle={-45}
+                          textAnchor="end"
+                          height={100}
+                          interval={0}
+                        />
+                        <YAxis />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Bar dataKey="votes" fill="#059669" />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie
-                        data={presidentData}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({name, percentage}) => `${name} (${percentage.toFixed(1)}%)`}
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="votes"
-                      >
-                        {presidentData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS.primary[index % COLORS.primary.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip content={<CustomTooltip />} />
-                    </PieChart>
-                  </ResponsiveContainer>
+                )}
+              </>
+            ) : (
+              <>
+                {/* Overall Results Header */}
+                <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
+                  <h2 className="text-2xl font-bold text-white text-center">Overall Election Results</h2>
                 </div>
-              )}
 
-              {/* Vice President Chart */}
-              {vicePresidentData.length > 0 && (
-                <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-                  <div className="flex items-center mb-4">
-                    <Medal className="w-6 h-6 text-blue-600 mr-2" />
-                    <h3 className="text-lg font-bold text-[#001f65]">Vice President</h3>
+                {/* Overall Charts Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* President Chart */}
+                  {presidentData.length > 0 && (
+                    <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+                      <div className="flex items-center mb-4">
+                        <Trophy className="w-6 h-6 text-yellow-600 mr-2" />
+                        <h3 className="text-lg font-bold text-[#001f65]">President</h3>
+                      </div>
+                      <ResponsiveContainer width="100%" height={250}>
+                        <PieChart>
+                          <Pie
+                            data={presidentData}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={80}
+                            fill="#8884d8"
+                            dataKey="votes"
+                          >
+                            {presidentData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS.primary[index % COLORS.primary.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip content={<CustomTooltip />} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <CustomPieLegend data={presidentData} colors={COLORS.primary} />
+                    </div>
+                  )}
+
+                  {/* Vice President Chart */}
+                  {vicePresidentData.length > 0 && (
+                    <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+                      <div className="flex items-center mb-4">
+                        <Award className="w-6 h-6 text-blue-600 mr-2" />
+                        <h3 className="text-lg font-bold text-[#001f65]">Vice President</h3>
+                      </div>
+                      <ResponsiveContainer width="100%" height={250}>
+                        <PieChart>
+                          <Pie
+                            data={vicePresidentData}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={80}
+                            fill="#8884d8"
+                            dataKey="votes"
+                          >
+                            {vicePresidentData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS.info[index % COLORS.info.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip content={<CustomTooltip />} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <CustomPieLegend data={vicePresidentData} colors={COLORS.info} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Senators Bar Chart */}
+                {senatorData.length > 0 && (
+                  <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+                    <div className="flex items-center mb-4">
+                      <Users className="w-6 h-6 text-green-600 mr-2" />
+                      <h3 className="text-lg font-bold text-[#001f65]">Senators - Vote Distribution</h3>
+                    </div>
+                    <ResponsiveContainer width="100%" height={400}>
+                      <BarChart data={senatorData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis 
+                          dataKey="name" 
+                          angle={-45}
+                          textAnchor="end"
+                          height={100}
+                          interval={0}
+                        />
+                        <YAxis />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Bar dataKey="votes" fill="#059669" />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie
-                        data={vicePresidentData}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({name, percentage}) => `${name} (${percentage.toFixed(1)}%)`}
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="votes"
-                      >
-                        {vicePresidentData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS.info[index % COLORS.info.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip content={<CustomTooltip />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
-
-            {/* Senators - Bar Chart */}
-            {senatorData.length > 0 && (
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-                <div className="flex items-center mb-4">
-                  <Users className="w-6 h-6 text-green-600 mr-2" />
-                  <h3 className="text-lg font-bold text-[#001f65]">Senators - Vote Distribution</h3>
-                </div>
-                <ResponsiveContainer width="100%" height={400}>
-                  <BarChart data={senatorData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis 
-                      dataKey="name" 
-                      angle={-45}
-                      textAnchor="end"
-                      height={100}
-                      interval={0}
-                    />
-                    <YAxis />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Bar dataKey="votes" fill="#059669" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+                )}
+              </>
             )}
           </div>
         )}
 
         {/* No Data State */}
-        {!loading && (!presidentData.length && !vicePresidentData.length && !senatorData.length && !ballotStatusData.length) && (
+        {!loading && !loadingDepartment && (!presidentData.length && !vicePresidentData.length && !senatorData.length) && !selectedDepartment && (
           <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-12 text-center">
             <BarChart3 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-xl font-bold text-gray-900 mb-2">No Statistical Data Available</h3>
@@ -721,7 +863,7 @@ export default function StatisticsPage() {
               onClick={() => setError('')}
               className="ml-auto text-red-500 hover:text-red-700"
             >
-              ×
+              Ã—
             </button>
           </div>
         )}
@@ -730,7 +872,7 @@ export default function StatisticsPage() {
         {ssgElectionData && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <div className="flex items-center">
-              <CheckCircle2 className="w-5 h-5 text-blue-500 mr-3 flex-shrink-0" />
+              <BarChart3 className="w-5 h-5 text-blue-500 mr-3 flex-shrink-0" />
               <div>
                 <h4 className="font-medium text-blue-900">
                   Election Status: <span className="capitalize">{ssgElectionData.status}</span>
@@ -745,86 +887,6 @@ export default function StatisticsPage() {
                 </p>
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Additional Statistics Cards */}
-        {(participationStats || ballotStats) && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Participation Summary */}
-            {participationStats && (
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-                <h3 className="text-lg font-semibold text-[#001f65] mb-4">Participation Summary</h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Total Eligible:</span>
-                    <span className="font-medium">{participationStats.totalEligible?.toLocaleString() || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Confirmed:</span>
-                    <span className="font-medium text-blue-600">{participationStats.totalConfirmed?.toLocaleString() || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Voted:</span>
-                    <span className="font-medium text-green-600">{participationStats.totalVoted?.toLocaleString() || 0}</span>
-                  </div>
-                  <div className="flex justify-between border-t pt-2">
-                    <span className="text-gray-600">Turnout:</span>
-                    <span className="font-bold text-[#001f65]">{participationStats.turnoutPercentage?.toFixed(1) || 0}%</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Ballot Summary */}
-            {ballotStats && (
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-                <h3 className="text-lg font-semibold text-[#001f65] mb-4">Ballot Summary</h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Total Ballots:</span>
-                    <span className="font-medium">{ballotStats.total?.toLocaleString() || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Submitted:</span>
-                    <span className="font-medium text-green-600">{ballotStats.submitted?.toLocaleString() || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Active:</span>
-                    <span className="font-medium text-blue-600">{ballotStats.active?.toLocaleString() || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Expired:</span>
-                    <span className="font-medium text-red-600">{ballotStats.expired?.toLocaleString() || 0}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Election Summary */}
-            {candidatesData && (
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-                <h3 className="text-lg font-semibold text-[#001f65] mb-4">Election Summary</h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Positions:</span>
-                    <span className="font-medium">{candidatesData.data?.positions?.length || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Candidates:</span>
-                    <span className="font-medium text-blue-600">{candidatesData.data?.candidates?.length || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Partylists:</span>
-                    <span className="font-medium text-purple-600">{candidatesData.data?.partylists?.length || 0}</span>
-                  </div>
-                  <div className="flex justify-between border-t pt-2">
-                    <span className="text-gray-600">Election Year:</span>
-                    <span className="font-bold text-[#001f65]">{ssgElectionData?.electionYear || 'N/A'}</span>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>

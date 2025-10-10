@@ -9,6 +9,7 @@ const Department = require("../models/Department")
 const AuditLog = require("../models/AuditLog")
 const { v4: uuidv4 } = require('uuid')
 const mongoose = require("mongoose")
+const PDFDocument = require('pdfkit')
 
 class VotingController {
   // ===== SSG ELECTION VOTING METHODS =====
@@ -1223,7 +1224,7 @@ class VotingController {
     }).sort({ positionOrder: 1 })
   }
 
-  // Additional helper method to manage departmental position flow (for admin use)
+  // Additional helper method to manage departmental position flow
   static async activateNextDepartmentalPosition(deptElectionId, currentPositionId) {
     const session = await mongoose.startSession()
     session.startTransaction()
@@ -1990,59 +1991,289 @@ static async exportSSGElectionResults(req, res, next) {
             return {
               candidateNumber: candidate.candidateNumber,
               candidateName: candidateName,
+              schoolId: candidate.voterId?.schoolId || 'N/A',
               partylist: candidate.partylistId?.partylistName || 'Independent',
               voteCount: voteCount
             }
           })
         )
 
-        // Sort by vote count descending
         candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount)
 
         return {
           positionName: position.positionName,
           positionOrder: position.positionOrder,
-          candidates: candidatesWithVotes
+          maxVotes: position.maxVotes,
+          candidates: candidatesWithVotes,
+          totalVotes: candidatesWithVotes.reduce((sum, c) => sum + c.voteCount, 0)
         }
       })
     )
 
-    // Get total statistics
+    // Get statistics
     const totalBallots = await Ballot.countDocuments({
       ssgElectionId: id,
       isSubmitted: true
     })
 
+    const totalVotes = await Vote.countDocuments({ ssgElectionId: id })
+    const totalCandidates = await Candidate.countDocuments({ 
+      ssgElectionId: id, 
+      isActive: true 
+    })
+    
+    const totalParticipants = totalBallots
+
+    // Create PDF
+    const doc = new PDFDocument({ 
+      margin: 50, 
+      size: 'LETTER',
+      bufferPages: true
+    })
+    
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="SSG_Election_Statistics_${election.title.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf"`)
+    
+    doc.pipe(res)
+
+    // HEADER
+    doc.fontSize(20).font('Helvetica-Bold')
+    doc.text('SSG ELECTION RESULTS REPORT', { align: 'center' })
+    doc.moveDown(1.5)
+    
+    // ELECTION DETAILS BOX
+    doc.fontSize(11).font('Helvetica')
+    const detailsY = doc.y
+    doc.rect(50, detailsY, 512, 110).stroke()
+    
+    doc.text(`Election: ${election.title}`, 60, detailsY + 10)
+    doc.text(`Year: ${election.electionYear}`, 60, detailsY + 30)
+    doc.text(`Date: ${new Date(election.electionDate).toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    })}`, 60, detailsY + 50)
+    doc.text(`Status: ${election.status.toUpperCase()}`, 60, detailsY + 70)
+    doc.text(`Generated: ${new Date().toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'numeric', 
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    })}`, 60, detailsY + 90)
+    
+    doc.y = detailsY + 120
+    doc.moveDown(1)
+
+    // ELECTION SUMMARY BOX
+    doc.fontSize(12).font('Helvetica-Bold')
+    const summaryY = doc.y
+    
+    doc.fillColor('#2c3e50')
+    doc.rect(50, summaryY, 512, 25).fill()
+    doc.fillColor('#ffffff')
+    doc.text('ELECTION SUMMARY', 60, summaryY + 7)
+    
+    doc.fillColor('#000000')
+    doc.rect(50, summaryY + 25, 512, 80).stroke()
+    
+    doc.fontSize(11).font('Helvetica')
+    doc.text(`Total Ballots Submitted: ${totalBallots.toLocaleString()}`, 60, summaryY + 35)
+    doc.text(`Total Election Participants: ${totalParticipants.toLocaleString()}`, 60, summaryY + 55)
+    doc.text(`Voter Turnout: ${totalBallots.toLocaleString()}`, 60, summaryY + 75)
+    doc.text(`Total Candidates: ${totalCandidates.toLocaleString()}`, 60, summaryY + 95)
+    
+    doc.y = summaryY + 115
+    doc.moveDown(1.5)
+
+    // RESULTS BY POSITION
+    doc.fontSize(14).font('Helvetica-Bold')
+    doc.text('RESULTS BY POSITION', { underline: true })
+    doc.moveDown(1)
+
+    // Helper function to draw table header
+    const drawTableHeader = (startY) => {
+      const tableWidth = 512
+      const rowHeight = 25
+      const columnWidths = {
+        rank: 40,
+        candidateNum: 70,
+        name: 180,
+        partylist: 100,
+        votes: 65,
+        percentage: 57
+      }
+
+      doc.fillColor('#2c3e50')
+      doc.rect(50, startY, tableWidth, rowHeight).fill()
+      
+      doc.strokeColor('#000000').lineWidth(1)
+      doc.rect(50, startY, tableWidth, rowHeight).stroke()
+      
+      doc.fontSize(10).font('Helvetica-Bold').fillColor('#ffffff')
+      let currentX = 50
+      
+      doc.text('Rank', currentX, startY + 8, { width: columnWidths.rank, align: 'center' })
+      currentX += columnWidths.rank
+      doc.moveTo(currentX, startY).lineTo(currentX, startY + rowHeight).stroke()
+      
+      doc.text('Candidate #', currentX + 5, startY + 8, { width: columnWidths.candidateNum - 10, align: 'center' })
+      currentX += columnWidths.candidateNum
+      doc.moveTo(currentX, startY).lineTo(currentX, startY + rowHeight).stroke()
+      
+      doc.text('Name', currentX + 5, startY + 8, { width: columnWidths.name - 10, align: 'left' })
+      currentX += columnWidths.name
+      doc.moveTo(currentX, startY).lineTo(currentX, startY + rowHeight).stroke()
+      
+      doc.text('Partylist', currentX + 5, startY + 8, { width: columnWidths.partylist - 10, align: 'left' })
+      currentX += columnWidths.partylist
+      doc.moveTo(currentX, startY).lineTo(currentX, startY + rowHeight).stroke()
+      
+      doc.text('Votes', currentX + 5, startY + 8, { width: columnWidths.votes - 10, align: 'center' })
+      currentX += columnWidths.votes
+      doc.moveTo(currentX, startY).lineTo(currentX, startY + rowHeight).stroke()
+      
+      doc.text('%', currentX + 5, startY + 8, { width: columnWidths.percentage - 10, align: 'center' })
+      
+      return { rowHeight, columnWidths, tableWidth }
+    }
+
+    exportData.forEach((position, posIndex) => {
+      // Check if we need a new page for position header (need ~150px minimum)
+      if (doc.y > 620) {
+        doc.addPage()
+      }
+
+      // Position header
+      doc.fontSize(13).font('Helvetica-Bold').fillColor('#000000')
+      doc.text(`${position.positionOrder}. ${position.positionName}`, 50, doc.y)
+      doc.fontSize(10).font('Helvetica')
+      doc.text(`Total Votes for this position: ${position.totalVotes.toLocaleString()}`, 50, doc.y + 5)
+      doc.moveDown(0.8)
+
+      // Draw table
+      const tableTop = doc.y
+      const { rowHeight, columnWidths, tableWidth } = drawTableHeader(tableTop)
+      let currentY = tableTop + rowHeight
+
+      // Candidate rows
+      doc.font('Helvetica').fillColor('#000000')
+      position.candidates.forEach((candidate, idx) => {
+        // Check for page break (need at least 25px for one row)
+        if (currentY > 720) {
+          doc.addPage()
+          currentY = 50
+          drawTableHeader(currentY)
+          currentY += rowHeight
+        }
+
+        const percentage = position.totalVotes > 0 ? 
+          ((candidate.voteCount / position.totalVotes) * 100).toFixed(1) : '0.0'
+
+        doc.fillColor('#ffffff')
+        doc.rect(50, currentY, tableWidth, rowHeight).fill()
+        
+        doc.strokeColor('#cccccc').lineWidth(0.5)
+        doc.rect(50, currentY, tableWidth, rowHeight).stroke()
+        
+        doc.fontSize(9).font('Helvetica').fillColor('#000000')
+        let currentX = 50
+        
+        doc.text((idx + 1).toString(), currentX, currentY + 8, { width: columnWidths.rank, align: 'center' })
+        currentX += columnWidths.rank
+        doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
+        
+        doc.text(`#${candidate.candidateNumber}`, currentX + 5, currentY + 8, { width: columnWidths.candidateNum - 10, align: 'left' })
+        currentX += columnWidths.candidateNum
+        doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
+        
+        doc.text(candidate.candidateName, currentX + 5, currentY + 8, { 
+          width: columnWidths.name - 10, 
+          ellipsis: true,
+          align: 'left'
+        })
+        currentX += columnWidths.name
+        doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
+        
+        doc.text(candidate.partylist, currentX + 5, currentY + 8, { 
+          width: columnWidths.partylist - 10,
+          ellipsis: true,
+          align: 'left'
+        })
+        currentX += columnWidths.partylist
+        doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
+        
+        doc.text(candidate.voteCount.toLocaleString(), currentX + 5, currentY + 8, { 
+          width: columnWidths.votes - 10,
+          align: 'center'
+        })
+        currentX += columnWidths.votes
+        doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
+        
+        doc.text(`${percentage}%`, currentX + 5, currentY + 8, { 
+          width: columnWidths.percentage - 10,
+          align: 'center'
+        })
+
+        currentY += rowHeight
+      })
+
+      doc.y = currentY
+      
+      // Only add spacing between positions if not last AND have room
+      if (posIndex < exportData.length - 1) {
+        if (doc.y < 650) {
+          doc.moveDown(1.5)
+        }
+      }
+    })
+
+    // Add footer to all pages at the end
+    const range = doc.bufferedPageRange()
+    for (let i = 0; i < range.count; i++) {
+      doc.switchToPage(i)
+      
+      // Save current position
+      const currentY = doc.y
+      
+      doc.fontSize(8).font('Helvetica').fillColor('#666666')
+      doc.text(
+        'This is an official election results report generated by the election management system.',
+        50,
+        doc.page.height - 40,
+        { align: 'center', width: 512 }
+      )
+      doc.text(
+        `Page ${i + 1} of ${range.count}`,
+        50,
+        doc.page.height - 25,
+        { align: 'center', width: 512 }
+      )
+      
+      // Restore position if we're not on the last page
+      if (i < range.count - 1) {
+        doc.y = currentY
+      }
+    }
+
+    doc.end()
+
     await AuditLog.logUserAction(
       "DATA_EXPORT",
       req.user,
-      `Exported SSG election results: ${election.title}`,
+      `Exported SSG election results as PDF: ${election.title}`,
       req
     )
 
-    res.json({
-      success: true,
-      data: {
-        election: {
-          title: election.title,
-          electionYear: election.electionYear,
-          electionDate: election.electionDate,
-          status: election.status
-        },
-        positions: exportData,
-        summary: {
-          totalBallots: totalBallots,
-          totalPositions: positions.length,
-          exportedAt: new Date()
-        }
-      },
-      message: "SSG election results exported successfully"
-    })
   } catch (error) {
     console.error("Export SSG election results error:", error)
     next(error)
   }
 }
+
+
 
 // Export departmental election results as PDF data
 static async exportDepartmentalElectionResults(req, res, next) {
@@ -2097,6 +2328,8 @@ static async exportDepartmentalElectionResults(req, res, next) {
             return {
               candidateNumber: candidate.candidateNumber,
               candidateName: candidateName,
+              schoolId: candidate.voterId?.schoolId || 'N/A',
+              yearLevel: candidate.voterId?.yearLevel || 'N/A',
               voteCount: voteCount
             }
           })
@@ -2108,52 +2341,291 @@ static async exportDepartmentalElectionResults(req, res, next) {
         return {
           positionName: position.positionName,
           positionOrder: position.positionOrder,
-          candidates: candidatesWithVotes
+          maxVotes: position.maxVotes,
+          candidates: candidatesWithVotes,
+          totalVotes: candidatesWithVotes.reduce((sum, c) => sum + c.voteCount, 0)
         }
       })
     )
 
-    // Get total statistics
+    // Get statistics
     const totalBallots = await Ballot.countDocuments({
       deptElectionId: id,
       isSubmitted: true
     })
 
+    const totalVotes = await Vote.countDocuments({ deptElectionId: id })
+    const totalCandidates = await Candidate.countDocuments({
+      deptElectionId: id,
+      isActive: true
+    })
+    
+    const totalParticipants = totalBallots
+
+    // Create PDF - REMOVED bufferPages to prevent empty page issues
+    const doc = new PDFDocument({ 
+      margin: 50, 
+      size: 'LETTER'
+    })
+    
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="Departmental_Election_Statistics_${election.title.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf"`)
+    
+    doc.pipe(res)
+
+    // Track current page number for footer
+    let currentPageNumber = 1
+
+    // Helper function to add footer to current page
+    const addFooter = (pageNum, isLastPage = false) => {
+      const currentY = doc.y
+      doc.fontSize(8).font('Helvetica').fillColor('#666666')
+      doc.text(
+        'This is an official election results report generated by the election management system.',
+        50,
+        doc.page.height - 40,
+        { align: 'center', width: 512 }
+      )
+      doc.text(
+        `Page ${pageNum}`,
+        50,
+        doc.page.height - 25,
+        { align: 'center', width: 512 }
+      )
+      doc.y = currentY // Restore Y position
+    }
+
+    // HEADER
+    doc.fontSize(20).font('Helvetica-Bold')
+    doc.text('DEPARTMENTAL ELECTION RESULTS REPORT', { align: 'center' })
+    doc.moveDown(1.5)
+    
+    // ELECTION DETAILS BOX
+    doc.fontSize(11).font('Helvetica')
+    const detailsY = doc.y
+    doc.rect(50, detailsY, 512, 140).stroke()
+    
+    doc.text(`Election: ${election.title}`, 60, detailsY + 10)
+    doc.text(`Department: ${election.departmentId.departmentCode} - ${election.departmentId.degreeProgram}`, 60, detailsY + 30)
+    doc.text(`College: ${election.departmentId.college}`, 60, detailsY + 50)
+    doc.text(`Year: ${election.electionYear}`, 60, detailsY + 70)
+    doc.text(`Date: ${new Date(election.electionDate).toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    })}`, 60, detailsY + 90)
+    doc.text(`Status: ${election.status.toUpperCase()}`, 60, detailsY + 110)
+    doc.text(`Generated: ${new Date().toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    })}`, 60, detailsY + 130)
+    
+    doc.y = detailsY + 150
+    doc.moveDown(1)
+
+    // ELECTION SUMMARY BOX
+    doc.fontSize(12).font('Helvetica-Bold')
+    const summaryY = doc.y
+    
+    // Draw header box
+    doc.fillColor('#2c3e50')
+    doc.rect(50, summaryY, 512, 25).fill()
+    doc.fillColor('#ffffff')
+    doc.text('ELECTION SUMMARY', 60, summaryY + 7)
+    
+    // Draw content box
+    doc.fillColor('#000000')
+    doc.rect(50, summaryY + 25, 512, 80).stroke()
+    
+    doc.fontSize(11).font('Helvetica')
+    doc.text(`Total Ballots Submitted: ${totalBallots.toLocaleString()}`, 60, summaryY + 35)
+    doc.text(`Total Election Participants: ${totalParticipants.toLocaleString()}`, 60, summaryY + 55)
+    doc.text(`Voter Turnout: ${totalBallots.toLocaleString()}`, 60, summaryY + 75)
+    doc.text(`Total Candidates: ${totalCandidates.toLocaleString()}`, 60, summaryY + 95)
+    
+    doc.y = summaryY + 115
+    doc.moveDown(1.5)
+
+    // RESULTS BY POSITION
+    doc.fontSize(14).font('Helvetica-Bold')
+    doc.text('RESULTS BY POSITION', { underline: true })
+    doc.moveDown(1)
+
+    // Helper function to draw table header
+    const drawTableHeader = (startY) => {
+      const tableWidth = 512
+      const rowHeight = 25
+      const columnWidths = {
+        rank: 40,
+        candidateNum: 75,
+        name: 200,
+        year: 50,
+        votes: 70,
+        percentage: 77
+      }
+
+      // Header background
+      doc.fillColor('#2c3e50')
+      doc.rect(50, startY, tableWidth, rowHeight).fill()
+      
+      // Header border
+      doc.strokeColor('#000000').lineWidth(1)
+      doc.rect(50, startY, tableWidth, rowHeight).stroke()
+      
+      // Header text
+      doc.fontSize(10).font('Helvetica-Bold').fillColor('#ffffff')
+      let currentX = 50
+      
+      doc.text('Rank', currentX, startY + 8, { width: columnWidths.rank, align: 'center' })
+      currentX += columnWidths.rank
+      doc.moveTo(currentX, startY).lineTo(currentX, startY + rowHeight).stroke()
+      
+      doc.text('Candidate #', currentX + 5, startY + 8, { width: columnWidths.candidateNum - 10, align: 'left' })
+      currentX += columnWidths.candidateNum
+      doc.moveTo(currentX, startY).lineTo(currentX, startY + rowHeight).stroke()
+      
+      doc.text('Name', currentX + 5, startY + 8, { width: columnWidths.name - 10, align: 'left' })
+      currentX += columnWidths.name
+      doc.moveTo(currentX, startY).lineTo(currentX, startY + rowHeight).stroke()
+      
+      doc.text('Year', currentX + 5, startY + 8, { width: columnWidths.year - 10, align: 'center' })
+      currentX += columnWidths.year
+      doc.moveTo(currentX, startY).lineTo(currentX, startY + rowHeight).stroke()
+      
+      doc.text('Votes', currentX + 5, startY + 8, { width: columnWidths.votes - 10, align: 'center' })
+      currentX += columnWidths.votes
+      doc.moveTo(currentX, startY).lineTo(currentX, startY + rowHeight).stroke()
+      
+      doc.text('%', currentX + 5, startY + 8, { width: columnWidths.percentage - 10, align: 'center' })
+      
+      return { rowHeight, columnWidths, tableWidth }
+    }
+
+    exportData.forEach((position, posIndex) => {
+      // Check if we need a new page for position header
+      if (doc.y > 650) {
+        addFooter(currentPageNumber)
+        doc.addPage()
+        currentPageNumber++
+      }
+
+      // Position header
+      doc.fontSize(13).font('Helvetica-Bold').fillColor('#000000')
+      doc.text(`${position.positionOrder}. ${position.positionName}`, 50, doc.y)
+      doc.fontSize(10).font('Helvetica')
+      doc.text(`Total Votes for this position: ${position.totalVotes.toLocaleString()}`, 50, doc.y + 5)
+      doc.moveDown(0.8)
+
+      // Draw table
+      const tableTop = doc.y
+      const { rowHeight, columnWidths, tableWidth } = drawTableHeader(tableTop)
+      let currentY = tableTop + rowHeight
+
+      // Candidate rows
+      doc.font('Helvetica').fillColor('#000000')
+      position.candidates.forEach((candidate, idx) => {
+        // Check for page break
+        if (currentY > 700) {
+          addFooter(currentPageNumber)
+          doc.addPage()
+          currentPageNumber++
+          currentY = 50
+          drawTableHeader(currentY)
+          currentY += rowHeight
+        }
+
+        const percentage = position.totalVotes > 0 ? 
+          ((candidate.voteCount / position.totalVotes) * 100).toFixed(1) : '0.0'
+
+        // Row background (white)
+        doc.fillColor('#ffffff')
+        doc.rect(50, currentY, tableWidth, rowHeight).fill()
+        
+        // Row border
+        doc.strokeColor('#cccccc').lineWidth(0.5)
+        doc.rect(50, currentY, tableWidth, rowHeight).stroke()
+        
+        // Cell content
+        doc.fontSize(9).font('Helvetica').fillColor('#000000')
+        let currentX = 50
+        
+        // Rank
+        doc.text((idx + 1).toString(), currentX, currentY + 8, { width: columnWidths.rank, align: 'center' })
+        currentX += columnWidths.rank
+        doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
+        
+        // Candidate Number
+        doc.text(`#${candidate.candidateNumber}`, currentX + 5, currentY + 8, { width: columnWidths.candidateNum - 10, align: 'left' })
+        currentX += columnWidths.candidateNum
+        doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
+        
+        // Name
+        doc.text(candidate.candidateName, currentX + 5, currentY + 8, { 
+          width: columnWidths.name - 10, 
+          ellipsis: true,
+          align: 'left'
+        })
+        currentX += columnWidths.name
+        doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
+        
+        // Year Level
+        doc.text(candidate.yearLevel.toString(), currentX + 5, currentY + 8, { 
+          width: columnWidths.year - 10,
+          align: 'center'
+        })
+        currentX += columnWidths.year
+        doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
+        
+        // Votes
+        doc.text(candidate.voteCount.toLocaleString(), currentX + 5, currentY + 8, { 
+          width: columnWidths.votes - 10,
+          align: 'center'
+        })
+        currentX += columnWidths.votes
+        doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
+        
+        // Percentage
+        doc.text(`${percentage}%`, currentX + 5, currentY + 8, { 
+          width: columnWidths.percentage - 10,
+          align: 'center'
+        })
+
+        currentY += rowHeight
+      })
+
+      doc.y = currentY + 20
+      
+      // Only add spacing if not the last position AND we have room on page
+      if (posIndex < exportData.length - 1 && doc.y < 650) {
+        doc.moveDown(0.5)
+      }
+    })
+
+    // Add footer to the last page
+    addFooter(currentPageNumber, true)
+
+    doc.end()
+
     await AuditLog.logUserAction(
       "DATA_EXPORT",
       req.user,
-      `Exported departmental election results: ${election.title}`,
+      `Exported departmental election results as PDF: ${election.title}`,
       req
     )
 
-    res.json({
-      success: true,
-      data: {
-        election: {
-          title: election.title,
-          electionYear: election.electionYear,
-          electionDate: election.electionDate,
-          status: election.status,
-          department: {
-            departmentCode: election.departmentId.departmentCode,
-            degreeProgram: election.departmentId.degreeProgram,
-            college: election.departmentId.college
-          }
-        },
-        positions: exportData,
-        summary: {
-          totalBallots: totalBallots,
-          totalPositions: positions.length,
-          exportedAt: new Date()
-        }
-      },
-      message: "Departmental election results exported successfully"
-    })
   } catch (error) {
     console.error("Export departmental election results error:", error)
     next(error)
   }
 }
+
+
 
 
 }

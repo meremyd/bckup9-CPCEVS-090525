@@ -48,64 +48,105 @@ export default function SSGVoterBallotPage() {
     }
   }, [electionId])
 
+  useEffect(() => {
+  return () => {
+    // Cleanup timer on unmount to prevent memory leaks
+    if (timerInterval.current) {
+      clearInterval(timerInterval.current)
+      timerInterval.current = null
+    }
+  }
+}, [])
+
   const initializeBallot = async () => {
-    try {
-      setLoading(true)
+  try {
+    setLoading(true)
 
-      const statusResponse = await ballotAPI.voter.getVoterSelectedSSGBallotStatus(electionId)
+    const statusResponse = await ballotAPI.voter.getVoterSelectedSSGBallotStatus(electionId)
+    
+    if (statusResponse.hasVoted) {
+      await showVotingReceipt()
+      return
+    }
+
+    if (!statusResponse.canVote) {
+      Swal.fire({
+        icon: 'info',
+        title: 'Cannot Vote',
+        text: statusResponse.voterEligibility?.message || 'You cannot vote at this time.',
+        confirmButtonColor: '#001f65',
+        allowOutsideClick: false,
+        allowEscapeKey: false
+      }).then(() => {
+        router.replace(`/voter/ssg/info?id=${electionId}`)
+      })
+      return
+    }
+
+    const startResponse = await ballotAPI.voter.startSSGBallot(electionId)
+    const ballotData = startResponse.ballot
+
+    setBallot(ballotData)
+    setElection(statusResponse.election)
+
+    const previewResponse = await ballotAPI.voter.previewSSGBallot(electionId)
+    setPositions(previewResponse.ballot)
+
+    if (ballotData.ballotCloseTime) {
+      const closeTime = new Date(ballotData.ballotCloseTime)
+      const now = new Date()
       
-      if (statusResponse.hasVoted) {
-        await showVotingReceipt()
-        return
-      }
-
-      if (!statusResponse.canVote) {
+      if (closeTime < now) {
+        // Ballot already expired
         Swal.fire({
-          icon: 'info',
-          title: 'Cannot Vote',
-          text: statusResponse.voterEligibility?.message || 'You cannot vote at this time.',
-          confirmButtonColor: '#001f65'
+          icon: 'warning',
+          title: 'Ballot Expired',
+          text: 'This ballot has expired and cannot be accessed.',
+          confirmButtonColor: '#001f65',
+          allowOutsideClick: false,
+          allowEscapeKey: false
         }).then(() => {
-          router.push(`/voter/ssg/info?id=${electionId}`)
+          router.replace(`/voter/ssg/info?id=${electionId}`)
         })
         return
       }
-
-      const startResponse = await ballotAPI.voter.startSSGBallot(electionId)
-      const ballotData = startResponse.ballot
-
-      setBallot(ballotData)
-      setElection(statusResponse.election)
-
-      const previewResponse = await ballotAPI.voter.previewSSGBallot(electionId)
-      setPositions(previewResponse.ballot)
-
-      if (ballotData.ballotCloseTime) {
-        const closeTime = new Date(ballotData.ballotCloseTime)
-        const now = new Date()
-        
-        if (closeTime < now) {
-          handleTimeExpired()
-          return
-        }
-        
-        startTimer(closeTime)
-      }
-
-    } catch (error) {
-      console.error('Error initializing ballot:', error)
-      Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: error.response?.data?.message || 'Failed to load ballot. Please try again.',
-        confirmButtonColor: '#001f65'
-      }).then(() => {
-        router.push(`/voter/ssg/info?id=${electionId}`)
-      })
-    } finally {
-      setLoading(false)
+      
+      startTimer(closeTime)
     }
+
+  } catch (error) {
+    console.error('Error initializing ballot:', error)
+    
+    // Handle specific error cases
+    let errorMessage = 'Failed to load ballot. Please try again.'
+    let shouldRedirect = true
+    
+    if (error.response?.data?.error === 'BALLOT_CONFLICT') {
+      errorMessage = 'A ballot session is in progress. Please try again in a moment.'
+      shouldRedirect = false
+    } else if (error.response?.status === 409) {
+      errorMessage = 'Unable to start ballot. Please refresh the page and try again.'
+      shouldRedirect = false
+    }
+    
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: error.response?.data?.message || errorMessage,
+      confirmButtonColor: '#001f65',
+      allowOutsideClick: false,
+      allowEscapeKey: false
+    }).then(() => {
+      if (shouldRedirect) {
+        router.replace(`/voter/ssg/info?id=${electionId}`)
+      } else {
+        router.replace(`/voter/ssg/elections`)
+      }
+    })
+  } finally {
+    setLoading(false)
   }
+}
 
   const startTimer = (closeTime) => {
     const updateTimer = () => {
@@ -125,16 +166,24 @@ export default function SSGVoterBallotPage() {
   }
 
   const handleTimeExpired = () => {
-    Swal.fire({
-      icon: 'warning',
-      title: 'Time Expired',
-      text: 'Your voting time has expired. The ballot will now close.',
-      confirmButtonColor: '#001f65',
-      allowOutsideClick: false
-    }).then(() => {
-      router.push(`/voter/ssg/info?id=${electionId}`)
-    })
+  // Clear interval immediately to prevent re-triggering
+  if (timerInterval.current) {
+    clearInterval(timerInterval.current)
+    timerInterval.current = null
   }
+  
+  Swal.fire({
+    icon: 'warning',
+    title: 'Time Expired',
+    text: 'Your voting time has expired. The ballot will now close.',
+    confirmButtonColor: '#001f65',
+    allowOutsideClick: false,
+    allowEscapeKey: false
+  }).then(() => {
+    // Use replace instead of push to prevent back navigation loop
+    router.replace(`/voter/ssg/info?id=${electionId}`)
+  })
+}
 
   const formatTime = (seconds) => {
     if (seconds === null) return '00:00'
