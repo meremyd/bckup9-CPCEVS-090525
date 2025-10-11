@@ -1,3 +1,4 @@
+const mongoose = require("mongoose")
 const ChatSupport = require("../models/ChatSupport")
 const Department = require("../models/Department")
 const Voter = require("../models/Voter")

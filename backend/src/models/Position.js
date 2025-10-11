@@ -65,6 +65,42 @@ const positionSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // BALLOT TIMING FIELDS (Departmental Elections Only)
+    ballotOpenTime: {
+      type: Date,
+      default: null,
+      index: true,
+      validate: {
+        validator: function(value) {
+          // Only departmental positions should have ballot timing
+          // SSG positions use election-level timing from SSGElection model
+          if (this.ssgElectionId && !this.deptElectionId && value !== null) {
+            return false; // SSG positions shouldn't use position-level timing
+          }
+          return true;
+        },
+        message: 'SSG positions use election-level timing, not position-level timing'
+      }
+    },
+    ballotCloseTime: {
+      type: Date,
+      default: null,
+      index: true,
+      validate: {
+        validator: function(value) {
+          // Only departmental positions should have ballot timing
+          if (this.ssgElectionId && !this.deptElectionId && value !== null) {
+            return false;
+          }
+          // If openTime is set, closeTime should be after it
+          if (this.ballotOpenTime && value && value <= this.ballotOpenTime) {
+            return false;
+          }
+          return true;
+        },
+        message: 'Close time must be after open time, and SSG positions should not use position-level timing'
+      }
+    }
   },
   {
     timestamps: true,
@@ -75,9 +111,26 @@ const positionSchema = new mongoose.Schema(
 // positionSchema.index({ ssgElectionId: 1, positionName: 1 }, { unique: true, sparse: true })
 positionSchema.index({ deptElectionId: 1, positionOrder: 1 })
 positionSchema.index({ ssgElectionId: 1, positionOrder: 1 })
+// Index for checking if ballot is currently open
+positionSchema.index({ deptElectionId: 1, ballotOpenTime: 1, ballotCloseTime: 1 })
 
 positionSchema.virtual('electionType').get(function() {
   return this.ssgElectionId ? 'ssg' : 'departmental'
+})
+
+// Virtual to check if ballot is currently open for this position (Departmental only)
+positionSchema.virtual('isBallotOpen').get(function() {
+  // Only applicable for departmental positions
+  if (!this.deptElectionId || this.ssgElectionId) {
+    return false;
+  }
+  
+  if (!this.ballotOpenTime || !this.ballotCloseTime) {
+    return false;
+  }
+  
+  const now = new Date();
+  return now >= this.ballotOpenTime && now <= this.ballotCloseTime;
 })
 
 // Ensure virtual fields are serialized
@@ -94,6 +147,11 @@ positionSchema.pre('validate', function(next) {
   else if (this.ssgElectionId && !this.deptElectionId) {
     if (this.maxCandidatesPerPartylist === null || this.maxCandidatesPerPartylist === undefined) {
       this.maxCandidatesPerPartylist = 1; // Default to 1 for SSG positions
+    }
+    // Ensure SSG positions don't have timing fields set
+    if (this.ballotOpenTime !== null || this.ballotCloseTime !== null) {
+      this.ballotOpenTime = null;
+      this.ballotCloseTime = null;
     }
   }
   next();
@@ -126,6 +184,28 @@ positionSchema.methods.validateCandidateLimit = async function(partylistId) {
     maxAllowed: this.maxCandidatesPerPartylist,
     remaining: Math.max(0, this.maxCandidatesPerPartylist - currentCount)
   }
+}
+
+// Helper method to check if position ballot timing is valid
+positionSchema.methods.hasValidBallotTiming = function() {
+  // Only for departmental positions
+  if (!this.deptElectionId || this.ssgElectionId) {
+    return false;
+  }
+  
+  return !!(this.ballotOpenTime && this.ballotCloseTime && 
+            this.ballotCloseTime > this.ballotOpenTime);
+}
+
+// Helper method to get time remaining until ballot closes (in minutes)
+positionSchema.methods.getTimeRemaining = function() {
+  if (!this.isBallotOpen) {
+    return 0;
+  }
+  
+  const now = new Date();
+  const remainingMs = this.ballotCloseTime - now;
+  return Math.max(0, Math.floor(remainingMs / (1000 * 60)));
 }
 
 module.exports = mongoose.model("Position", positionSchema)

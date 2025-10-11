@@ -97,6 +97,11 @@ ballotSchema.virtual('ballotStatus').get(function() {
 
 // Instance method to start ballot timer
 ballotSchema.methods.startTimer = function(durationMinutes = null) {
+  // Only allow timer for SSG elections
+  if (this.deptElectionId) {
+    throw new Error('Departmental ballots do not use separate timers - they follow position timing')
+  }
+  
   if (this.timerStarted) {
     throw new Error('Ballot timer has already been started')
   }
@@ -115,6 +120,11 @@ ballotSchema.methods.startTimer = function(durationMinutes = null) {
 
 // Instance method to extend ballot timer
 ballotSchema.methods.extendTimer = function(additionalMinutes) {
+  // Only allow for SSG elections
+  if (this.deptElectionId) {
+    throw new Error('Cannot extend timer for departmental ballots - they follow position timing')
+  }
+  
   if (!this.timerStarted || this.isSubmitted) {
     throw new Error('Cannot extend timer for unstarted or submitted ballot')
   }
@@ -170,11 +180,14 @@ ballotSchema.index({ ballotCloseTime: 1, isSubmitted: 1 })
 ballotSchema.index({ timerStarted: 1, ballotOpenTime: 1 }) 
 ballotSchema.index({ ballotToken: 1 }, { unique: true })
 ballotSchema.index(
-  { voterId: 1, deptElectionId: 1 },
+  { voterId: 1, deptElectionId: 1, currentPositionId: 1 },
   { 
     unique: true, 
-    partialFilterExpression: { deptElectionId: { $type: 'objectId' } },
-    name: 'voterId_1_deptElectionId_1'
+    partialFilterExpression: { 
+      deptElectionId: { $type: 'objectId' },
+      currentPositionId: { $type: 'objectId' }
+    },
+    name: 'voterId_1_deptElectionId_1_currentPositionId_1'
   }
 )
 ballotSchema.index(

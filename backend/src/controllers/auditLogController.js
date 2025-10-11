@@ -1,3 +1,4 @@
+const mongoose = require("mongoose")
 const AuditLog = require("../models/AuditLog")
 
 class AuditLogController {

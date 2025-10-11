@@ -96,6 +96,38 @@ export const ballotAPI = {
     return response.data
   },
 
+  // Get departmental position ballot timing
+  getDepartmentalPositionBallotTiming: async (positionId) => {
+  const response = await api.get(`/ballots/user/departmental/position/${positionId}/timing`)
+  return response.data
+},
+
+  // Update departmental position ballot timing
+  updateDepartmentalPositionBallotTiming: async (positionId, timingData) => {
+  const response = await api.put(`/ballots/user/departmental/position/${positionId}/timing`, timingData)
+  return response.data
+},
+
+  // Open ballot for departmental position
+  openDepartmentalPositionBallot: async (positionId) => {
+    const response = await api.post(`/ballots/user/departmental/position/${positionId}/open`)
+    return response.data
+  },
+
+  // Close ballot for departmental position
+  closeDepartmentalPositionBallot: async (positionId) => {
+    const response = await api.post(`/ballots/user/departmental/position/${positionId}/close`)
+    return response.data
+  },
+
+  // Update year level restriction for departmental position
+  updateDepartmentalPositionYearLevel: async (positionId, allowedYearLevels) => {
+    const response = await api.put(`/ballots/user/departmental/position/${positionId}/year-level`, { 
+      allowedYearLevels 
+    })
+    return response.data
+  },
+
   // ==================== VOTER SSG BALLOT METHODS ====================
 
   voter: {
@@ -138,6 +170,12 @@ export const ballotAPI = {
     // Start departmental ballot with timer (Voters)
     startDepartmentalBallot: async (electionId, positionId) => {
       const response = await api.post('/ballots/voter/departmental/start', { electionId, positionId })
+      return response.data
+    },
+
+    // Submit departmental ballot (Voters)
+    submitDepartmentalBallot: async (ballotId, votes) => {
+      const response = await api.post(`/ballots/voter/departmental/${ballotId}/submit`, { votes })
       return response.data
     },
 

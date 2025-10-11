@@ -23,6 +23,12 @@ router.get("/user/departmental/:electionId/:positionId/preview", authorizeRoles(
 router.get("/user/departmental/:electionId/preview-positions", authorizeRoles("election_committee", "admin"), BallotController.getPositionsForPreview)
 router.delete("/user/departmental/:ballotId", authorizeRoles("election_committee", "admin"), BallotController.deleteDepartmentalBallot)
 router.put("/user/departmental/position/:positionId/year-restriction", authorizeRoles("election_committee", "admin"), BallotController.updateYearLevelRestriction)
+router.get("/user/departmental/position/:positionId/timing", authorizeRoles("election_committee", "admin"), BallotController.getDepartmentalPositionBallotTiming)
+router.put("/user/departmental/position/:positionId/timing", authorizeRoles("election_committee", "admin"), BallotController.updateDepartmentalPositionBallotTiming)
+router.post("/user/departmental/position/:positionId/open", authorizeRoles("election_committee", "admin"), BallotController.openDepartmentalPositionBallot)
+router.post("/user/departmental/position/:positionId/close", authorizeRoles("election_committee", "admin"), BallotController.closeDepartmentalPositionBallot)
+router.put("/user/departmental/position/:positionId/year-level", authorizeRoles("election_committee", "admin"), BallotController.updateDepartmentalPositionYearLevel)
+
 
 // ==================== VOTER ROUTES - SSG BALLOTS ====================
 router.use('/voter/ssg', voterAuthMiddleware)
@@ -39,5 +45,6 @@ router.use('/voter/departmental', voterAuthMiddleware)
 router.get("/voter/departmental/:electionId/available-positions", BallotController.getAvailablePositionsForVoting)
 router.get("/voter/departmental/:electionId/:positionId/voter-status", BallotController.getVoterDepartmentalBallotStatus)
 router.post("/voter/departmental/start", BallotController.startDepartmentalBallot)
+router.post("/voter/departmental/:ballotId/submit", BallotController.submitDepartmentalBallot)
 
 module.exports = router

@@ -261,7 +261,7 @@ export default function VoterDepartmentalElectionsPage() {
                 </span>
               </div>
             )}
-            {voter && (
+            {/* {voter && (
               <p className="text-white/60 text-sm mt-2">
                 Logged in as: {voter.firstName} {voter.lastName} ({voter.schoolId})
                 {voter.isClassOfficer && (
@@ -271,7 +271,7 @@ export default function VoterDepartmentalElectionsPage() {
                   </span>
                 )}
               </p>
-            )}
+            )} */}
           </div>
 
           {/* Elections Grid */}

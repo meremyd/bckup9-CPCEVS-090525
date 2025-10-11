@@ -249,11 +249,11 @@ export default function VoterSSGElectionsPage() {
             <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">SSG Elections</h2>
             <p className="text-white/80">View and participate in Student Supreme Government elections</p>
             
-            {voter && (
+            {/* {voter && (
               <p className="text-white/60 text-sm mt-2">
                 Logged in as: {voter.firstName} {voter.lastName} ({voter.schoolId})
               </p>
-            )}
+            )} */}
           </div>
 
           {/* Elections Grid */}

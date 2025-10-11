@@ -1,3 +1,4 @@
+const mongoose = require("mongoose")
 const Voter = require("../models/Voter")
 const User = require("../models/User")
 const AuditLog = require("../models/AuditLog")

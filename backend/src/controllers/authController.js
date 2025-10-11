@@ -1,3 +1,4 @@
+const mongoose = require("mongoose")
 const User = require("../models/User")
 const Voter = require("../models/Voter")
 const AuditLog = require("../models/AuditLog")
@@ -201,6 +202,7 @@ class AuthController {
             degreeProgram: voter.departmentId.degreeProgram,
             college: voter.departmentId.college
           } : null,
+          isClassOfficer: voter.isClassOfficer,
           userType: "voter",
         },
         redirectTo: "/voter/dashboard",

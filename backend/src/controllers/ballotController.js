@@ -1,3 +1,4 @@
+const mongoose = require("mongoose")
 const Ballot = require("../models/Ballot")
 const SSGElection = require("../models/SSGElection")
 const DepartmentalElection = require("../models/DepartmentalElection")
@@ -748,6 +749,390 @@ class BallotController {
     }
   }
 
+static async getDepartmentalPositionBallotTiming(req, res, next) {
+  try {
+    const { positionId } = req.params
+
+    const position = await Position.findOne({
+      _id: positionId,
+      deptElectionId: { $ne: null }
+    }).populate('deptElectionId', 'title status electionDate')  // ✅ Added electionDate
+
+    if (!position) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Departmental position not found" 
+      })
+    }
+
+    // Check if there are any active ballots for this position
+    const activeBallots = await Ballot.countDocuments({
+      deptElectionId: position.deptElectionId,
+      currentPositionId: positionId,
+      isSubmitted: false,
+      timerStarted: true
+    })
+
+    const now = new Date()
+    const isOpen = position.ballotOpenTime && position.ballotCloseTime &&
+                   now >= position.ballotOpenTime && now <= position.ballotCloseTime
+
+    console.log('📊 Position timing info:', {  // ✅ Debug
+      positionName: position.positionName,
+      ballotOpenTime: position.ballotOpenTime,
+      ballotCloseTime: position.ballotCloseTime,
+      isOpen,
+      activeBallots
+    })
+
+    await AuditLog.logUserAction(
+      "SYSTEM_ACCESS",
+      req.user,
+      `Retrieved ballot timing for departmental position: ${position.positionName}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        position: {
+          _id: position._id,
+          positionName: position.positionName,
+          deptElectionId: position.deptElectionId
+        },
+        timing: {
+          ballotOpenTime: position.ballotOpenTime,  // ✅ Returns ISO string
+          ballotCloseTime: position.ballotCloseTime,  // ✅ Returns ISO string
+          isOpen,
+          activeBallots
+        },
+        election: {  // ✅ Added election info
+          electionDate: position.deptElectionId.electionDate
+        }
+      }
+    })
+  } catch (error) {
+    console.error('❌ Error getting timing:', error)  // ✅ Debug
+    next(error)
+  }
+}
+
+static async updateDepartmentalPositionBallotTiming(req, res, next) {
+  try {
+    const { positionId } = req.params
+    const { ballotOpenTime, ballotCloseTime } = req.body
+
+    console.log('📥 Received timing update request:', { positionId, ballotOpenTime, ballotCloseTime })  // ✅ Debug
+
+    const position = await Position.findOne({
+      _id: positionId,
+      deptElectionId: { $ne: null }
+    }).populate('deptElectionId', 'title electionDate')
+
+    if (!position) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Departmental position not found" 
+      })
+    }
+
+    console.log('📍 Found position:', position.positionName)  // ✅ Debug
+
+    // ✅ Convert ISO strings to Date objects
+    if (ballotOpenTime !== undefined) {
+      const openDate = new Date(ballotOpenTime)
+      if (isNaN(openDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid ballot open time format"
+        })
+      }
+      position.ballotOpenTime = openDate
+      console.log('✅ Set ballotOpenTime:', openDate)  // ✅ Debug
+    }
+
+    if (ballotCloseTime !== undefined) {
+      const closeDate = new Date(ballotCloseTime)
+      if (isNaN(closeDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid ballot close time format"
+        })
+      }
+      position.ballotCloseTime = closeDate
+      console.log('✅ Set ballotCloseTime:', closeDate)  // ✅ Debug
+    }
+
+    // ✅ Validate times if both are set
+    if (position.ballotOpenTime && position.ballotCloseTime) {
+      if (position.ballotCloseTime <= position.ballotOpenTime) {
+        return res.status(400).json({
+          success: false,
+          message: "Ballot close time must be after open time"
+        })
+      }
+    }
+
+    console.log('💾 Saving position with timing:', {
+      ballotOpenTime: position.ballotOpenTime,
+      ballotCloseTime: position.ballotCloseTime
+    })  // ✅ Debug
+
+    await position.save()
+
+    console.log('✅ Position saved successfully')  // ✅ Debug
+
+    await AuditLog.logUserAction(
+      "UPDATE_POSITION",
+      req.user,
+      `Updated ballot timing for departmental position: ${position.positionName} (Open: ${position.ballotOpenTime ? position.ballotOpenTime.toISOString() : 'N/A'}, Close: ${position.ballotCloseTime ? position.ballotCloseTime.toISOString() : 'N/A'})`,
+      req
+    )
+
+    res.json({
+      success: true,
+      message: "Ballot timing updated successfully",
+      data: {
+        position: {
+          _id: position._id,
+          positionName: position.positionName,
+          ballotOpenTime: position.ballotOpenTime,
+          ballotCloseTime: position.ballotCloseTime
+        }
+      }
+    })
+  } catch (error) {
+    console.error('❌ Error updating ballot timing:', error)  // ✅ Debug
+    
+    // ✅ Handle validation errors specifically
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: Object.values(error.errors).map(err => err.message)
+      })
+    }
+    
+    next(error)
+  }
+}
+
+static async openDepartmentalPositionBallot(req, res, next) {
+  try {
+    const { positionId } = req.params
+
+    const position = await Position.findOne({
+      _id: positionId,
+      deptElectionId: { $ne: null }
+    }).populate('deptElectionId', 'title status')
+
+    if (!position) {
+      return res.status(404).json({ message: "Departmental position not found" })
+    }
+
+    if (position.deptElectionId.status !== 'active') {
+      return res.status(400).json({
+        message: "Cannot open ballot - election is not active"
+      })
+    }
+
+    const now = new Date()
+    
+    // FIXED: Only set open time to NOW if no pre-configured time exists
+    // This respects times set via the Timer form
+    if (!position.ballotOpenTime || position.ballotOpenTime > now) {
+      position.ballotOpenTime = now
+    }
+    
+    // Only set default close time if none configured OR if configured time is in the past
+    if (!position.ballotCloseTime || position.ballotCloseTime <= now) {
+      position.ballotCloseTime = new Date(now.getTime() + (120 * 60 * 1000)) // 2 hours default
+    }
+    
+    await position.save()
+
+    await AuditLog.logUserAction(
+      "UPDATE_POSITION",
+      req.user,
+      `Opened ballot for departmental position: ${position.positionName}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      message: `Ballot opened for ${position.positionName}`,
+      data: {
+        position: {
+          _id: position._id,
+          positionName: position.positionName,
+          ballotOpenTime: position.ballotOpenTime,
+          ballotCloseTime: position.ballotCloseTime
+        }
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+// Close ballot for departmental position
+static async closeDepartmentalPositionBallot(req, res, next) {
+  try {
+    const { positionId } = req.params
+
+    const position = await Position.findOne({
+      _id: positionId,
+      deptElectionId: { $ne: null }
+    }).populate('deptElectionId', 'title')
+
+    if (!position) {
+      return res.status(404).json({ message: "Departmental position not found" })
+    }
+
+    position.ballotCloseTime = new Date()
+    await position.save()
+
+    // Expire any active ballots for this position
+    const expiredCount = await Ballot.updateMany(
+      {
+        deptElectionId: position.deptElectionId,
+        currentPositionId: positionId,
+        isSubmitted: false,
+        timerStarted: true
+      },
+      {
+        ballotCloseTime: new Date()
+      }
+    )
+
+    await AuditLog.logUserAction(
+      "UPDATE_POSITION",
+      req.user,
+      `Closed ballot for departmental position: ${position.positionName} - Expired ${expiredCount.modifiedCount} active ballots`,
+      req
+    )
+
+    res.json({
+      success: true,
+      message: `Ballot closed for ${position.positionName}`,
+      data: {
+        position: {
+          _id: position._id,
+          positionName: position.positionName,
+          ballotOpenTime: position.ballotOpenTime,
+          ballotCloseTime: position.ballotCloseTime
+        },
+        expiredBallots: expiredCount.modifiedCount
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+static async updateDepartmentalPositionYearLevel(req, res, next) {
+  try {
+    const { positionId } = req.params
+    const { allowedYearLevels } = req.body
+
+    const position = await Position.findOne({
+      _id: positionId,
+      deptElectionId: { $ne: null }
+    }).populate('deptElectionId', 'title')
+
+    if (!position) {
+      return res.status(404).json({ message: "Departmental position not found" })
+    }
+
+    // Validate year levels
+    const validYearLevels = [1, 2, 3, 4]
+    if (!Array.isArray(allowedYearLevels) || 
+        !allowedYearLevels.every(level => validYearLevels.includes(level))) {
+      return res.status(400).json({
+        message: "Invalid year levels. Must be an array containing values 1, 2, 3, or 4"
+      })
+    }
+
+    if (allowedYearLevels.length === 0) {
+      return res.status(400).json({
+        message: "At least one year level must be allowed"
+      })
+    }
+
+    // Store in description (maintaining backward compatibility)
+    const restrictionText = allowedYearLevels.length === 4 ? 
+      "Year levels: All year levels" : 
+      `Year levels: ${allowedYearLevels.map(level => 
+        `${level}${level === 1 ? 'st' : level === 2 ? 'nd' : level === 3 ? 'rd' : 'th'}`
+      ).join(', ')}`
+
+    // Update or append to description
+    if (position.description) {
+      position.description = position.description.replace(/Year levels?:.*$/m, restrictionText)
+      if (!position.description.includes('Year level')) {
+        position.description += '\n' + restrictionText
+      }
+    } else {
+      position.description = restrictionText
+    }
+
+    await position.save()
+
+    await AuditLog.logUserAction(
+      "UPDATE_POSITION",
+      req.user,
+      `Updated year level restriction for position ${position.positionName}: ${restrictionText}`,
+      req
+    )
+
+    res.json({
+      success: true,
+      message: "Year level restriction updated successfully",
+      data: {
+        position: {
+          _id: position._id,
+          positionName: position.positionName,
+          description: position.description
+        },
+        allowedYearLevels,
+        restrictionText
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// Get allowed year levels for position
+static async getAllowedYearLevels(positionId) {
+  try {
+    const position = await Position.findById(positionId)
+    if (!position || !position.description) {
+      return [1, 2, 3, 4] // Default: all year levels
+    }
+
+    const yearLevelMatch = position.description.match(/Year levels?: (.*?)(?:\n|$)/)
+    if (!yearLevelMatch) {
+      return [1, 2, 3, 4]
+    }
+
+    const restrictionText = yearLevelMatch[1]
+    if (restrictionText.includes('All year levels')) {
+      return [1, 2, 3, 4]
+    }
+
+    const allowedLevels = []
+    if (restrictionText.includes('1st')) allowedLevels.push(1)
+    if (restrictionText.includes('2nd')) allowedLevels.push(2)
+    if (restrictionText.includes('3rd')) allowedLevels.push(3)
+    if (restrictionText.includes('4th')) allowedLevels.push(4)
+
+    return allowedLevels.length > 0 ? allowedLevels : [1, 2, 3, 4]
+  } catch (error) {
+    console.error('Error getting allowed year levels:', error)
+    return [1, 2, 3, 4]
+  }
+}
+
   // Preview departmental ballot for election committee
   static async previewDepartmentalBallot(req, res, next) {
     try {
@@ -827,90 +1212,102 @@ class BallotController {
 
   // Get available positions for departmental voting
   static async getAvailablePositionsForVoting(req, res, next) {
-    try {
-      const { electionId } = req.params
-      const voterId = req.user.voterId
+  try {
+    const { electionId } = req.params
+    const voterId = req.user.voterId
 
-      const election = await DepartmentalElection.findById(electionId)
-        .populate('departmentId')
-      if (!election) {
-        return res.status(404).json({ message: "Departmental Election not found" })
-      }
-
-      // Get voter information to check department and officer status
-      const voter = await Voter.findById(voterId).populate('departmentId')
-      if (!voter) {
-        return res.status(404).json({ message: "Voter not found" })
-      }
-
-      // Check if voter is from the same department and is an officer
-      const canVote = voter.isRegistered && 
-                     voter.isPasswordActive && 
-                     voter.isClassOfficer &&
-                     voter.departmentId.college === election.departmentId.college
-
-      if (!canVote) {
-        return res.status(403).json({ 
-          message: "Only registered class officers from this department can vote in departmental elections" 
-        })
-      }
-
-      // Get all positions for this election
-      const positions = await Position.find({
-        deptElectionId: electionId,
-        isActive: true
-      }).sort({ positionOrder: 1 })
-
-      // Get positions voter has already voted for
-      const votedPositions = await Ballot.find({
-        deptElectionId: electionId,
-        voterId,
-        isSubmitted: true
-      }).distinct('currentPositionId')
-
-      // Filter available positions based on year level restrictions
-      const availablePositions = []
-      for (const position of positions) {
-        const alreadyVoted = votedPositions.some(voted => voted.toString() === position._id.toString())
-        
-        if (!alreadyVoted) {
-          // Check if position has year level restrictions (implement this logic)
-          const canVoteForPosition = await this.checkYearLevelRestriction(voter.yearLevel, position._id)
-          
-          if (canVoteForPosition) {
-            availablePositions.push({
-              _id: position._id,
-              positionName: position.positionName,
-              positionOrder: position.positionOrder,
-              maxVotes: position.maxVotes,
-              description: position.description
-            })
-          }
-        }
-      }
-
-      res.json({
-        election: {
-          _id: election._id,
-          title: election.title,
-          status: election.status,
-          department: election.departmentId
-        },
-        totalPositions: positions.length,
-        votedPositions: votedPositions.length,
-        availablePositions,
-        isComplete: availablePositions.length === 0,
-        voterEligibility: {
-          isRegistered: voter.isRegistered,
-          isPasswordActive: voter.isPasswordActive,
-          isClassOfficer: voter.isClassOfficer,
-          departmentMatch: voter.departmentId.college === election.departmentId.college
-        }
-      })
-    } catch (error) {
-      next(error)
+    const election = await DepartmentalElection.findById(electionId)
+      .populate('departmentId')
+    if (!election) {
+      const error = new Error("Departmental election not found")
+      error.statusCode = 404
+      return next(error)
     }
+
+    const voter = await Voter.findById(voterId).populate('departmentId')
+    if (!voter) {
+      const error = new Error("Voter not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    const canVote = voter.isRegistered && 
+                   voter.isPasswordActive && 
+                   voter.isClassOfficer &&
+                   voter.departmentId.college === election.departmentId.college
+
+    const positions = await Position.find({
+      deptElectionId: electionId,
+      isActive: true
+    }).sort({ positionOrder: 1 })
+
+    const votedPositions = await Ballot.find({
+      deptElectionId: electionId,
+      voterId,
+      isSubmitted: true
+    }).distinct('currentPositionId')
+
+    const currentActivePosition = await Position.findOne({
+      deptElectionId: new mongoose.Types.ObjectId(electionId),
+      isActive: true,
+      ballotOpenTime: { $lte: new Date() },
+      ballotCloseTime: { $gte: new Date() }
+    }).sort({ positionOrder: 1 })
+
+    const availablePositions = []
+    for (const position of positions) {
+      const alreadyVoted = votedPositions.some(voted => voted.toString() === position._id.toString())
+      
+      if (!alreadyVoted) {
+        const canVoteForPosition = await BallotController.checkYearLevelRestriction(voter.yearLevel, position._id)
+        
+        if (canVoteForPosition) {
+          const isCurrentlyOpen = BallotController.isPositionBallotOpen(position)
+          
+          availablePositions.push({
+            _id: position._id,
+            positionName: position.positionName,
+            positionOrder: position.positionOrder,
+            maxVotes: position.maxVotes,
+            description: position.description,
+            ballotOpenTime: position.ballotOpenTime,
+            ballotCloseTime: position.ballotCloseTime,
+            ballotDuration: position.ballotDuration,
+            isCurrentlyOpen,
+            isCurrentActive: currentActivePosition?._id.toString() === position._id.toString()
+          })
+        }
+      }
+    }
+
+    res.json({
+      election: {
+        _id: election._id,
+        title: election.title,
+        status: election.status,
+        department: election.departmentId
+      },
+      totalPositions: positions.length,
+      votedPositions: votedPositions.length,
+      availablePositions,
+      currentActivePosition: currentActivePosition ? {
+        _id: currentActivePosition._id,
+        positionName: currentActivePosition.positionName,
+        positionOrder: currentActivePosition.positionOrder,
+        isOpen: BallotController.isPositionBallotOpen(currentActivePosition)
+      } : null,
+      isComplete: availablePositions.length === 0,
+      voterEligibility: {
+        isRegistered: voter.isRegistered,
+        isPasswordActive: voter.isPasswordActive,
+        isClassOfficer: voter.isClassOfficer,
+        departmentMatch: voter.departmentId.college === election.departmentId.college
+      }
+    })
+  } catch (error) {
+    next(error)
   }
+}
 
   static async getPositionsForPreview(req, res, next) {
   try {
@@ -1020,7 +1417,7 @@ class BallotController {
       }
 
       // Check year level restriction
-      const canVoteForPosition = canVote ? await this.checkYearLevelRestriction(voter.yearLevel, positionId) : false
+      const canVoteForPosition = canVote ? await BallotController.checkYearLevelRestriction(voter.yearLevel, positionId) : false
 
       const ballot = await Ballot.findOne({ 
         deptElectionId: electionId, 
@@ -1160,110 +1557,252 @@ class BallotController {
     }
   }
 
-  // Start departmental ballot with timer (Voters)
-  static async startDepartmentalBallot(req, res, next) {
-    try {
-      const { electionId, positionId } = req.body
-      const voterId = req.user.voterId
+static async startDepartmentalBallot(req, res, next) {
+  try {
+    const { electionId, positionId } = req.body
+    const voterId = req.user.voterId
 
-      const election = await DepartmentalElection.findById(electionId)
-        .populate('departmentId')
-      if (!election) {
-        return res.status(404).json({ message: "Departmental Election not found" })
-      }
+    const election = await DepartmentalElection.findById(electionId)
+      .populate('departmentId')
+    if (!election) {
+      return res.status(404).json({ message: "Departmental Election not found" })
+    }
 
-      if (election.status !== 'active') {
-        return res.status(400).json({ message: "Departmental Election is not active" })
-      }
+    if (election.status !== 'active') {
+      return res.status(400).json({ message: "Departmental Election is not active" })
+    }
 
-      const position = await Position.findOne({ 
-        _id: positionId, 
-        deptElectionId: electionId,
-        isActive: true 
+    const position = await Position.findOne({ 
+      _id: positionId, 
+      deptElectionId: electionId,
+      isActive: true 
+    })
+    if (!position) {
+      return res.status(404).json({ message: "Position not found or not active" })
+    }
+
+    // CHECK IF POSITION BALLOT IS OPEN
+    const now = new Date()
+    const isPositionOpen = position.ballotOpenTime && position.ballotCloseTime &&
+                          now >= position.ballotOpenTime && now <= position.ballotCloseTime
+    
+    if (!isPositionOpen) {
+      return res.status(400).json({ 
+        message: "Voting is not currently open for this position",
+        ballotOpenTime: position.ballotOpenTime,
+        ballotCloseTime: position.ballotCloseTime
       })
-      if (!position) {
-        return res.status(404).json({ message: "Position not found or not active" })
-      }
+    }
 
-      // Check if voter already has a ballot for this position
-      const existingBallot = await Ballot.findOne({ 
-        deptElectionId: electionId, 
-        voterId,
-        currentPositionId: positionId 
+    // Check if voter already has a ballot for this position
+    const existingBallot = await Ballot.findOne({ 
+      deptElectionId: electionId, 
+      voterId,
+      currentPositionId: positionId 
+    })
+    
+    if (existingBallot) {
+      if (existingBallot.isSubmitted) {
+        return res.status(400).json({ message: `You have already voted for ${position.positionName}` })
+      }
+      // Return existing ballot WITHOUT starting timer
+      return res.json({ 
+        message: `Continuing existing ballot for ${position.positionName}`,
+        ballot: existingBallot 
       })
-      if (existingBallot) {
-        if (existingBallot.isSubmitted) {
-          return res.status(400).json({ message: `You have already voted for ${position.positionName}` })
-        }
-        // Start timer if not started and return existing ballot
-        if (!existingBallot.timerStarted) {
-          await existingBallot.startTimer(10) // 10 minutes
-        }
-        return res.json({ 
-          message: `Continuing existing ballot for ${position.positionName}`,
-          ballot: existingBallot 
+    }
+
+    // Verify voter eligibility
+    const voter = await Voter.findById(voterId).populate('departmentId')
+    if (!voter || !voter.isRegistered || !voter.isPasswordActive) {
+      return res.status(400).json({ message: "Only registered voters can participate in departmental elections" })
+    }
+
+    if (!voter.isClassOfficer) {
+      return res.status(403).json({ message: "Only class officers can vote in departmental elections" })
+    }
+
+    if (voter.departmentId.college !== election.departmentId.college) {
+      return res.status(403).json({ message: "You can only vote in your department's elections" })
+    }
+
+    // Check year level restriction
+    const canVoteForPosition = await BallotController.checkYearLevelRestriction(voter.yearLevel, positionId)
+    if (!canVoteForPosition) {
+      return res.status(403).json({ message: "You do not meet the year level requirements for this position" })
+    }
+
+    // Create new ballot WITHOUT timer - relies on position timing
+    const ballotToken = crypto.randomBytes(32).toString('hex')
+    
+    const ballot = new Ballot({
+      deptElectionId: electionId,
+      voterId,
+      currentPositionId: positionId,
+      ballotToken,
+      ipAddress: req.ip,
+      userAgent: req.get("User-Agent"),
+      // REMOVED: Don't set ballot timing here - use position timing
+      ballotOpenTime: position.ballotOpenTime,
+      ballotCloseTime: position.ballotCloseTime,
+      timerStarted: true, // Mark as active but no separate timer
+      timerStartedAt: new Date()
+    })
+
+    await ballot.save()
+
+    await AuditLog.logVoterAction(
+      "BALLOT_STARTED",
+      voter,
+      `Started new Departmental ballot for position: ${position.positionName} in election: ${election.title}`,
+      req
+    )
+
+    res.status(201).json({
+      message: `Departmental Ballot started successfully for ${position.positionName}`,
+      ballot: {
+        _id: ballot._id,
+        deptElectionId: ballot.deptElectionId,
+        currentPositionId: ballot.currentPositionId,
+        ballotToken: ballot.ballotToken,
+        ballotOpenTime: ballot.ballotOpenTime,
+        ballotCloseTime: ballot.ballotCloseTime,
+        createdAt: ballot.createdAt
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// Submit departmental ballot (Voters) - ONE POSITION ONLY
+static async submitDepartmentalBallot(req, res, next) {
+  try {
+    const { ballotId } = req.params
+    const { votes } = req.body // Array of { positionId, candidateId }
+    const voterId = req.user.voterId
+
+    const ballot = await Ballot.findById(ballotId)
+      .populate('deptElectionId', 'title status')
+      .populate('currentPositionId', 'positionName maxVotes') // ✅ ADDED maxVotes
+
+    if (!ballot || !ballot.deptElectionId) {
+      return res.status(404).json({ message: "Departmental Ballot not found" })
+    }
+
+    // Check ownership
+    if (ballot.voterId.toString() !== voterId) {
+      return res.status(403).json({ message: "Access denied" })
+    }
+
+    if (ballot.isSubmitted) {
+      return res.status(400).json({ message: "Ballot has already been submitted for this position" })
+    }
+
+    // Check if ballot timing is still valid (position-based)
+    const position = await Position.findById(ballot.currentPositionId._id) // ✅ FIXED: Use _id from populated object
+    if (!position) {
+      return res.status(404).json({ message: "Position not found" })
+    }
+
+    const now = new Date()
+    if (!position.ballotOpenTime || !position.ballotCloseTime || 
+        now < position.ballotOpenTime || now > position.ballotCloseTime) {
+      return res.status(400).json({ message: "Voting time has expired for this position" })
+    }
+
+    // Validate votes
+    if (!votes || !Array.isArray(votes) || votes.length === 0) {
+      return res.status(400).json({ message: "No votes provided" })
+    }
+
+    // ✅ FIXED: Validate vote count against position's maxVotes
+    const maxVotes = ballot.currentPositionId.maxVotes || 1
+    if (votes.length > maxVotes) {
+      return res.status(400).json({ 
+        message: `You can only vote for up to ${maxVotes} candidate(s) for this position` 
+      })
+    }
+
+    // ✅ FIXED: Process ALL votes (not just first one)
+    const processedVotes = []
+    
+    for (const vote of votes) {
+      // Verify position matches ballot's current position
+      if (vote.positionId !== ballot.currentPositionId._id.toString()) { // ✅ FIXED: Compare with _id
+        return res.status(400).json({
+          message: "Position mismatch - vote must be for the current ballot position"
         })
       }
 
-      // Verify voter eligibility
-      const voter = await Voter.findById(voterId).populate('departmentId')
-      if (!voter || !voter.isRegistered || !voter.isPasswordActive) {
-        return res.status(400).json({ message: "Only registered voters can participate in departmental elections" })
-      }
-
-      if (!voter.isClassOfficer) {
-        return res.status(403).json({ message: "Only class officers can vote in departmental elections" })
-      }
-
-      if (voter.departmentId.college !== election.departmentId.college) {
-        return res.status(403).json({ message: "You can only vote in your department's elections" })
-      }
-
-      // Check year level restriction
-      const canVoteForPosition = await this.checkYearLevelRestriction(voter.yearLevel, positionId)
-      if (!canVoteForPosition) {
-        return res.status(403).json({ message: "You do not meet the year level requirements for this position" })
-      }
-
-      // Create new ballot with timer
-      const ballotToken = crypto.randomBytes(32).toString('hex')
-      
-      const ballot = new Ballot({
-        deptElectionId: electionId,
-        voterId,
-        currentPositionId: positionId,
-        ballotToken,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent")
+      // Validate candidate
+      const candidate = await Candidate.findOne({
+        _id: vote.candidateId,
+        positionId: vote.positionId,
+        deptElectionId: ballot.deptElectionId,
+        isActive: true
       })
 
-      await ballot.save()
-      await ballot.startTimer(10) // 10 minutes default
+      if (!candidate) {
+        return res.status(400).json({ 
+          message: `Invalid candidate for this position` 
+        })
+      }
 
-      await AuditLog.logVoterAction(
-        "BALLOT_STARTED",
-        voter,
-        `Started new Departmental ballot for position: ${position.positionName} in election: ${election.title}`,
-        req
+      // Check if already voted for this candidate (prevent duplicates)
+      const existingVote = await Vote.findOne({
+        ballotId: ballot._id,
+        candidateId: vote.candidateId
+      })
+
+      if (existingVote) {
+        return res.status(400).json({ 
+          message: `Duplicate vote detected for candidate #${candidate.candidateNumber}` 
+        })
+      }
+
+      // Create vote record
+      const newVote = new Vote({
+        ballotId: ballot._id,
+        candidateId: vote.candidateId,
+        positionId: vote.positionId,
+        deptElectionId: ballot.deptElectionId
+      })
+
+      await newVote.save()
+      processedVotes.push(newVote)
+
+      // Update candidate vote count
+      await Candidate.findByIdAndUpdate(
+        vote.candidateId,
+        { $inc: { voteCount: 1 } }
       )
-
-      res.status(201).json({
-        message: `Departmental Ballot started successfully for ${position.positionName}`,
-        ballot: {
-          _id: ballot._id,
-          deptElectionId: ballot.deptElectionId,
-          currentPositionId: ballot.currentPositionId,
-          ballotToken: ballot.ballotToken,
-          ballotOpenTime: ballot.ballotOpenTime,
-          ballotCloseTime: ballot.ballotCloseTime,
-          ballotDuration: ballot.ballotDuration,
-          createdAt: ballot.createdAt
-        }
-      })
-    } catch (error) {
-      next(error)
     }
+
+    // Submit ballot
+    ballot.isSubmitted = true
+    ballot.submittedAt = new Date()
+    await ballot.save()
+
+    const voter = await Voter.findById(voterId)
+    
+    await AuditLog.logVoterAction(
+      "VOTED",
+      voter,
+      `Submitted ${processedVotes.length} vote(s) for position: ${ballot.currentPositionId.positionName} in election: ${ballot.deptElectionId.title}`,
+      req
+    )
+
+    res.json({
+      message: "Departmental Ballot submitted successfully",
+      submittedAt: ballot.submittedAt,
+      position: ballot.currentPositionId.positionName,
+      voteCount: processedVotes.length
+    })
+  } catch (error) {
+    next(error)
   }
+}
 
   // Start SSG ballot with timer (Voters)
 static async startSSGBallot(req, res, next) {
@@ -1398,6 +1937,36 @@ static async startSSGBallot(req, res, next) {
     next(error)
   }
 }
+
+// Get current active position for departmental election (enhanced)
+  static async getCurrentActivePositionEnhanced(deptElectionId) {
+    try {
+      const now = new Date()
+      
+      // Find position where ballot is currently open
+      const activePosition = await Position.findOne({
+        deptElectionId,
+        isActive: true,
+        ballotOpenTime: { $lte: now },
+        ballotCloseTime: { $gte: now }
+      }).sort({ positionOrder: 1 })
+
+      return activePosition
+    } catch (error) {
+      console.error('Error finding active position:', error)
+      return null
+    }
+  }
+
+  // Check if position ballot is open
+  static isPositionBallotOpen(position) {
+    if (!position || !position.ballotOpenTime || !position.ballotCloseTime) {
+      return false
+    }
+
+    const now = new Date()
+    return now >= position.ballotOpenTime && now <= position.ballotCloseTime
+  }
 
 
 }
