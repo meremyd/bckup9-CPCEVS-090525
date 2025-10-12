@@ -259,191 +259,117 @@ export default function PreRegisterStep2() {
 
   return (
     <>
-      <div className="min-h-screen flex flex-col md:flex-row overflow-x-hidden overflow-y-auto">
-        <LeftSide />
-        <div className="w-full flex-grow bg-white flex flex-col items-center justify-center p-6 relative rounded-t-3xl -mt-3 md:mt-0 md:rounded-none md:w-3/5 md:h-screen xl:min-w-[600px] xl:-mt-10">
-          <div className="text-center mb-6 -mt-1 md:mb-8 md:mt-10 lg:mb-10 lg:-mt-0 xl:mb-12">
-            <div className="flex flex-row items-center justify-center w-full mb-2 xl:mt-10">
+      <div className="min-h-screen flex items-center justify-center bg-blue-50">
+        <div className="flex flex-col md:flex-row bg-white shadow-lg md:rounded-lg overflow-hidden w-full max-w-4xl h-[600px]">
+          {/* Left Side */}
+          <LeftSide />
+         
+          {/* Right Side */}
+          <div className="flex-1 flex flex-col items-center p-8 overflow-auto">
+            <div className="flex flex-1 items-center mb-2">
               <img
-                src="/voteicon.png"
-                alt="Fingerprint Icon"
-                className="w-10 h-10 md:w-12 md:h-12 xl:w-16 xl:h-16 mr-3"
+                src="voteicon.png"
+                alt="Vote Icon"
+                className="w-10 h-10"
               />
-              <h2 className="text-xl font-bold text-blue-600 md:text-2xl lg:text-3xl xl:text-3xl m-0">
-                Pre Registration
-              </h2>
-            </div>
-            <p className="text-xs text-gray-600 md:text-sm xl:text-base">
-              Create a password and proceed to
-              <br />
-              selfie authentication
-            </p>
-          </div>
-
-          <div className="w-full max-w-sm md:max-w-md xl:max-w-xl 2xl:max-w-2xl text-left mb-3">
-            <span className="text-sm font-bold text-gray-800 md:text-base xl:text-lg">STEP 2</span>
-            <div className="text-xs text-gray-600 mt-1 md:text-xs xl:text-sm">
-              Welcome, {voterInfo.firstName} {voterInfo.lastName} (ID: {voterInfo.schoolId})
-            </div>
-          </div>
-
-          {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-xs w-full max-w-sm md:max-w-md xl:max-w-xl 2xl:max-w-2xl md:text-sm">
-              {error}
-            </div>
-          )}
-
-          <form className="w-full max-w-sm mb-4 md:max-w-md md:mb-6 xl:max-w-xl 2xl:max-w-2xl" onSubmit={handleDone}>
-            <div className="mb-3 md:mb-4 xl:mb-5">
-              <label className="block text-gray-700 text-xs mb-2 md:text-sm xl:text-base font-medium">
-                Create a password *
-              </label>
-              <div className="relative flex items-center border border-gray-300 rounded-full shadow-sm px-4 py-2 md:py-2 xl:py-3 2xl:px-5 2xl:py-4 bg-blue-50">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  name="password"
-                  value={form.password}
-                  onChange={handleChange}
-                  className="flex-1 bg-transparent outline-none text-gray-800 text-xs placeholder-gray-500 md:text-sm xl:text-base xl:ml-2 2xl:ml-4"
-                  required
-                  disabled={loading}
-                  minLength={6}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="ml-2 text-gray-500 hover:text-gray-700"
-                >
-                  {showPassword ? (
-                    <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21"
-                      />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                      />
-                    </svg>
-                  )}
-                </button>
+              <div>
+                <h2 className="text-2xl font-bold text-blue-700 text-center">Pre Registration</h2>
+                <p className="text-gray-500 text-center">Create a password and proceed to selfie authentication</p>
               </div>
             </div>
 
-            <div className="mb-4 md:mb-5 xl:mb-6">
-              <label className="block text-gray-700 text-xs mb-2 md:text-sm xl:text-base font-medium">
-                Confirm your password *
-              </label>
-              <div className="relative flex items-center border border-gray-300 rounded-full shadow-sm px-4 py-2 md:py-2 xl:py-3 2xl:px-5 2xl:py-4 bg-blue-50">
-                <input
-                  type={showConfirmPassword ? "text" : "password"}
-                  name="confirmPassword"
-                  value={form.confirmPassword}
-                  onChange={handleChange}
-                  className="flex-1 bg-transparent outline-none text-gray-800 text-xs placeholder-gray-500 md:text-sm xl:text-base xl:ml-2 2xl:ml-4"
-                  required
-                  disabled={loading}
-                  minLength={6}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="ml-2 text-gray-500 hover:text-gray-700"
-                >
-                  {showConfirmPassword ? (
-                    <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21"
-                      />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                      />
-                    </svg>
-                  )}
-                </button>
+            <div className="w-full max-w-sm text-left mb-3">
+              <span className="text-sm font-bold text-blue-600">STEP 2</span>
+              <div className="text-xs text-gray-600 mt-1">
+                Welcome, {voterInfo.firstName} {voterInfo.lastName} (ID: {voterInfo.schoolId})
               </div>
             </div>
 
-            <div className="mb-6 md:mb-8 xl:mb-10">
-              <label className="block text-gray-700 text-xs mb-3 md:text-sm xl:text-base font-medium">
-                Facial Registration *
-              </label>
-              <div className="flex flex-col items-center">
-                <button
-                  type="button"
-                  onClick={startFaceRecognition}
-                  disabled={faceRecognitionActive || faceRecognitionComplete}
-                  className={`flex items-center justify-center w-12 h-12 md:w-14 md:h-14 xl:w-16 xl:h-16 rounded-full shadow-md transition ${
-                    faceRecognitionComplete ? "bg-green-100 hover:bg-green-200" : "bg-blue-100 hover:bg-blue-200"
-                  } ${faceRecognitionActive ? "cursor-not-allowed" : "cursor-pointer"}`}
-                >
-                  {faceRecognitionComplete ? (
-                    <svg
-                      className="w-6 h-6 md:w-7 md:h-7 xl:w-8 xl:h-8 text-green-600"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  ) : (
-                    <img src="/camera.png" alt="Camera Icon" className="w-6 h-6 md:w-7 md:h-7 xl:w-8 xl:h-8" />
-                  )}
-                </button>
-
-                {faceRecognitionComplete && (
-                  <p className="text-xs text-green-600 mt-2 text-center">Face registration completed ✓</p>
-                )}
+            {/* Error Message */}
+            {error && (
+              <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm w-full max-w-sm">
+                {error}
               </div>
-            </div>
+            )}
 
-            <div className="flex flex-row justify-center space-x-0 mt-6 lg:text-base xl:text-base xl:mt-8 w-full">
-              <button
-                type="button"
-                onClick={handleLogin}
+            {/* Form */}
+            <form className="w-full max-w-sm mb-4" onSubmit={handleDone}>
+              <input
+                type={showPassword ? "text" : "password"}
+                name="password"
+                placeholder="Create a password"
+                value={form.password}
+                onChange={handleChange}
+                className="w-full border p-3 rounded mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200 text-blue-500"
+                required
                 disabled={loading}
-                className="flex-1 rounded-full py-2 text-blue-600 bg-white border-1 border-blue-700 font-semibold shadow-sm hover:bg-blue-50 transition text-sm xl:text-base disabled:opacity-50"
-              >
-                Log In
-              </button>
-              <button
-                type="submit"
+                minLength={6}
+              />
+              <input
+                type={showConfirmPassword ? "text" : "password"}
+                name="confirmPassword"
+                placeholder="Confirm your password"
+                value={form.confirmPassword}
+                onChange={handleChange}
+                className="w-full border p-3 rounded mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200 text-blue-500"
+                required
                 disabled={loading}
-                className="flex-1 rounded-full py-2 text-white bg-blue-600 font-semibold shadow-sm text-sm xl:text-base ml-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? "Creating Account..." : "Done"}
-              </button>
-            </div>
-          </form>
-          <ChatSupportBtn />
+                minLength={6}
+              />
+
+              <div className="mb-4">
+                <label className="block text-gray-700 text-sm mb-2 font-medium">
+                  Facial Registration *
+                </label>
+                <div className="flex flex-col items-center">
+                  <button
+                    type="button"
+                    onClick={startFaceRecognition}
+                    disabled={faceRecognitionActive || faceRecognitionComplete}
+                    className={`flex items-center justify-center w-12 h-12 rounded-full shadow-md transition ${
+                      faceRecognitionComplete ? "bg-green-100 hover:bg-green-200" : "bg-blue-100 hover:bg-blue-200"
+                    } ${faceRecognitionActive ? "cursor-not-allowed" : "cursor-pointer"}`}
+                  >
+                    {faceRecognitionComplete ? (
+                      <svg
+                        className="w-6 h-6 text-green-600"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <img src="/camera.png" alt="Camera Icon" className="w-6 h-6" />
+                    )}
+                  </button>
+
+                  {faceRecognitionComplete && (
+                    <p className="text-xs text-green-600 mt-2 text-center">Face registration completed ✓</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-2 w-full mt-4">
+                <button
+                  type="button"
+                  onClick={handleLogin}
+                  disabled={loading}
+                  className="flex-1 border py-2 rounded text-blue-600 bg-white hover:bg-blue-50"
+                >
+                  Log In
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? "Creating Account..." : "Done"}
+                </button>
+              </div>
+            </form>
+            <ChatSupportBtn />
+          </div>
         </div>
       </div>
 
