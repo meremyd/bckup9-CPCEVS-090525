@@ -951,7 +951,7 @@ static async checkCandidateEligibility(req, res, next) {
       partylistId: null   
     }
 
-    // FIXED: Remove ONLY credentials, keep campaign picture
+    // Remove ONLY credentials, keep campaign picture
     delete candidateData.credentials
 
     const validation = await CandidateController.validateDepartmentalCandidate(candidateData)
@@ -1239,7 +1239,7 @@ static async checkCandidateEligibility(req, res, next) {
       return next(error)
     }
     
-    // FIXED: Only remove credentials, keep campaign picture
+    //  Only remove credentials, keep campaign picture
     delete updateData.credentials
 
     // If changing voter, validate that new voter is an active class officer in correct department
@@ -1407,7 +1407,7 @@ static async checkCandidateEligibility(req, res, next) {
       return next(error)
     }
 
-    // Convert base64 to buffer - FIXED for proper handling
+    // Convert base64 to buffer 
     let pictureBuffer
     try {
       if (typeof campaignPicture === 'string') {

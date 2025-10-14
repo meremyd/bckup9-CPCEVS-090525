@@ -50,11 +50,16 @@ const voteSchema = new mongoose.Schema(
 )
 
 // Compound indexes for preventing duplicate votes and improving performance
-voteSchema.index({ ballotId: 1, positionId: 1 }, { unique: true }) 
+// voteSchema.index({ ballotId: 1, positionId: 1 }, { unique: true }) 
+voteSchema.index({ ballotId: 1, candidateId: 1 }, { unique: true }) // Prevent duplicate votes for same candidate
+voteSchema.index({ ballotId: 1, positionId: 1 }) 
 voteSchema.index({ deptElectionId: 1, candidateId: 1 })
 voteSchema.index({ ssgElectionId: 1, candidateId: 1 }) 
 voteSchema.index({ deptElectionId: 1, positionId: 1 }) 
 voteSchema.index({ ssgElectionId: 1, positionId: 1 }) 
+voteSchema.index({ ballotId: 1, candidateId: 1, positionId: 1 }, { unique: true }) // Prevent duplicate votes for same candidate
+voteSchema.index({ ballotId: 1 }) // For faster ballot queries
+voteSchema.index({ positionId: 1, candidateId: 1 })
 
 // Pre-save middleware to auto-populate election references from candidate
 voteSchema.pre('save', async function(next) {

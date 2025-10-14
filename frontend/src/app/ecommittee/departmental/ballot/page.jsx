@@ -128,20 +128,20 @@ export default function DepartmentalBallotPreviewPage() {
     setBallotTiming(timing)
     setActiveBallots(timing?.activeBallots || 0)
     
-    
+    // ✅ FIX: Use time strings directly - NO parsing/conversion
     if (timing?.ballotOpenTime) {
-  setBallotOpenTime(formatTimeForInput(new Date(timing.ballotOpenTime)))
-  console.log('Loaded ballotOpenTime:', timing.ballotOpenTime, '→ Formatted:', formatTimeForInput(new Date(timing.ballotOpenTime)))  // ✅ Debug
-} else {
-  setBallotOpenTime('')
-}
+      setBallotOpenTime(timing.ballotOpenTime) // Already in HH:mm format
+      console.log('📅 Open Time - Direct:', timing.ballotOpenTime)
+    } else {
+      setBallotOpenTime('')
+    }
 
-if (timing?.ballotCloseTime) {
-  setBallotCloseTime(formatTimeForInput(new Date(timing.ballotCloseTime)))
-  console.log('Loaded ballotCloseTime:', timing.ballotCloseTime, '→ Formatted:', formatTimeForInput(new Date(timing.ballotCloseTime)))  // ✅ Debug
-} else {
-  setBallotCloseTime('')
-}
+    if (timing?.ballotCloseTime) {
+      setBallotCloseTime(timing.ballotCloseTime) // Already in HH:mm format
+      console.log('📅 Close Time - Direct:', timing.ballotCloseTime)
+    } else {
+      setBallotCloseTime('')
+    }
     
     setBallotStatus(timing?.isOpen ? 'open' : 'closed')
     
@@ -184,15 +184,7 @@ if (timing?.ballotCloseTime) {
     return allowedLevels.length > 0 ? allowedLevels : [1, 2, 3, 4]
   }
 
-  const formatTimeForInput = (date) => {
-  if (!date) return ''
-  
-  const d = new Date(date)
-  const hours = String(d.getHours()).padStart(2, '0')
-  const minutes = String(d.getMinutes()).padStart(2, '0')
-  
-  return `${hours}:${minutes}`
-}
+
 
   const formatTime = (minutes) => {
     const hrs = Math.floor(minutes / 60)
@@ -206,7 +198,6 @@ if (timing?.ballotCloseTime) {
 const handleSaveBallotTiming = async () => {
   if (!ballotPreview?.position) return
 
-  // Validate that at least one time is provided
   if (!ballotOpenTime && !ballotCloseTime) {
     Swal.fire({
       icon: 'warning',
@@ -217,57 +208,31 @@ const handleSaveBallotTiming = async () => {
     return
   }
 
-
-  if (!election?.electionDate) {
-    Swal.fire({
-      icon: 'error',
-      title: 'Error',
-      text: 'Election date not found. Cannot set ballot timing.',
-      confirmButtonColor: '#001f65'
-    })
-    return
+  // ✅ FIX: Simple time validation (no timezone conversion)
+  if (ballotOpenTime && ballotCloseTime) {
+    const openMinutes = parseInt(ballotOpenTime.split(':')[0]) * 60 + parseInt(ballotOpenTime.split(':')[1])
+    const closeMinutes = parseInt(ballotCloseTime.split(':')[0]) * 60 + parseInt(ballotCloseTime.split(':')[1])
+    
+    if (closeMinutes <= openMinutes) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Invalid Time Range',
+        text: 'Close time must be after open time.',
+        confirmButtonColor: '#001f65'
+      })
+      return
+    }
   }
 
   try {
     setSavingTiming(true)
     
+    // ✅ FIX: Send time strings directly (HH:mm format)
     const timingData = {}
+    if (ballotOpenTime) timingData.ballotOpenTime = ballotOpenTime
+    if (ballotCloseTime) timingData.ballotCloseTime = ballotCloseTime
 
-    // ✅ FIX: Use election date as base, not today's date
-    const electionDate = new Date(election.electionDate)
-    
-    if (ballotOpenTime) {
-      const [hours, minutes] = ballotOpenTime.split(':')
-      const openDate = new Date(electionDate)  // ✅ Use election date
-      openDate.setHours(parseInt(hours), parseInt(minutes), 0, 0)
-      timingData.ballotOpenTime = openDate.toISOString()  // ✅ Convert to ISO string
-    }
-
-    if (ballotCloseTime) {
-      const [hours, minutes] = ballotCloseTime.split(':')
-      const closeDate = new Date(electionDate)  // ✅ Use election date
-      closeDate.setHours(parseInt(hours), parseInt(minutes), 0, 0)
-      timingData.ballotCloseTime = closeDate.toISOString()  // ✅ Convert to ISO string
-    }
-
-    // ✅ Validate close time is after open time
-    if (ballotOpenTime && ballotCloseTime) {
-      const openMinutes = parseInt(ballotOpenTime.split(':')[0]) * 60 + parseInt(ballotOpenTime.split(':')[1])
-      const closeMinutes = parseInt(ballotCloseTime.split(':')[0]) * 60 + parseInt(ballotCloseTime.split(':')[1])
-      
-      if (closeMinutes <= openMinutes) {
-        Swal.fire({
-          icon: 'error',
-          title: 'Invalid Time Range',
-          text: 'Close time must be after open time.',
-          confirmButtonColor: '#001f65'
-        })
-        setSavingTiming(false)
-        return
-      }
-    }
-
-    console.log('Sending timing data:', timingData)  // ✅ Debug log
+    console.log('💾 Sending timing data:', timingData)
 
     await ballotAPI.updateDepartmentalPositionBallotTiming(
       ballotPreview.position._id, 
@@ -282,7 +247,6 @@ const handleSaveBallotTiming = async () => {
       html: `
         <div style="text-align: left; padding: 20px;">
           <p style="margin-bottom: 10px;"><strong>Position:</strong> ${ballotPreview.position.positionName}</p>
-          <p style="margin-bottom: 10px;"><strong>Election Date:</strong> ${new Date(election.electionDate).toLocaleDateString()}</p>
           ${ballotOpenTime ? `<p style="margin-bottom: 10px;"><strong>Open Time:</strong> ${ballotOpenTime}</p>` : ''}
           ${ballotCloseTime ? `<p style="margin-bottom: 10px;"><strong>Close Time:</strong> ${ballotCloseTime}</p>` : ''}
           <p style="margin-top: 15px; color: #059669;">✓ Timing updated successfully</p>
@@ -305,6 +269,7 @@ const handleSaveBallotTiming = async () => {
     setSavingTiming(false)
   }
 }
+
 
   const handleYearLevelUpdate = async () => {
     if (!ballotPreview?.position) return
@@ -393,34 +358,72 @@ const handleSaveBallotTiming = async () => {
     cancelButtonText: "Cancel",
   })
 
-    if (result.isConfirmed) {
-      try {
-        setLoading(true)
-        await ballotAPI.openDepartmentalPositionBallot(ballotPreview.position._id)
-        
-        setBallotStatus('open')
-        
+  if (result.isConfirmed) {
+    try {
+      setLoading(true)
+      await ballotAPI.openDepartmentalPositionBallot(ballotPreview.position._id)
+      
+      setBallotStatus('open')
+      
+      await Swal.fire({
+        icon: "success",
+        title: "Ballot Opened!",
+        text: `Voting is now open for ${ballotPreview.position.positionName}`,
+        confirmButtonColor: "#001f65",
+      })
+      
+      await loadPositionPreview(ballotPreview.position._id)
+    } catch (error) {
+      console.error('Error opening ballot:', error)
+      
+      // ✅ FIX #4: Handle conflict error specifically
+      if (error.response?.data?.conflictingPosition) {
+        const conflicting = error.response.data.conflictingPosition
         await Swal.fire({
-          icon: "success",
-          title: "Ballot Opened!",
-          text: `Voting is now open for ${ballotPreview.position.positionName}`,
-          confirmButtonColor: "#001f65",
+          icon: 'error',
+          title: 'Cannot Open Ballot',
+          html: `
+            <div style="text-align: left; padding: 20px;">
+              <p style="margin-bottom: 15px; color: #dc2626; font-weight: bold;">
+                ⚠️ Another position ballot is already open
+              </p>
+              <div style="background: #fee2e2; border: 1px solid #dc2626; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                <p style="margin: 0;"><strong>Currently Open Position:</strong></p>
+                <p style="margin: 5px 0 0 0;">${conflicting.positionName}</p>
+                <p style="margin: 5px 0 0 0; font-size: 14px;">
+                  <strong>Open:</strong> ${new Date(conflicting.ballotOpenTime).toLocaleTimeString()}<br>
+                  <strong>Close:</strong> ${new Date(conflicting.ballotCloseTime).toLocaleTimeString()}
+                </p>
+              </div>
+              <p style="margin-bottom: 10px;">
+                <strong>Why can't I open multiple ballots?</strong>
+              </p>
+              <p style="margin-bottom: 10px; font-size: 14px; color: #6b7280;">
+                To ensure fair voting and prevent confusion, only one position ballot can be open at a time within an election.
+              </p>
+              <p style="margin-top: 15px; font-weight: bold; color: #001f65;">
+                ➡️ Please close the "${conflicting.positionName}" ballot first, then try again.
+              </p>
+            </div>
+          `,
+          confirmButtonColor: '#001f65',
+          confirmButtonText: 'I Understand',
+          width: '600px'
         })
-        
-        await loadPositionPreview(ballotPreview.position._id)
-      } catch (error) {
-        console.error('Error opening ballot:', error)
+      } else {
+        // Generic error handling
         Swal.fire({
           icon: 'error',
           title: 'Error',
           text: error.response?.data?.message || 'Failed to open ballot',
           confirmButtonColor: '#001f65'
         })
-      } finally {
-        setLoading(false)
       }
+    } finally {
+      setLoading(false)
     }
   }
+}
 
   const closeBallotForPosition = async () => {
     if (!ballotPreview?.position) return

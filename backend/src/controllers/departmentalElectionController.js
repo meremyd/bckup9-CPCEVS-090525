@@ -316,7 +316,7 @@ class DepartmentalElectionController {
         .populate("positionId", "positionName positionOrder")
         .sort({ positionId: 1, candidateNumber: 1 })
 
-      // FIXED: Use correct method name
+      //  Use correct method name
       const participationStats = await ElectionParticipation.getElectionStatistics(id, 'departmental')
 
       // Log election access
@@ -797,7 +797,7 @@ class DepartmentalElectionController {
       const totalPositions = await Position.countDocuments({ deptElectionId: id })
       const totalCandidates = await Candidate.countDocuments({ deptElectionId: id })
       
-      // FIXED: Use correct method name
+      //  Use correct method name
       const participationStats = await ElectionParticipation.getElectionStatistics(id, 'departmental')
 
       // Get candidates by position with vote counts

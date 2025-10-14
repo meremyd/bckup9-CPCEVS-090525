@@ -756,7 +756,7 @@ static async getDepartmentalPositionBallotTiming(req, res, next) {
     const position = await Position.findOne({
       _id: positionId,
       deptElectionId: { $ne: null }
-    }).populate('deptElectionId', 'title status electionDate')  // ✅ Added electionDate
+    }).populate('deptElectionId', 'title status electionDate')
 
     if (!position) {
       return res.status(404).json({ 
@@ -765,7 +765,6 @@ static async getDepartmentalPositionBallotTiming(req, res, next) {
       })
     }
 
-    // Check if there are any active ballots for this position
     const activeBallots = await Ballot.countDocuments({
       deptElectionId: position.deptElectionId,
       currentPositionId: positionId,
@@ -774,16 +773,10 @@ static async getDepartmentalPositionBallotTiming(req, res, next) {
     })
 
     const now = new Date()
+    
     const isOpen = position.ballotOpenTime && position.ballotCloseTime &&
-                   now >= position.ballotOpenTime && now <= position.ballotCloseTime
-
-    console.log('📊 Position timing info:', {  // ✅ Debug
-      positionName: position.positionName,
-      ballotOpenTime: position.ballotOpenTime,
-      ballotCloseTime: position.ballotCloseTime,
-      isOpen,
-      activeBallots
-    })
+                   now >= position.ballotOpenTime && 
+                   now <= position.ballotCloseTime
 
     await AuditLog.logUserAction(
       "SYSTEM_ACCESS",
@@ -801,18 +794,23 @@ static async getDepartmentalPositionBallotTiming(req, res, next) {
           deptElectionId: position.deptElectionId
         },
         timing: {
-          ballotOpenTime: position.ballotOpenTime,  // ✅ Returns ISO string
-          ballotCloseTime: position.ballotCloseTime,  // ✅ Returns ISO string
+
+          ballotOpenTime: position.ballotOpenTime ? 
+            `${String(position.ballotOpenTime.getHours()).padStart(2, '0')}:${String(position.ballotOpenTime.getMinutes()).padStart(2, '0')}` : 
+            null,
+          ballotCloseTime: position.ballotCloseTime ? 
+            `${String(position.ballotCloseTime.getHours()).padStart(2, '0')}:${String(position.ballotCloseTime.getMinutes()).padStart(2, '0')}` : 
+            null,
           isOpen,
           activeBallots
         },
-        election: {  // ✅ Added election info
+        election: {
           electionDate: position.deptElectionId.electionDate
         }
       }
     })
   } catch (error) {
-    console.error('❌ Error getting timing:', error)  // ✅ Debug
+    console.error('Error getting timing:', error)
     next(error)
   }
 }
@@ -821,8 +819,6 @@ static async updateDepartmentalPositionBallotTiming(req, res, next) {
   try {
     const { positionId } = req.params
     const { ballotOpenTime, ballotCloseTime } = req.body
-
-    console.log('📥 Received timing update request:', { positionId, ballotOpenTime, ballotCloseTime })  // ✅ Debug
 
     const position = await Position.findOne({
       _id: positionId,
@@ -836,56 +832,47 @@ static async updateDepartmentalPositionBallotTiming(req, res, next) {
       })
     }
 
-    console.log('📍 Found position:', position.positionName)  // ✅ Debug
-
-    // ✅ Convert ISO strings to Date objects
     if (ballotOpenTime !== undefined) {
-      const openDate = new Date(ballotOpenTime)
-      if (isNaN(openDate.getTime())) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid ballot open time format"
-        })
+      if (ballotOpenTime === null || ballotOpenTime === '') {
+        position.ballotOpenTime = null
+      } else {
+        // Parse HH:mm format
+        const [hours, minutes] = ballotOpenTime.split(':')
+        const electionDate = new Date(position.deptElectionId.electionDate)
+        
+        electionDate.setHours(parseInt(hours), parseInt(minutes), 0, 0)
+        position.ballotOpenTime = electionDate
       }
-      position.ballotOpenTime = openDate
-      console.log('✅ Set ballotOpenTime:', openDate)  // ✅ Debug
     }
 
     if (ballotCloseTime !== undefined) {
-      const closeDate = new Date(ballotCloseTime)
-      if (isNaN(closeDate.getTime())) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid ballot close time format"
-        })
+      if (ballotCloseTime === null || ballotCloseTime === '') {
+        position.ballotCloseTime = null
+      } else {
+        const [hours, minutes] = ballotCloseTime.split(':')
+        const electionDate = new Date(position.deptElectionId.electionDate)
+        
+        electionDate.setHours(parseInt(hours), parseInt(minutes), 0, 0)
+        position.ballotCloseTime = electionDate
       }
-      position.ballotCloseTime = closeDate
-      console.log('✅ Set ballotCloseTime:', closeDate)  // ✅ Debug
     }
 
-    // ✅ Validate times if both are set
+    // Validate times
     if (position.ballotOpenTime && position.ballotCloseTime) {
       if (position.ballotCloseTime <= position.ballotOpenTime) {
         return res.status(400).json({
           success: false,
-          message: "Ballot close time must be after open time"
+          message: "Close time must be after open time"
         })
       }
     }
 
-    console.log('💾 Saving position with timing:', {
-      ballotOpenTime: position.ballotOpenTime,
-      ballotCloseTime: position.ballotCloseTime
-    })  // ✅ Debug
-
     await position.save()
-
-    console.log('✅ Position saved successfully')  // ✅ Debug
 
     await AuditLog.logUserAction(
       "UPDATE_POSITION",
       req.user,
-      `Updated ballot timing for departmental position: ${position.positionName} (Open: ${position.ballotOpenTime ? position.ballotOpenTime.toISOString() : 'N/A'}, Close: ${position.ballotCloseTime ? position.ballotCloseTime.toISOString() : 'N/A'})`,
+      `Updated ballot timing for departmental position: ${position.positionName}`,
       req
     )
 
@@ -896,23 +883,18 @@ static async updateDepartmentalPositionBallotTiming(req, res, next) {
         position: {
           _id: position._id,
           positionName: position.positionName,
-          ballotOpenTime: position.ballotOpenTime,
-          ballotCloseTime: position.ballotCloseTime
+
+          ballotOpenTime: position.ballotOpenTime ? 
+            `${String(position.ballotOpenTime.getHours()).padStart(2, '0')}:${String(position.ballotOpenTime.getMinutes()).padStart(2, '0')}` : 
+            null,
+          ballotCloseTime: position.ballotCloseTime ? 
+            `${String(position.ballotCloseTime.getHours()).padStart(2, '0')}:${String(position.ballotCloseTime.getMinutes()).padStart(2, '0')}` : 
+            null
         }
       }
     })
   } catch (error) {
-    console.error('❌ Error updating ballot timing:', error)  // ✅ Debug
-    
-    // ✅ Handle validation errors specifically
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({
-        success: false,
-        message: "Validation failed",
-        errors: Object.values(error.errors).map(err => err.message)
-      })
-    }
-    
+    console.error('Error updating ballot timing:', error)
     next(error)
   }
 }
@@ -927,26 +909,50 @@ static async openDepartmentalPositionBallot(req, res, next) {
     }).populate('deptElectionId', 'title status')
 
     if (!position) {
-      return res.status(404).json({ message: "Departmental position not found" })
+      return res.status(404).json({ 
+        success: false,
+        message: "Departmental position not found" 
+      })
     }
 
     if (position.deptElectionId.status !== 'active') {
       return res.status(400).json({
+        success: false,
         message: "Cannot open ballot - election is not active"
       })
     }
 
+    // ✅ Check for conflicting open ballots
     const now = new Date()
     
-    // FIXED: Only set open time to NOW if no pre-configured time exists
-    // This respects times set via the Timer form
+    const existingOpenPosition = await Position.findOne({
+      deptElectionId: position.deptElectionId._id,
+      _id: { $ne: positionId },
+      ballotOpenTime: { $lte: now },
+      ballotCloseTime: { $gte: now },
+      isActive: true
+    })
+
+    if (existingOpenPosition) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot open ballot for "${position.positionName}". Another position "${existingOpenPosition.positionName}" already has an open ballot. Please close the existing ballot first.`,
+        conflictingPosition: {
+          _id: existingOpenPosition._id,
+          positionName: existingOpenPosition.positionName,
+          ballotOpenTime: existingOpenPosition.ballotOpenTime,
+          ballotCloseTime: existingOpenPosition.ballotCloseTime
+        }
+      })
+    }
+
     if (!position.ballotOpenTime || position.ballotOpenTime > now) {
       position.ballotOpenTime = now
     }
     
-    // Only set default close time if none configured OR if configured time is in the past
     if (!position.ballotCloseTime || position.ballotCloseTime <= now) {
-      position.ballotCloseTime = new Date(now.getTime() + (120 * 60 * 1000)) // 2 hours default
+      // Default: 2 hours from now
+      position.ballotCloseTime = new Date(now.getTime() + (120 * 60 * 1000))
     }
     
     await position.save()
@@ -965,8 +971,9 @@ static async openDepartmentalPositionBallot(req, res, next) {
         position: {
           _id: position._id,
           positionName: position.positionName,
-          ballotOpenTime: position.ballotOpenTime,
-          ballotCloseTime: position.ballotCloseTime
+
+          ballotOpenTime: `${String(position.ballotOpenTime.getHours()).padStart(2, '0')}:${String(position.ballotOpenTime.getMinutes()).padStart(2, '0')}`,
+          ballotCloseTime: `${String(position.ballotCloseTime.getHours()).padStart(2, '0')}:${String(position.ballotCloseTime.getMinutes()).padStart(2, '0')}`
         }
       }
     })
@@ -974,6 +981,7 @@ static async openDepartmentalPositionBallot(req, res, next) {
     next(error)
   }
 }
+
 // Close ballot for departmental position
 static async closeDepartmentalPositionBallot(req, res, next) {
   try {
@@ -1255,30 +1263,37 @@ static async getAllowedYearLevels(positionId) {
     }).sort({ positionOrder: 1 })
 
     const availablePositions = []
-    for (const position of positions) {
-      const alreadyVoted = votedPositions.some(voted => voted.toString() === position._id.toString())
+for (const position of positions) {
+  const alreadyVoted = votedPositions.some(voted => voted.toString() === position._id.toString())
+  
+  if (!alreadyVoted) {
+    const canVoteForPosition = await BallotController.checkYearLevelRestriction(voter.yearLevel, position._id)
+    
+    if (canVoteForPosition) {
+      const isCurrentlyOpen = BallotController.isPositionBallotOpen(position)
       
-      if (!alreadyVoted) {
-        const canVoteForPosition = await BallotController.checkYearLevelRestriction(voter.yearLevel, position._id)
-        
-        if (canVoteForPosition) {
-          const isCurrentlyOpen = BallotController.isPositionBallotOpen(position)
-          
-          availablePositions.push({
-            _id: position._id,
-            positionName: position.positionName,
-            positionOrder: position.positionOrder,
-            maxVotes: position.maxVotes,
-            description: position.description,
-            ballotOpenTime: position.ballotOpenTime,
-            ballotCloseTime: position.ballotCloseTime,
-            ballotDuration: position.ballotDuration,
-            isCurrentlyOpen,
-            isCurrentActive: currentActivePosition?._id.toString() === position._id.toString()
-          })
-        }
-      }
+      const currentActivePosition = await Position.findOne({
+        deptElectionId: new mongoose.Types.ObjectId(electionId),
+        isActive: true,
+        ballotOpenTime: { $lte: new Date() },
+        ballotCloseTime: { $gte: new Date() }
+      }).sort({ positionOrder: 1 })
+      
+      availablePositions.push({
+        _id: position._id,
+        positionName: position.positionName,
+        positionOrder: position.positionOrder,
+        maxVotes: position.maxVotes,
+        description: position.description,
+        ballotOpenTime: position.ballotOpenTime, // Return as Date object (frontend will convert)
+        ballotCloseTime: position.ballotCloseTime, // Return as Date object (frontend will convert)
+        ballotDuration: position.ballotDuration,
+        isCurrentlyOpen, // ✅ Correctly calculated
+        isCurrentActive: currentActivePosition?._id.toString() === position._id.toString()
+      })
     }
+  }
+}
 
     res.json({
       election: {
@@ -1389,83 +1404,114 @@ static async getAllowedYearLevels(positionId) {
   }
 
   // Get voter departmental ballot status
-  static async getVoterDepartmentalBallotStatus(req, res, next) {
-    try {
-      const { electionId, positionId } = req.params
-      const voterId = req.user.voterId
+  // Get voter departmental ballot status
+static async getVoterDepartmentalBallotStatus(req, res, next) {
+  try {
+    const { electionId, positionId } = req.params
+    const voterId = req.user.voterId
 
-      const election = await DepartmentalElection.findById(electionId)
-        .populate('departmentId')
-      if (!election) {
-        return res.status(404).json({ message: "Departmental Election not found" })
-      }
-
-      const voter = await Voter.findById(voterId).populate('departmentId')
-      if (!voter) {
-        return res.status(404).json({ message: "Voter not found" })
-      }
-
-      // Check eligibility
-      const canVote = voter.isRegistered && 
-                     voter.isPasswordActive && 
-                     voter.isClassOfficer &&
-                     voter.departmentId.college === election.departmentId.college
-
-      const position = await Position.findById(positionId)
-      if (!position) {
-        return res.status(404).json({ message: "Position not found" })
-      }
-
-      // Check year level restriction
-      const canVoteForPosition = canVote ? await BallotController.checkYearLevelRestriction(voter.yearLevel, positionId) : false
-
-      const ballot = await Ballot.findOne({ 
-        deptElectionId: electionId, 
-        voterId,
-        currentPositionId: positionId
-      })
-
-      res.json({
-        election: {
-          _id: election._id,
-          title: election.title,
-          department: election.departmentId
-        },
-        position: {
-          _id: position._id,
-          positionName: position.positionName,
-          positionOrder: position.positionOrder
-        },
-        hasVoted: ballot ? ballot.isSubmitted : false,
-        canVote: canVoteForPosition && !ballot?.isSubmitted,
-        ballot: ballot ? {
-          _id: ballot._id,
-          currentPositionId: ballot.currentPositionId,
-          isSubmitted: ballot.isSubmitted,
-          submittedAt: ballot.submittedAt,
-          createdAt: ballot.createdAt,
-          timerStarted: ballot.timerStarted,
-          ballotOpenTime: ballot.ballotOpenTime,
-          ballotCloseTime: ballot.ballotCloseTime,
-          isExpired: ballot.isExpired,
-          timeRemaining: ballot.timeRemaining,
-          ballotStatus: ballot.ballotStatus
-        } : null,
-        voterEligibility: {
-          isRegistered: voter.isRegistered,
-          isPasswordActive: voter.isPasswordActive,
-          isClassOfficer: voter.isClassOfficer,
-          departmentMatch: voter.departmentId.college === election.departmentId.college,
-          yearLevelMatch: canVoteForPosition,
-          message: canVoteForPosition ? 
-            "You are eligible to vote for this position" : 
-            "You do not meet the requirements to vote for this position"
-        }
-      })
-    } catch (error) {
-      next(error)
+    if (!mongoose.Types.ObjectId.isValid(electionId)) {
+      const error = new Error("Invalid election ID format")
+      error.statusCode = 400
+      return next(error)
     }
+
+    if (!mongoose.Types.ObjectId.isValid(positionId)) {
+      const error = new Error("Invalid position ID format")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const election = await DepartmentalElection.findById(electionId)
+      .populate('departmentId')
+    if (!election) {
+      const error = new Error("Departmental election not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    const voter = await Voter.findById(voterId).populate('departmentId')
+    if (!voter) {
+      const error = new Error("Voter not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Check eligibility
+    const canVote = voter.isRegistered && 
+                   voter.isPasswordActive && 
+                   voter.isClassOfficer &&
+                   voter.departmentId.college === election.departmentId.college
+
+    const position = await Position.findById(positionId)
+    if (!position) {
+      const error = new Error("Position not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    const now = new Date()
+    const isCurrentlyOpen = position.ballotOpenTime && 
+                           position.ballotCloseTime &&
+                           now >= position.ballotOpenTime && 
+                           now <= position.ballotCloseTime
+
+    // Check year level restriction
+    const canVoteForPosition = canVote ? 
+      await BallotController.checkYearLevelRestriction(voter.yearLevel, positionId) : 
+      false
+
+    const ballot = await Ballot.findOne({ 
+      deptElectionId: electionId, 
+      voterId,
+      currentPositionId: positionId
+    })
+
+    res.json({
+      election: {
+        _id: election._id,
+        title: election.title,
+        department: election.departmentId
+      },
+      position: {
+        _id: position._id,
+        positionName: position.positionName,
+        positionOrder: position.positionOrder,
+        maxVotes: position.maxVotes,
+        ballotOpenTime: position.ballotOpenTime,
+        ballotCloseTime: position.ballotCloseTime,
+        isCurrentlyOpen 
+      },
+      hasVoted: ballot ? ballot.isSubmitted : false,
+      canVote: canVoteForPosition && !ballot?.isSubmitted && isCurrentlyOpen, // ✅ Must be open to vote
+      ballot: ballot ? {
+        _id: ballot._id,
+        currentPositionId: ballot.currentPositionId,
+        isSubmitted: ballot.isSubmitted,
+        submittedAt: ballot.submittedAt,
+        createdAt: ballot.createdAt,
+        timerStarted: ballot.timerStarted,
+        ballotOpenTime: ballot.ballotOpenTime,
+        ballotCloseTime: ballot.ballotCloseTime,
+        isExpired: ballot.isExpired,
+        timeRemaining: ballot.timeRemaining,
+        ballotStatus: ballot.ballotStatus
+      } : null,
+      voterEligibility: {
+        isRegistered: voter.isRegistered,
+        isPasswordActive: voter.isPasswordActive,
+        isClassOfficer: voter.isClassOfficer,
+        departmentMatch: voter.departmentId.college === election.departmentId.college,
+        yearLevelMatch: canVoteForPosition,
+        message: canVoteForPosition ? 
+          "You are eligible to vote for this position" : 
+          "You do not meet the requirements to vote for this position"
+      }
+    })
+  } catch (error) {
+    next(error)
   }
+}
 
   // Update year level restriction for departmental position (Election Committee)
   static async updateYearLevelRestriction(req, res, next) {
@@ -1594,8 +1640,8 @@ static async startDepartmentalBallot(req, res, next) {
       })
     }
 
-    // Check if voter already has a ballot for this position
-    const existingBallot = await Ballot.findOne({ 
+    // ✅ IMPROVED: Check for existing ballot BEFORE attempting to create
+    let existingBallot = await Ballot.findOne({ 
       deptElectionId: electionId, 
       voterId,
       currentPositionId: positionId 
@@ -1606,6 +1652,7 @@ static async startDepartmentalBallot(req, res, next) {
         return res.status(400).json({ message: `You have already voted for ${position.positionName}` })
       }
       // Return existing ballot WITHOUT starting timer
+      console.log(`✅ Returning existing ballot ${existingBallot._id} for voter ${voterId}`)
       return res.json({ 
         message: `Continuing existing ballot for ${position.positionName}`,
         ballot: existingBallot 
@@ -1642,14 +1689,44 @@ static async startDepartmentalBallot(req, res, next) {
       ballotToken,
       ipAddress: req.ip,
       userAgent: req.get("User-Agent"),
-      // REMOVED: Don't set ballot timing here - use position timing
       ballotOpenTime: position.ballotOpenTime,
       ballotCloseTime: position.ballotCloseTime,
-      timerStarted: true, // Mark as active but no separate timer
+      timerStarted: true,
       timerStartedAt: new Date()
     })
 
-    await ballot.save()
+    // ✅ ADD TRY-CATCH FOR DUPLICATE KEY ERROR
+    try {
+      await ballot.save()
+      console.log(`✅ Created new ballot ${ballot._id} for voter ${voterId}`)
+    } catch (saveError) {
+      // If duplicate key error (E11000), fetch and return existing ballot
+      if (saveError.code === 11000) {
+        console.log('⚠️ Duplicate ballot detected during save, fetching existing ballot...')
+        
+        // Check again for existing ballot (race condition handling)
+        existingBallot = await Ballot.findOne({ 
+          deptElectionId: electionId, 
+          voterId,
+          currentPositionId: positionId 
+        })
+        
+        if (existingBallot) {
+          console.log(`✅ Found existing ballot ${existingBallot._id}, returning it`)
+          return res.json({
+            message: `Continuing existing ballot for ${position.positionName}`,
+            ballot: existingBallot
+          })
+        }
+        
+        // If still can't find it, something's wrong
+        console.error('❌ Duplicate error but no existing ballot found!')
+        return res.status(500).json({ message: "Error creating ballot. Please try again." })
+      }
+      
+      // Re-throw if not duplicate error
+      throw saveError
+    }
 
     await AuditLog.logVoterAction(
       "BALLOT_STARTED",
@@ -1671,26 +1748,25 @@ static async startDepartmentalBallot(req, res, next) {
       }
     })
   } catch (error) {
+    console.error('❌ Error in startDepartmentalBallot:', error)
     next(error)
   }
 }
 
-// Submit departmental ballot (Voters) - ONE POSITION ONLY
 static async submitDepartmentalBallot(req, res, next) {
   try {
     const { ballotId } = req.params
-    const { votes } = req.body // Array of { positionId, candidateId }
+    const { votes } = req.body
     const voterId = req.user.voterId
 
     const ballot = await Ballot.findById(ballotId)
       .populate('deptElectionId', 'title status')
-      .populate('currentPositionId', 'positionName maxVotes') // ✅ ADDED maxVotes
+      .populate('currentPositionId', 'positionName maxVotes')
 
     if (!ballot || !ballot.deptElectionId) {
       return res.status(404).json({ message: "Departmental Ballot not found" })
     }
 
-    // Check ownership
     if (ballot.voterId.toString() !== voterId) {
       return res.status(403).json({ message: "Access denied" })
     }
@@ -1699,8 +1775,15 @@ static async submitDepartmentalBallot(req, res, next) {
       return res.status(400).json({ message: "Ballot has already been submitted for this position" })
     }
 
-    // Check if ballot timing is still valid (position-based)
-    const position = await Position.findById(ballot.currentPositionId._id) // ✅ FIXED: Use _id from populated object
+    // ✅ CHECK: Has any vote already been cast for this ballot?
+    const existingVoteCount = await Vote.countDocuments({ ballotId: ballot._id })
+    if (existingVoteCount > 0) {
+      return res.status(400).json({ 
+        message: "Votes have already been recorded for this ballot. Cannot submit again." 
+      })
+    }
+
+    const position = await Position.findById(ballot.currentPositionId._id)
     if (!position) {
       return res.status(404).json({ message: "Position not found" })
     }
@@ -1711,75 +1794,71 @@ static async submitDepartmentalBallot(req, res, next) {
       return res.status(400).json({ message: "Voting time has expired for this position" })
     }
 
-    // Validate votes
     if (!votes || !Array.isArray(votes) || votes.length === 0) {
       return res.status(400).json({ message: "No votes provided" })
     }
 
-    // ✅ FIXED: Validate vote count against position's maxVotes
-    const maxVotes = ballot.currentPositionId.maxVotes || 1
+    const maxVotes = position.maxVotes || 1
     if (votes.length > maxVotes) {
       return res.status(400).json({ 
         message: `You can only vote for up to ${maxVotes} candidate(s) for this position` 
       })
     }
 
-    // ✅ FIXED: Process ALL votes (not just first one)
-    const processedVotes = []
-    
-    for (const vote of votes) {
-      // Verify position matches ballot's current position
-      if (vote.positionId !== ballot.currentPositionId._id.toString()) { // ✅ FIXED: Compare with _id
-        return res.status(400).json({
-          message: "Position mismatch - vote must be for the current ballot position"
-        })
-      }
-
-      // Validate candidate
-      const candidate = await Candidate.findOne({
-        _id: vote.candidateId,
-        positionId: vote.positionId,
-        deptElectionId: ballot.deptElectionId,
-        isActive: true
+    // ✅ CHECK: Ensure no duplicate candidates in the submission
+    const candidateIds = votes.map(v => v.candidateId)
+    const uniqueCandidateIds = new Set(candidateIds)
+    if (candidateIds.length !== uniqueCandidateIds.size) {
+      return res.status(400).json({ 
+        message: "You cannot vote for the same candidate multiple times" 
       })
-
-      if (!candidate) {
-        return res.status(400).json({ 
-          message: `Invalid candidate for this position` 
-        })
-      }
-
-      // Check if already voted for this candidate (prevent duplicates)
-      const existingVote = await Vote.findOne({
-        ballotId: ballot._id,
-        candidateId: vote.candidateId
-      })
-
-      if (existingVote) {
-        return res.status(400).json({ 
-          message: `Duplicate vote detected for candidate #${candidate.candidateNumber}` 
-        })
-      }
-
-      // Create vote record
-      const newVote = new Vote({
-        ballotId: ballot._id,
-        candidateId: vote.candidateId,
-        positionId: vote.positionId,
-        deptElectionId: ballot.deptElectionId
-      })
-
-      await newVote.save()
-      processedVotes.push(newVote)
-
-      // Update candidate vote count
-      await Candidate.findByIdAndUpdate(
-        vote.candidateId,
-        { $inc: { voteCount: 1 } }
-      )
     }
 
-    // Submit ballot
+    const processedVotes = []
+    
+    // ✅ IMPROVED: Use insertMany with ordered:false for better error handling
+    const voteDocuments = votes.map(vote => ({
+      ballotId: ballot._id,
+      candidateId: vote.candidateId,
+      positionId: vote.positionId,
+      deptElectionId: ballot.deptElectionId
+    }))
+
+    try {
+      // ✅ Insert all votes at once
+      const insertedVotes = await Vote.insertMany(voteDocuments, { ordered: false })
+      processedVotes.push(...insertedVotes)
+
+      // Update candidate vote counts
+      const candidateUpdates = votes.map(vote => 
+        Candidate.findByIdAndUpdate(vote.candidateId, { $inc: { voteCount: 1 } })
+      )
+      await Promise.all(candidateUpdates)
+
+    } catch (insertError) {
+      // Handle partial insertion errors
+      if (insertError.code === 11000) {
+        // Check which specific constraint was violated
+        const errorMessage = insertError.message || ''
+        
+        if (errorMessage.includes('ballotId_1_candidateId_1')) {
+          return res.status(400).json({ 
+            message: "You cannot vote for the same candidate multiple times" 
+          })
+        } else if (errorMessage.includes('ballotId_1_positionId_1')) {
+          return res.status(400).json({ 
+            message: "Cannot submit multiple sets of votes for the same position. This ballot may have already been processed." 
+          })
+        } else {
+          return res.status(400).json({ 
+            message: "Duplicate vote detected. Please refresh and try again." 
+          })
+        }
+      }
+      throw insertError // Re-throw if not duplicate error
+    }
+
+    // Mark ballot as submitted
     ballot.isSubmitted = true
     ballot.submittedAt = new Date()
     await ballot.save()
@@ -1800,6 +1879,15 @@ static async submitDepartmentalBallot(req, res, next) {
       voteCount: processedVotes.length
     })
   } catch (error) {
+    console.error('❌ Error in submitDepartmentalBallot:', error)
+    
+    // Generic duplicate key error (shouldn't reach here if handled above)
+    if (error.code === 11000) {
+      return res.status(400).json({ 
+        message: "This ballot cannot be processed due to a duplicate vote constraint. Please contact support." 
+      })
+    }
+    
     next(error)
   }
 }
@@ -1827,7 +1915,6 @@ static async startSSGBallot(req, res, next) {
       })
     }
 
-    // CRITICAL FIX: Use findOneAndDelete with proper query to handle expired ballots atomically
     const now = new Date()
     
     // First, try to find and delete any expired ballot in one atomic operation

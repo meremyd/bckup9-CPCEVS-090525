@@ -167,6 +167,11 @@ export const ballotAPI = {
       return response.data
     },
 
+    previewDepartmentalBallotForVoter: async (electionId, positionId) => {
+      const response = await api.get(`/ballots/voter/departmental/${electionId}/${positionId}/preview`)
+      return response.data
+    },
+
     // Start departmental ballot with timer (Voters)
     startDepartmentalBallot: async (electionId, positionId) => {
       const response = await api.post('/ballots/voter/departmental/start', { electionId, positionId })

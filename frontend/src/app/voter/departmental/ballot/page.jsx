@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ballotAPI } from "@/lib/api/ballots"
 import { candidatesAPI } from "@/lib/api/candidates"
@@ -25,26 +25,28 @@ export default function DepartmentalVoterBallotPage() {
   const [selectedVotes, setSelectedVotes] = useState([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [positionTiming, setPositionTiming] = useState(null)
   const [timeRemaining, setTimeRemaining] = useState(null)
+  const [ballotCloseDateTime, setBallotCloseDateTime] = useState(null)
+
+  const initializingRef = useRef(false)
+  const hasInitializedRef = useRef(false)
   
   const router = useRouter()
   const searchParams = useSearchParams()
   const electionId = searchParams.get('electionId')
   const positionId = searchParams.get('positionId')
 
-  // Countdown timer effect
+  // Countdown timer effect - FIXED to use actual close datetime
   useEffect(() => {
-    if (!positionTiming?.ballotCloseTime) return
+    if (!ballotCloseDateTime) return
 
     const updateTimer = () => {
       const now = new Date()
-      const closeTime = new Date(positionTiming.ballotCloseTime)
+      const closeTime = new Date(ballotCloseDateTime)
       const diff = closeTime - now
 
       if (diff <= 0) {
         setTimeRemaining({ expired: true })
-        // Optionally redirect or show expired message
         Swal.fire({
           icon: 'warning',
           title: 'Voting Time Expired',
@@ -68,13 +70,30 @@ export default function DepartmentalVoterBallotPage() {
     const interval = setInterval(updateTimer, 1000)
 
     return () => clearInterval(interval)
-  }, [positionTiming, electionId, router])
+  }, [ballotCloseDateTime, electionId, router])
 
   useEffect(() => {
-    console.log('🔍 Ballot Page - Query Params:', { electionId, positionId })
+    console.log('📋 Ballot Page - Query Params:', { electionId, positionId })
+    
+    // ✅ ADD THIS CHECK to prevent double initialization
+    if (hasInitializedRef.current) {
+      console.log('⏭️ Already initialized, skipping...')
+      return
+    }
     
     if (electionId && positionId) {
-      initializeBallot()
+      // ✅ ADD THIS CHECK to prevent concurrent initialization
+      if (initializingRef.current) {
+        console.log('⏳ Already initializing, skipping...')
+        return
+      }
+      
+      initializingRef.current = true
+      hasInitializedRef.current = true
+      
+      initializeBallot().finally(() => {
+        initializingRef.current = false
+      })
     } else {
       console.error('❌ Missing parameters:', { electionId, positionId })
       Swal.fire({
@@ -88,85 +107,91 @@ export default function DepartmentalVoterBallotPage() {
     }
   }, [electionId, positionId])
 
-  const initializeBallot = async () => {
-    try {
-      setLoading(true)
+const initializeBallot = async () => {
+  try {
+    setLoading(true)
 
-      // Check voter status for this position
-      const statusResponse = await ballotAPI.voter.getVoterDepartmentalBallotStatus(electionId, positionId)
-      
-      if (statusResponse.hasVoted) {
-        await showVotingReceipt()
-        return
-      }
+    // Check voter status for this position
+    const statusResponse = await ballotAPI.voter.getVoterDepartmentalBallotStatus(electionId, positionId)
+    
+    if (statusResponse.hasVoted) {
+      await showVotingReceipt()
+      return
+    }
 
-      if (!statusResponse.canVote) {
-        Swal.fire({
-          icon: 'info',
-          title: 'Cannot Vote',
-          text: statusResponse.voterEligibility?.message || 'You cannot vote for this position.',
-          confirmButtonColor: '#001f65',
-          allowOutsideClick: false,
-          allowEscapeKey: false
-        }).then(() => {
-          router.replace(`/voter/departmental/info?id=${electionId}`)
-        })
-        return
-      }
-
-      // Get position timing
-      const timingResponse = await ballotAPI.getDepartmentalPositionBallotTiming(positionId)
-      const timing = timingResponse.data?.timing
-      
-      if (!timing?.isOpen) {
-        Swal.fire({
-          icon: 'info',
-          title: 'Voting Not Available',
-          text: 'Voting is not currently open for this position.',
-          confirmButtonColor: '#001f65',
-          allowOutsideClick: false,
-          allowEscapeKey: false
-        }).then(() => {
-          router.replace(`/voter/departmental/info?id=${electionId}`)
-        })
-        return
-      }
-
-      setPositionTiming(timing)
-      setElection(statusResponse.election)
-      setPosition(statusResponse.position)
-
-      // Start or get existing ballot
-      const startResponse = await ballotAPI.voter.startDepartmentalBallot(electionId, positionId)
-      setBallot(startResponse.ballot)
-
-      // Load candidates for this position
-      const previewResponse = await ballotAPI.previewDepartmentalBallot(electionId, positionId)
-      setCandidates(previewResponse.candidates || [])
-
-    } catch (error) {
-      console.error('Error initializing ballot:', error)
-      
-      let errorMessage = 'Failed to load ballot. Please try again.'
-      
-      if (error.response?.data?.message) {
-        errorMessage = error.response.data.message
-      }
-      
+    if (!statusResponse.canVote) {
       Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: errorMessage,
+        icon: 'info',
+        title: 'Cannot Vote',
+        text: statusResponse.voterEligibility?.message || 'You cannot vote for this position.',
         confirmButtonColor: '#001f65',
         allowOutsideClick: false,
         allowEscapeKey: false
       }).then(() => {
         router.replace(`/voter/departmental/info?id=${electionId}`)
       })
-    } finally {
-      setLoading(false)
+      return
     }
+
+    const timingResponse = await ballotAPI.getDepartmentalPositionBallotTiming(positionId)
+    const timing = timingResponse.data?.timing
+    
+    if (!timing?.isOpen) {
+      Swal.fire({
+        icon: 'info',
+        title: 'Voting Not Available',
+        text: 'Voting is not currently open for this position.',
+        confirmButtonColor: '#001f65',
+        allowOutsideClick: false,
+        allowEscapeKey: false
+      }).then(() => {
+        router.replace(`/voter/departmental/info?id=${electionId}`)
+      })
+      return
+    }
+
+    const closeDateTime = statusResponse.position?.ballotCloseTime 
+      ? new Date(statusResponse.position.ballotCloseTime)
+      : null
+
+    console.log('Close DateTime set to:', closeDateTime)
+    setBallotCloseDateTime(closeDateTime)
+    setElection(statusResponse.election)
+    setPosition(statusResponse.position)
+
+    console.log('Position data:', statusResponse.position)
+    console.log('maxVotes value:', statusResponse.position?.maxVotes)
+
+    // Start or get existing ballot
+    const startResponse = await ballotAPI.voter.startDepartmentalBallot(electionId, positionId)
+    setBallot(startResponse.ballot)
+
+    const previewResponse = await ballotAPI.voter.previewDepartmentalBallotForVoter(electionId, positionId)
+    setCandidates(previewResponse.candidates || [])
+
+  } catch (error) {
+    console.error('Error initializing ballot:', error)
+    
+    let errorMessage = 'Failed to load ballot. Please try again.'
+    
+    if (error.response?.data?.message) {
+      errorMessage = error.response.data.message
+    }
+    
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: errorMessage,
+      confirmButtonColor: '#001f65',
+      allowOutsideClick: false,
+      allowEscapeKey: false
+    }).then(() => {
+      router.replace(`/voter/departmental/info?id=${electionId}`)
+    })
+  } finally {
+    setLoading(false)
   }
+}
 
   const handleCandidateSelect = (candidateId) => {
     if (!position) return
@@ -174,7 +199,6 @@ export default function DepartmentalVoterBallotPage() {
     const maxVotes = position.maxVotes || 1
 
     if (maxVotes > 1) {
-      // Multiple selection
       if (selectedVotes.includes(candidateId)) {
         setSelectedVotes(selectedVotes.filter(id => id !== candidateId))
       } else if (selectedVotes.length < maxVotes) {
@@ -188,7 +212,6 @@ export default function DepartmentalVoterBallotPage() {
         })
       }
     } else {
-      // Single selection
       setSelectedVotes([candidateId])
     }
   }
@@ -247,7 +270,6 @@ export default function DepartmentalVoterBallotPage() {
     try {
       setSubmitting(true)
 
-      // For departmental elections, we submit one vote per selected candidate
       const votes = selectedVotes.map(candidateId => ({
         positionId: position._id,
         candidateId: candidateId
@@ -311,14 +333,12 @@ export default function DepartmentalVoterBallotPage() {
     return candidatesAPI.voter.getCampaignPictureUrl(candidate._id)
   }
 
-  // Format time remaining for display
   const formatTimeRemaining = () => {
     if (!timeRemaining || timeRemaining.expired) return null
 
     const { hours, minutes, seconds } = timeRemaining
-    
-    // Determine urgency level for color coding
     const totalMinutes = hours * 60 + minutes
+    
     let urgencyClass = 'bg-green-500/90 border-green-400'
     let urgencyText = 'Voting Open'
     
@@ -383,7 +403,6 @@ export default function DepartmentalVoterBallotPage() {
 
   return (
     <VoterLayout>
-      {/* Transparent Navbar with Back Button and Timer */}
       <div className="fixed top-0 left-0 right-0 z-50 px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <button
@@ -398,11 +417,9 @@ export default function DepartmentalVoterBallotPage() {
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="pt-20 pb-6 px-4 lg:px-6">
         <div className="max-w-7xl mx-auto">
           
-          {/* Header with Logos and Election Title */}
           <div className="relative mb-4 text-center">
             <div className="flex items-center justify-center gap-4 mb-4">
               <img 
@@ -434,7 +451,6 @@ export default function DepartmentalVoterBallotPage() {
               />
             </div>
             
-            {/* Position Name */}
             <h2 className="text-2xl sm:text-3xl font-bold text-white mt-4">
               {position.positionName}
             </h2>
@@ -446,7 +462,6 @@ export default function DepartmentalVoterBallotPage() {
             </p>
           </div>
 
-          {/* Candidates Grid */}
           <div className="flex justify-center mb-8 px-4">
             <div className={`grid gap-8 justify-items-center ${
               candidates.length === 1
@@ -472,7 +487,6 @@ export default function DepartmentalVoterBallotPage() {
                       selected ? 'bg-[#001f65]' : 'bg-white'
                     }`}>
                       
-                      {/* Image Container */}
                       <div className="relative w-full h-72 bg-gray-200 overflow-hidden flex-shrink-0">
                         {candidate.hasCampaignPicture ? (
                           <img
@@ -496,7 +510,6 @@ export default function DepartmentalVoterBallotPage() {
                         )}
                       </div>
 
-                      {/* Candidate Info */}
                       <div className="flex-1 p-5 text-center flex flex-col justify-end">
                         <div className={`-mx-5 -mb-5 p-4 transition-all duration-300 ${
                           selected
@@ -506,11 +519,6 @@ export default function DepartmentalVoterBallotPage() {
                           <p className="text-base font-bold">
                             {candidate.candidateNumber}. {candidate.name}
                           </p>
-                          {/* {candidate.yearLevel && (
-                            <p className="text-sm opacity-90 mt-1">
-                              Year {candidate.yearLevel}
-                            </p>
-                          )} */}
                         </div>
                       </div>
                     </div>
@@ -520,7 +528,6 @@ export default function DepartmentalVoterBallotPage() {
             </div>
           </div>
 
-          {/* Submit Button */}
           <div className="mt-8 flex justify-center">
             <button
               onClick={handleSubmit}

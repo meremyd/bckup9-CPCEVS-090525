@@ -309,7 +309,7 @@ class DashboardController {
         ssg: voterSSGBallots,
         departmental: voterDeptBallots
       },
-      // FIXED: Departmental total now shows only elections for voter's department
+      //Departmental total now shows only elections for voter's department
       totalElections: {
         ssg: totalSSGElections,
         departmental: totalDeptElections

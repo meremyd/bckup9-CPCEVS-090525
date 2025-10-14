@@ -1399,75 +1399,139 @@ static async getDepartmentalElectionLiveResults(req, res, next) {
       return next(error)
     }
 
-    // Get current active position
-    const currentPosition = await this.getCurrentActivePosition(id)
-    if (!currentPosition) {
-      return res.json({
-        success: true,
-        data: {
-          election,
-          currentPosition: null,
-          candidates: [],
-          summary: {
-            totalVotes: 0,
-            message: "No position is currently active for voting"
-          }
-        },
-        message: "No active position found"
-      })
+    // Get total participants
+    const ElectionParticipation = require('../models/ElectionParticipation')
+    const totalParticipants = await ElectionParticipation.countDocuments({
+      deptElectionId: id,
+      status: 'confirmed'
+    })
+
+    // Get ALL positions
+    const positions = await Position.find({
+      deptElectionId: id,
+      isActive: true
+    }).sort({ positionOrder: 1 })
+
+    // Helper function to extract allowed year levels from position description
+    const getAllowedYearLevels = (position) => {
+      if (!position.description) return [1, 2, 3, 4]
+
+      const yearLevelMatch = position.description.match(/Year levels?: (.*?)(?:\n|$)/)
+      if (!yearLevelMatch) return [1, 2, 3, 4]
+
+      const restrictionText = yearLevelMatch[1]
+      if (restrictionText.includes('All year levels')) return [1, 2, 3, 4]
+
+      const allowedLevels = []
+      if (restrictionText.includes('1st')) allowedLevels.push(1)
+      if (restrictionText.includes('2nd')) allowedLevels.push(2)
+      if (restrictionText.includes('3rd')) allowedLevels.push(3)
+      if (restrictionText.includes('4th')) allowedLevels.push(4)
+
+      return allowedLevels.length > 0 ? allowedLevels : [1, 2, 3, 4]
     }
 
-    // Get candidates for current active position with live vote counts
-    const candidates = await Candidate.find({
-      deptElectionId: id,
-      positionId: currentPosition._id,
-      isActive: true
-    })
-    .populate({
-      path: 'voterId',
-      select: 'firstName middleName lastName schoolId yearLevel'
-    })
-    .sort({ candidateNumber: 1 })
+    // Get participants grouped by year level
+    const participantsByYearLevel = await ElectionParticipation.aggregate([
+      { 
+        $match: { 
+          deptElectionId: new mongoose.Types.ObjectId(id),
+          status: 'confirmed'
+        } 
+      },
+      {
+        $lookup: {
+          from: 'voters',
+          localField: 'voterId',
+          foreignField: '_id',
+          as: 'voter'
+        }
+      },
+      { $unwind: '$voter' },
+      {
+        $group: {
+          _id: '$voter.yearLevel',
+          count: { $sum: 1 }
+        }
+      }
+    ])
 
-    const candidatesWithVotes = await Promise.all(
-      candidates.map(async (candidate) => {
-        const voteCount = await Vote.countDocuments({
-          candidateId: candidate._id,
+    const yearLevelCounts = {}
+    participantsByYearLevel.forEach(item => {
+      yearLevelCounts[item._id] = item.count
+    })
+
+    const positionsWithResults = await Promise.all(
+      positions.map(async (position) => {
+        const now = new Date()
+        const isBallotOpen = position.ballotOpenTime && position.ballotCloseTime &&
+                            now >= position.ballotOpenTime && now <= position.ballotCloseTime
+
+        // Get allowed year levels and calculate eligible participants
+        const allowedYearLevels = getAllowedYearLevels(position)
+        const eligibleParticipants = allowedYearLevels.reduce((sum, yearLevel) => {
+          return sum + (yearLevelCounts[yearLevel] || 0)
+        }, 0)
+
+        const candidates = await Candidate.find({
           deptElectionId: id,
-          positionId: currentPosition._id
+          positionId: position._id,
+          isActive: true
+        })
+        .populate({
+          path: 'voterId',
+          select: 'firstName middleName lastName schoolId yearLevel'
+        })
+        .sort({ candidateNumber: 1 })
+
+        const candidatesWithVotes = await Promise.all(
+          candidates.map(async (candidate) => {
+            const voteCount = await Vote.countDocuments({
+              candidateId: candidate._id,
+              deptElectionId: id,
+              positionId: position._id
+            })
+
+            return {
+              ...candidate.toObject(),
+              voteCount,
+              percentage: 0
+            }
+          })
+        )
+
+        const totalVotes = candidatesWithVotes.reduce((sum, candidate) => sum + candidate.voteCount, 0)
+        
+        // Calculate based on eligible participants for this position
+        candidatesWithVotes.forEach(candidate => {
+          candidate.percentage = eligibleParticipants > 0 ? 
+            Math.round((candidate.voteCount / eligibleParticipants) * 100) : 0
         })
 
+        candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount)
+
         return {
-          ...candidate.toObject(),
-          voteCount,
-          percentage: 0 // Will be calculated after getting total votes
+          position: {
+            _id: position._id,
+            positionName: position.positionName,
+            positionOrder: position.positionOrder,
+            maxVotes: position.maxVotes,
+            ballotOpenTime: position.ballotOpenTime ? position.ballotOpenTime.toISOString() : null,
+            ballotCloseTime: position.ballotCloseTime ? position.ballotCloseTime.toISOString() : null,
+            isBallotOpen
+          },
+          candidates: candidatesWithVotes,
+          totalVotes,
+          totalParticipants: eligibleParticipants,
+          allowedYearLevels
         }
       })
     )
 
-    // Calculate total votes for current position
-    const totalVotes = candidatesWithVotes.reduce((sum, candidate) => sum + candidate.voteCount, 0)
-
-    // Calculate percentages
-    candidatesWithVotes.forEach(candidate => {
-      candidate.percentage = totalVotes > 0 ? 
-        Math.round((candidate.voteCount / totalVotes) * 100) : 0
-    })
-
-    // Sort by vote count (descending)
-    candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount)
-
-    // Get total ballots for current position
-    const totalBallots = await Ballot.countDocuments({
-      deptElectionId: id,
-      currentPositionId: currentPosition._id,
-      isSubmitted: true
-    })
-
     await AuditLog.logUserAction(
       "SYSTEM_ACCESS",
       req.user,
-      `Accessed live results for departmental election: ${election.title} - Position: ${currentPosition.positionName}`,
+      `Accessed live results for departmental election: ${election.title}`,
       req
     )
 
@@ -1475,21 +1539,14 @@ static async getDepartmentalElectionLiveResults(req, res, next) {
       success: true,
       data: {
         election,
-        currentPosition: {
-          _id: currentPosition._id,
-          positionName: currentPosition.positionName,
-          positionOrder: currentPosition.positionOrder,
-          maxVotes: currentPosition.maxVotes
-        },
-        candidates: candidatesWithVotes,
+        positions: positionsWithResults,
+        totalParticipants,
         summary: {
-          totalBallots,
-          totalVotes,
-          winner: candidatesWithVotes[0] || null,
+          totalPositions: positions.length,
           lastUpdated: new Date()
         }
       },
-      message: `Live results for ${currentPosition.positionName} retrieved successfully`
+      message: "Departmental election live results retrieved successfully"
     })
   } catch (error) {
     console.error("Get departmental live results error:", error)
@@ -1641,7 +1698,6 @@ static async getDepartmentalElectionLiveResultsForVoter(req, res, next) {
       return next(error)
     }
 
-    // Check if voter is registered and from the same department
     const voter = await Voter.findById(req.user.voterId).populate('departmentId')
     if (!voter || !voter.isRegistered) {
       const error = new Error("Only registered voters can view election results")
@@ -1649,100 +1705,170 @@ static async getDepartmentalElectionLiveResultsForVoter(req, res, next) {
       return next(error)
     }
 
-    const election = await DepartmentalElection.findById(id)
-      .populate('departmentId', 'departmentCode degreeProgram college')
+    const election = await DepartmentalElection.findById(id).populate('departmentId', 'departmentCode degreeProgram college')
     if (!election) {
       const error = new Error("Departmental election not found")
       error.statusCode = 404
       return next(error)
     }
 
-    // Verify voter is from the same department
-    if (!voter.departmentId._id.equals(election.departmentId._id)) {
-      const error = new Error("You can only view results for elections in your department")
+    const isFromSameDepartment = voter.departmentId._id.equals(election.departmentId._id)
+    
+    if (!voter.isRegistered || !voter.isPasswordActive) {
+      const error = new Error("You must be a registered voter with an active password")
+      error.statusCode = 403
+      return next(error)
+    }
+    
+    if (!isFromSameDepartment) {
+      const error = new Error(`This election is for ${election.departmentId.departmentCode} department. You belong to ${voter.departmentId.departmentCode} department.`)
       error.statusCode = 403
       return next(error)
     }
 
-    // Get current active position
-    const currentPosition = await this.getCurrentActivePosition(id)
-    if (!currentPosition) {
-      return res.json({
-        success: true,
-        data: {
-          election,
-          currentPosition: null,
-          candidates: [],
-          message: "No position is currently active for voting"
-        }
-      })
-    }
-
-    // Check if voter has voted for current position or if they're a class officer
-    const hasVoted = await Ballot.findOne({
+    // Get total participants for this departmental election
+    const ElectionParticipation = require('../models/ElectionParticipation')
+    const totalParticipants = await ElectionParticipation.countDocuments({
       deptElectionId: id,
-      voterId: req.user.voterId,
-      currentPositionId: currentPosition._id,
-      isSubmitted: true
+      status: 'confirmed'
     })
 
-    // Only class officers can vote, but all registered students from dept can view results after voting or completion
-    const canViewResults = election.status === 'completed' || hasVoted || voter.isClassOfficer
-
-    if (!canViewResults) {
-      return res.json({
-        success: false,
-        message: "Results are only available after voting or when the election is completed",
-        data: { canViewResults: false }
-      })
-    }
-
-    // Get candidates with vote counts
-    const candidates = await Candidate.find({
+    // Get ALL positions
+    const positions = await Position.find({
       deptElectionId: id,
-      positionId: currentPosition._id,
       isActive: true
-    })
-    .populate({
-      path: 'voterId',
-      select: 'firstName middleName lastName yearLevel'
-    })
-    .sort({ candidateNumber: 1 })
+    }).sort({ positionOrder: 1 })
 
-    const candidatesWithVotes = await Promise.all(
-      candidates.map(async (candidate) => {
-        const voteCount = await Vote.countDocuments({
-          candidateId: candidate._id,
+    // Helper function to extract allowed year levels 
+    const getAllowedYearLevels = (position) => {
+      if (!position.description) return [1, 2, 3, 4] // Default: all years
+
+      const yearLevelMatch = position.description.match(/Year levels?: (.*?)(?:\n|$)/)
+      if (!yearLevelMatch) return [1, 2, 3, 4]
+
+      const restrictionText = yearLevelMatch[1]
+      if (restrictionText.includes('All year levels')) return [1, 2, 3, 4]
+
+      const allowedLevels = []
+      if (restrictionText.includes('1st')) allowedLevels.push(1)
+      if (restrictionText.includes('2nd')) allowedLevels.push(2)
+      if (restrictionText.includes('3rd')) allowedLevels.push(3)
+      if (restrictionText.includes('4th')) allowedLevels.push(4)
+
+      return allowedLevels.length > 0 ? allowedLevels : [1, 2, 3, 4]
+    }
+
+    // Get participants grouped by year level for this election
+    const participantsByYearLevel = await ElectionParticipation.aggregate([
+      { 
+        $match: { 
+          deptElectionId: new mongoose.Types.ObjectId(id),
+          status: 'confirmed'
+        } 
+      },
+      {
+        $lookup: {
+          from: 'voters',
+          localField: 'voterId',
+          foreignField: '_id',
+          as: 'voter'
+        }
+      },
+      { $unwind: '$voter' },
+      {
+        $group: {
+          _id: '$voter.yearLevel',
+          count: { $sum: 1 }
+        }
+      }
+    ])
+
+    // Create a map of year level -> participant count
+    const yearLevelCounts = {}
+    participantsByYearLevel.forEach(item => {
+      yearLevelCounts[item._id] = item.count
+    })
+
+    // Process each position with timing info and year-level-based percentages
+    const positionsWithResults = await Promise.all(
+      positions.map(async (position) => {
+        // Check if ballot is currently open for this position
+        const now = new Date()
+        const isBallotOpen = position.ballotOpenTime && position.ballotCloseTime &&
+                            now >= position.ballotOpenTime && now <= position.ballotCloseTime
+
+        // Get allowed year levels for this position
+        const allowedYearLevels = getAllowedYearLevels(position)
+        
+        // Calculate eligible participants for this position (based on year level restrictions)
+        const eligibleParticipants = allowedYearLevels.reduce((sum, yearLevel) => {
+          return sum + (yearLevelCounts[yearLevel] || 0)
+        }, 0)
+
+        // Get candidates for this position
+        const candidates = await Candidate.find({
           deptElectionId: id,
-          positionId: currentPosition._id
+          positionId: position._id,
+          isActive: true
+        })
+        .populate({
+          path: 'voterId',
+          select: 'firstName middleName lastName yearLevel'
+        })
+        .sort({ candidateNumber: 1 })
+
+        const candidatesWithVotes = await Promise.all(
+          candidates.map(async (candidate) => {
+            const voteCount = await Vote.countDocuments({
+              candidateId: candidate._id,
+              deptElectionId: id,
+              positionId: position._id
+            })
+
+            return {
+              _id: candidate._id,
+              candidateNumber: candidate.candidateNumber,
+              // Only show name if ballot is closed
+              name: !isBallotOpen && candidate.voterId ? 
+                `${candidate.voterId.firstName} ${candidate.voterId.middleName || ''} ${candidate.voterId.lastName}`.replace(/\s+/g, ' ').trim() : 
+                null,
+              yearLevel: !isBallotOpen ? candidate.voterId?.yearLevel : null,
+              voteCount,
+              percentage: 0
+            }
+          })
+        )
+
+        const totalVotes = candidatesWithVotes.reduce((sum, candidate) => sum + candidate.voteCount, 0)
+        
+        // Calculate percentage based on ELIGIBLE participants for this position
+        candidatesWithVotes.forEach(candidate => {
+          candidate.percentage = eligibleParticipants > 0 ? 
+            Math.round((candidate.voteCount / eligibleParticipants) * 100) : 0
         })
 
+        candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount)
+
         return {
-          _id: candidate._id,
-          candidateNumber: candidate.candidateNumber,
-          name: candidate.voterId ? 
-            `${candidate.voterId.firstName} ${candidate.voterId.middleName || ''} ${candidate.voterId.lastName}`.replace(/\s+/g, ' ').trim() : 
-            'Unknown Candidate',
-          yearLevel: candidate.voterId?.yearLevel || null,
-          voteCount,
-          percentage: 0
+          _id: position._id,
+          positionName: position.positionName,
+          positionOrder: position.positionOrder,
+          // Return as ISO string for proper date parsing
+          ballotOpenTime: position.ballotOpenTime ? position.ballotOpenTime.toISOString() : null,
+          ballotCloseTime: position.ballotCloseTime ? position.ballotCloseTime.toISOString() : null,
+          isBallotOpen,
+          candidates: candidatesWithVotes,
+          totalVotes,
+          totalParticipants: eligibleParticipants, // Use eligible participants for this position
+          allowedYearLevels // Include for transparency
         }
       })
     )
 
-    const totalVotes = candidatesWithVotes.reduce((sum, candidate) => sum + candidate.voteCount, 0)
-    
-    candidatesWithVotes.forEach(candidate => {
-      candidate.percentage = totalVotes > 0 ? 
-        Math.round((candidate.voteCount / totalVotes) * 100) : 0
-    })
-
-    candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount)
-
     await AuditLog.logVoterAction(
       "SYSTEM_ACCESS",
       { _id: req.user.voterId, schoolId: req.user.schoolId },
-      `Viewed live results for departmental election: ${election.title} - Position: ${currentPosition.positionName}`,
+      `Viewed live results for departmental election: ${election.title}`,
       req
     )
 
@@ -1750,23 +1876,14 @@ static async getDepartmentalElectionLiveResultsForVoter(req, res, next) {
       success: true,
       data: {
         election,
-        currentPosition: {
-          _id: currentPosition._id,
-          positionName: currentPosition.positionName,
-          positionOrder: currentPosition.positionOrder
-        },
-        candidates: candidatesWithVotes,
-        summary: {
-          totalVotes,
-          leading: candidatesWithVotes[0] || null
-        },
+        positions: positionsWithResults,
+        totalParticipants, // Overall participants
         viewerInfo: {
-          hasVoted: !!hasVoted,
-          votedAt: hasVoted?.submittedAt || null,
-          canVote: voter.isClassOfficer
+          hasVoted: false,
+          votedAt: null
         }
       },
-      message: `Results for ${currentPosition.positionName} retrieved successfully`
+      message: "Departmental election results retrieved successfully"
     })
   } catch (error) {
     console.error("Get departmental live results for voter error:", error)
