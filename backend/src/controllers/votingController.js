@@ -1380,7 +1380,6 @@ static async getSSGElectionLiveResults(req, res, next) {
   }
 }
 
-// Get live departmental election results for current active position
 static async getDepartmentalElectionLiveResults(req, res, next) {
   try {
     const { id } = req.params
@@ -1399,7 +1398,7 @@ static async getDepartmentalElectionLiveResults(req, res, next) {
       return next(error)
     }
 
-    // Get total participants
+    // Get total participants for this departmental election
     const ElectionParticipation = require('../models/ElectionParticipation')
     const totalParticipants = await ElectionParticipation.countDocuments({
       deptElectionId: id,
@@ -1473,6 +1472,9 @@ static async getDepartmentalElectionLiveResults(req, res, next) {
           return sum + (yearLevelCounts[yearLevel] || 0)
         }, 0)
 
+        // ✅ FIX: Calculate max possible votes = eligible participants × maxVotes
+        const maxPossibleVotes = eligibleParticipants * (position.maxVotes || 1)
+
         const candidates = await Candidate.find({
           deptElectionId: id,
           positionId: position._id,
@@ -1502,10 +1504,10 @@ static async getDepartmentalElectionLiveResults(req, res, next) {
 
         const totalVotes = candidatesWithVotes.reduce((sum, candidate) => sum + candidate.voteCount, 0)
         
-        // Calculate based on eligible participants for this position
+        // ✅ FIX: Calculate percentage based on MAX POSSIBLE VOTES
         candidatesWithVotes.forEach(candidate => {
-          candidate.percentage = eligibleParticipants > 0 ? 
-            Math.round((candidate.voteCount / eligibleParticipants) * 100) : 0
+          candidate.percentage = maxPossibleVotes > 0 ? 
+            Math.round((candidate.voteCount / maxPossibleVotes) * 100) : 0
         })
 
         candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount)
@@ -1523,6 +1525,7 @@ static async getDepartmentalElectionLiveResults(req, res, next) {
           candidates: candidatesWithVotes,
           totalVotes,
           totalParticipants: eligibleParticipants,
+          maxPossibleVotes, // ✅ ADD: Include for reference
           allowedYearLevels
         }
       })
@@ -1853,7 +1856,7 @@ static async getDepartmentalElectionLiveResultsForVoter(req, res, next) {
           _id: position._id,
           positionName: position.positionName,
           positionOrder: position.positionOrder,
-          // Return as ISO string for proper date parsing
+          maxVotes: position.maxVotes,
           ballotOpenTime: position.ballotOpenTime ? position.ballotOpenTime.toISOString() : null,
           ballotCloseTime: position.ballotCloseTime ? position.ballotCloseTime.toISOString() : null,
           isBallotOpen,
@@ -2411,6 +2414,58 @@ static async exportDepartmentalElectionResults(req, res, next) {
       return next(error)
     }
 
+    // ✅ FIX: Get participants for percentage calculation
+    const ElectionParticipation = require('../models/ElectionParticipation')
+    
+    // Get participants grouped by year level
+    const participantsByYearLevel = await ElectionParticipation.aggregate([
+      { 
+        $match: { 
+          deptElectionId: new mongoose.Types.ObjectId(id),
+          status: 'confirmed'
+        } 
+      },
+      {
+        $lookup: {
+          from: 'voters',
+          localField: 'voterId',
+          foreignField: '_id',
+          as: 'voter'
+        }
+      },
+      { $unwind: '$voter' },
+      {
+        $group: {
+          _id: '$voter.yearLevel',
+          count: { $sum: 1 }
+        }
+      }
+    ])
+
+    const yearLevelCounts = {}
+    participantsByYearLevel.forEach(item => {
+      yearLevelCounts[item._id] = item.count
+    })
+
+    // Helper to get allowed year levels
+    const getAllowedYearLevels = (position) => {
+      if (!position.description) return [1, 2, 3, 4]
+
+      const yearLevelMatch = position.description.match(/Year levels?: (.*?)(?:\n|$)/)
+      if (!yearLevelMatch) return [1, 2, 3, 4]
+
+      const restrictionText = yearLevelMatch[1]
+      if (restrictionText.includes('All year levels')) return [1, 2, 3, 4]
+
+      const allowedLevels = []
+      if (restrictionText.includes('1st')) allowedLevels.push(1)
+      if (restrictionText.includes('2nd')) allowedLevels.push(2)
+      if (restrictionText.includes('3rd')) allowedLevels.push(3)
+      if (restrictionText.includes('4th')) allowedLevels.push(4)
+
+      return allowedLevels.length > 0 ? allowedLevels : [1, 2, 3, 4]
+    }
+
     // Get all positions
     const positions = await Position.find({
       deptElectionId: id,
@@ -2419,6 +2474,15 @@ static async exportDepartmentalElectionResults(req, res, next) {
 
     const exportData = await Promise.all(
       positions.map(async (position) => {
+        // ✅ Calculate eligible participants for this position
+        const allowedYearLevels = getAllowedYearLevels(position)
+        const eligibleParticipants = allowedYearLevels.reduce((sum, yearLevel) => {
+          return sum + (yearLevelCounts[yearLevel] || 0)
+        }, 0)
+
+        // ✅ Calculate max possible votes
+        const maxPossibleVotes = eligibleParticipants * (position.maxVotes || 1)
+
         const candidates = await Candidate.find({
           deptElectionId: id,
           positionId: position._id,
@@ -2442,12 +2506,17 @@ static async exportDepartmentalElectionResults(req, res, next) {
               `${candidate.voterId.firstName} ${candidate.voterId.middleName || ''} ${candidate.voterId.lastName}`.replace(/\s+/g, ' ').trim() : 
               'Unknown Candidate'
 
+            // ✅ FIX: Calculate percentage based on max possible votes
+            const percentage = maxPossibleVotes > 0 ? 
+              ((voteCount / maxPossibleVotes) * 100).toFixed(1) : '0.0'
+
             return {
               candidateNumber: candidate.candidateNumber,
               candidateName: candidateName,
               schoolId: candidate.voterId?.schoolId || 'N/A',
               yearLevel: candidate.voterId?.yearLevel || 'N/A',
-              voteCount: voteCount
+              voteCount: voteCount,
+              percentage: percentage // ✅ Now correctly calculated
             }
           })
         )
@@ -2459,6 +2528,8 @@ static async exportDepartmentalElectionResults(req, res, next) {
           positionName: position.positionName,
           positionOrder: position.positionOrder,
           maxVotes: position.maxVotes,
+          eligibleParticipants: eligibleParticipants, // ✅ ADD
+          maxPossibleVotes: maxPossibleVotes, // ✅ ADD
           candidates: candidatesWithVotes,
           totalVotes: candidatesWithVotes.reduce((sum, c) => sum + c.voteCount, 0)
         }
@@ -2477,24 +2548,24 @@ static async exportDepartmentalElectionResults(req, res, next) {
       isActive: true
     })
     
-    const totalParticipants = totalBallots
+    const totalParticipants = await ElectionParticipation.countDocuments({
+      deptElectionId: id,
+      status: 'confirmed'
+    })
 
-    // Create PDF - REMOVED bufferPages to prevent empty page issues
+    // Create PDF
     const doc = new PDFDocument({ 
       margin: 50, 
       size: 'LETTER'
     })
     
-    // Set response headers
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="Departmental_Election_Statistics_${election.title.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf"`)
     
     doc.pipe(res)
 
-    // Track current page number for footer
     let currentPageNumber = 1
 
-    // Helper function to add footer to current page
     const addFooter = (pageNum, isLastPage = false) => {
       const currentY = doc.y
       doc.fontSize(8).font('Helvetica').fillColor('#666666')
@@ -2510,7 +2581,7 @@ static async exportDepartmentalElectionResults(req, res, next) {
         doc.page.height - 25,
         { align: 'center', width: 512 }
       )
-      doc.y = currentY // Restore Y position
+      doc.y = currentY
     }
 
     // HEADER
@@ -2550,13 +2621,11 @@ static async exportDepartmentalElectionResults(req, res, next) {
     doc.fontSize(12).font('Helvetica-Bold')
     const summaryY = doc.y
     
-    // Draw header box
     doc.fillColor('#2c3e50')
     doc.rect(50, summaryY, 512, 25).fill()
     doc.fillColor('#ffffff')
     doc.text('ELECTION SUMMARY', 60, summaryY + 7)
     
-    // Draw content box
     doc.fillColor('#000000')
     doc.rect(50, summaryY + 25, 512, 80).stroke()
     
@@ -2581,21 +2650,18 @@ static async exportDepartmentalElectionResults(req, res, next) {
       const columnWidths = {
         rank: 40,
         candidateNum: 75,
-        name: 200,
+        name: 180,
         year: 50,
         votes: 70,
-        percentage: 77
+        percentage: 97
       }
 
-      // Header background
       doc.fillColor('#2c3e50')
       doc.rect(50, startY, tableWidth, rowHeight).fill()
       
-      // Header border
       doc.strokeColor('#000000').lineWidth(1)
       doc.rect(50, startY, tableWidth, rowHeight).stroke()
       
-      // Header text
       doc.fontSize(10).font('Helvetica-Bold').fillColor('#ffffff')
       let currentX = 50
       
@@ -2625,29 +2691,25 @@ static async exportDepartmentalElectionResults(req, res, next) {
     }
 
     exportData.forEach((position, posIndex) => {
-      // Check if we need a new page for position header
       if (doc.y > 650) {
         addFooter(currentPageNumber)
         doc.addPage()
         currentPageNumber++
       }
 
-      // Position header
+      // Position header with ✅ ENHANCED INFO
       doc.fontSize(13).font('Helvetica-Bold').fillColor('#000000')
       doc.text(`${position.positionOrder}. ${position.positionName}`, 50, doc.y)
       doc.fontSize(10).font('Helvetica')
-      doc.text(`Total Votes for this position: ${position.totalVotes.toLocaleString()}`, 50, doc.y + 5)
+      doc.text(`Total Votes: ${position.totalVotes.toLocaleString()} | Eligible Participants: ${position.eligibleParticipants} | Max Possible Votes: ${position.maxPossibleVotes}`, 50, doc.y + 5)
       doc.moveDown(0.8)
 
-      // Draw table
       const tableTop = doc.y
       const { rowHeight, columnWidths, tableWidth } = drawTableHeader(tableTop)
       let currentY = tableTop + rowHeight
 
-      // Candidate rows
       doc.font('Helvetica').fillColor('#000000')
       position.candidates.forEach((candidate, idx) => {
-        // Check for page break
         if (currentY > 700) {
           addFooter(currentPageNumber)
           doc.addPage()
@@ -2657,32 +2719,23 @@ static async exportDepartmentalElectionResults(req, res, next) {
           currentY += rowHeight
         }
 
-        const percentage = position.totalVotes > 0 ? 
-          ((candidate.voteCount / position.totalVotes) * 100).toFixed(1) : '0.0'
-
-        // Row background (white)
         doc.fillColor('#ffffff')
         doc.rect(50, currentY, tableWidth, rowHeight).fill()
         
-        // Row border
         doc.strokeColor('#cccccc').lineWidth(0.5)
         doc.rect(50, currentY, tableWidth, rowHeight).stroke()
         
-        // Cell content
         doc.fontSize(9).font('Helvetica').fillColor('#000000')
         let currentX = 50
         
-        // Rank
         doc.text((idx + 1).toString(), currentX, currentY + 8, { width: columnWidths.rank, align: 'center' })
         currentX += columnWidths.rank
         doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
         
-        // Candidate Number
         doc.text(`#${candidate.candidateNumber}`, currentX + 5, currentY + 8, { width: columnWidths.candidateNum - 10, align: 'left' })
         currentX += columnWidths.candidateNum
         doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
         
-        // Name
         doc.text(candidate.candidateName, currentX + 5, currentY + 8, { 
           width: columnWidths.name - 10, 
           ellipsis: true,
@@ -2691,7 +2744,6 @@ static async exportDepartmentalElectionResults(req, res, next) {
         currentX += columnWidths.name
         doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
         
-        // Year Level
         doc.text(candidate.yearLevel.toString(), currentX + 5, currentY + 8, { 
           width: columnWidths.year - 10,
           align: 'center'
@@ -2699,7 +2751,6 @@ static async exportDepartmentalElectionResults(req, res, next) {
         currentX += columnWidths.year
         doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
         
-        // Votes
         doc.text(candidate.voteCount.toLocaleString(), currentX + 5, currentY + 8, { 
           width: columnWidths.votes - 10,
           align: 'center'
@@ -2707,8 +2758,8 @@ static async exportDepartmentalElectionResults(req, res, next) {
         currentX += columnWidths.votes
         doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
         
-        // Percentage
-        doc.text(`${percentage}%`, currentX + 5, currentY + 8, { 
+        // ✅ Now shows correct percentage
+        doc.text(`${candidate.percentage}%`, currentX + 5, currentY + 8, { 
           width: columnWidths.percentage - 10,
           align: 'center'
         })
@@ -2718,13 +2769,11 @@ static async exportDepartmentalElectionResults(req, res, next) {
 
       doc.y = currentY + 20
       
-      // Only add spacing if not the last position AND we have room on page
       if (posIndex < exportData.length - 1 && doc.y < 650) {
         doc.moveDown(0.5)
       }
     })
 
-    // Add footer to the last page
     addFooter(currentPageNumber, true)
 
     doc.end()

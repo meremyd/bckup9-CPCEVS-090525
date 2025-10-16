@@ -162,12 +162,12 @@ export default function DepartmentalLayout({
   // Sidebar items
   const sidebarItems = [
     { 
-      icon: LayoutDashboard, 
-      label: "Main Dashboard", 
+      icon: Home, 
+      label: "Home", 
       path: "/ecommittee/dashboard" 
     },
     { 
-      icon: Home, 
+      icon: LayoutDashboard, 
       label: "Departmental Elections", 
       onClick: handleBackToElections
     },

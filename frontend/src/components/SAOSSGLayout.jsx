@@ -176,12 +176,12 @@ export default function SAOSSGLayout({
   // Sidebar items - SAO specific navigation
   const sidebarItems = [
     { 
-      icon: LayoutDashboard, 
-      label: "SAO Dashboard", 
+      icon: Home, 
+      label: "Home", 
       path: "/sao/dashboard" 
     },
     { 
-      icon: Home, 
+      icon: LayoutDashboard, 
       label: "SSG Elections", 
       onClick: handleBackToElections
     },

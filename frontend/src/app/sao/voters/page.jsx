@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Building2, Users, LogOut, Search, X } from "lucide-react"
+import { Building2, Users, LogOut, Search, X, Home, Vote, GraduationCap } from "lucide-react"
 import { votersAPI } from '@/lib/api/voters'
 import { departmentsAPI } from '@/lib/api/departments'
 import { getUserFromToken, logout } from '../../../lib/auth'
@@ -241,37 +241,60 @@ export default function SAOVotersPage() {
   return (
     <BackgroundWrapper>
       {/* Header - SAO Dashboard style */}
-      <div className="bg-[#b0c8fe]/95 backdrop-blur-sm shadow-lg border-b border-[#b0c8fe]/30 px-4 sm:px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            <div className="w-8 h-8 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-lg flex items-center justify-center mr-3 shadow-lg">
-              <Users className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-[#001f65]">
-                SAO Dashboard
-              </h1>
-              <p className="text-xs text-[#001f65]/70">Active Voter Information</p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-2 sm:space-x-4">
-            <button
-              onClick={() => router.push('/sao/dashboard')}
-              className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-[#001f65] hover:bg-[#001f65]/10 rounded-lg transition-colors border border-[#001f65]/20 bg-white/60 backdrop-blur-sm"
-            >
-              <Building2 className="w-4 h-4 mr-1 sm:mr-2" />
-              <span className="hidden sm:inline">Dashboard</span>
-            </button>
-            <button
-              onClick={handleLogout}
-              className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50/80 rounded-lg transition-colors border border-red-200 bg-white/60 backdrop-blur-sm"
-            >
-              <LogOut className="w-4 h-4 mr-1 sm:mr-2" />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
-          </div>
-        </div>
+<div className="bg-[#b0c8fe]/95 backdrop-blur-sm shadow-lg border-b border-[#b0c8fe]/30 px-4 sm:px-6 py-4">
+  <div className="flex items-center justify-between">
+    <div className="flex items-center">
+      <div className="w-8 h-8 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-lg flex items-center justify-center mr-3 shadow-lg">
+        <Users className="w-5 h-5 text-white" />
       </div>
+      <div>
+        <h1 className="text-xl sm:text-2xl font-bold text-[#001f65]">
+          SAO Dashboard
+        </h1>
+        <p className="text-xs text-[#001f65]/70">Active Voter Information</p>
+      </div>
+    </div>
+    <div className="flex items-center space-x-1 sm:space-x-2">
+      {/* Navigation Links */}
+      <div 
+        onClick={() => router.push('/sao/dashboard')}
+        className="flex items-center px-2 sm:px-3 py-2 text-xs sm:text-sm text-[#001f65] hover:bg-[#001f65]/10 rounded-lg transition-colors cursor-pointer"
+      >
+        <Home className="w-4 h-4 mr-1 sm:mr-1.5" />
+        <span className="hidden lg:inline">Home</span>
+      </div>
+      <div 
+        onClick={() => router.push('/sao/voters')}
+        className="flex items-center px-2 sm:px-3 py-2 text-xs sm:text-sm text-[#001f65] bg-[#001f65]/10 rounded-lg transition-colors cursor-pointer"
+      >
+        <Users className="w-4 h-4 mr-1 sm:mr-1.5" />
+        <span className="hidden lg:inline">Voters</span>
+      </div>
+      <div 
+        onClick={() => router.push('/sao/ssg')}
+        className="flex items-center px-2 sm:px-3 py-2 text-xs sm:text-sm text-[#001f65] hover:bg-[#001f65]/10 rounded-lg transition-colors cursor-pointer"
+      >
+        <Vote className="w-4 h-4 mr-1 sm:mr-1.5" />
+        <span className="hidden lg:inline">SSG</span>
+      </div>
+      <div 
+        onClick={() => router.push('/sao/departmental')}
+        className="flex items-center px-2 sm:px-3 py-2 text-xs sm:text-sm text-[#001f65] hover:bg-[#001f65]/10 rounded-lg transition-colors cursor-pointer"
+      >
+        <GraduationCap className="w-4 h-4 mr-1 sm:mr-1.5" />
+        <span className="hidden lg:inline">Departmental</span>
+      </div>
+      <div className="w-px h-6 bg-[#001f65]/20 mx-1 sm:mx-2"></div>
+      <button
+        onClick={handleLogout}
+        className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50/80 rounded-lg transition-colors border border-red-200 bg-white/60 backdrop-blur-sm"
+      >
+        <LogOut className="w-4 h-4 mr-1 sm:mr-2" />
+        <span className="hidden sm:inline">Logout</span>
+      </button>
+    </div>
+  </div>
+</div>
 
       <div className="container mx-auto px-4 sm:px-6 py-8">
         {/* Error Message */}

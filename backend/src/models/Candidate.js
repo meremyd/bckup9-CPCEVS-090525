@@ -57,7 +57,7 @@ const candidateSchema = new mongoose.Schema(
 candidateSchema.index({ deptElectionId: 1, positionId: 1, candidateNumber: 1 }, { unique: true, sparse: true })
 candidateSchema.index({ ssgElectionId: 1, positionId: 1, candidateNumber: 1 }, { unique: true, sparse: true })
 // candidateSchema.index({ deptElectionId: 1, voterId: 1 }, { unique: true, sparse: true })
-// candidateSchema.index({ ssgElectionId: 1, voterId: 1 }, { unique: true, sparse: true })
+// candidateSchema.index({ ssgElectionId: 1, voterId: 1 }, { unique: true, sparse: true }) 
 
 // Additional indexes for performance
 candidateSchema.index({ isActive: 1 })

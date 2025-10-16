@@ -19,7 +19,7 @@ import {
   CheckCircle,
   X,
   Trophy,
-  Receipt,
+  ReceiptText,
   Download
 } from "lucide-react"
 
@@ -688,7 +688,7 @@ const getPositionStatus = (position) => {
               className="p-2 text-[#001f65] hover:bg-blue-50 rounded-lg transition-colors border border-blue-200 bg-white/60 backdrop-blur-sm"
               title="View Voting Receipt"
             >
-              <Receipt className="w-5 h-5" />
+              <ReceiptText className="w-5 h-5" />
             </button>
             <button
               onClick={handleLogout}
@@ -828,7 +828,7 @@ const getPositionStatus = (position) => {
 
             <div className="text-center mb-6">
               <div className="w-16 h-16 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-full flex items-center justify-center mx-auto mb-4">
-                <Receipt className="w-8 h-8 text-white" />
+                <ReceiptText className="w-8 h-8 text-white" />
               </div>
               <h2 className="text-2xl font-bold text-[#001f65] mb-2">Voting Receipt</h2>
               <p className="text-sm text-gray-600">Departmental Election</p>

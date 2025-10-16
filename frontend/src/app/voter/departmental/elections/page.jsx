@@ -251,7 +251,7 @@ export default function VoterDepartmentalElectionsPage() {
         <div className="min-h-[calc(100vh-120px)]">
           {/* Title and Info */}
           <div className="text-center mb-8">
-            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Your Department Elections</h2>
+            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Departmental Elections</h2>
             <p className="text-white/80">View and participate in your department's class officer elections</p>
             {voterDepartment && (
               <div className="mt-3 inline-flex items-center bg-white/10 backdrop-blur-sm rounded-full px-4 py-2 border border-white/20">

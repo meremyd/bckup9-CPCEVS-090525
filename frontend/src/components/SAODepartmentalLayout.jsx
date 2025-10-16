@@ -157,12 +157,12 @@ export default function SAODepartmentalLayout({
   // Sidebar items - SAO specific navigation
   const sidebarItems = [
     { 
-      icon: LayoutDashboard, 
-      label: "SAO Dashboard", 
+      icon: Home, 
+      label: "Home", 
       path: "/sao/dashboard" 
     },
     { 
-      icon: Home, 
+      icon: LayoutDashboard, 
       label: "Departmental Elections", 
       onClick: handleBackToElections
     },

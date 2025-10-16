@@ -258,6 +258,7 @@ export default function VoterDepartmentalResultsPage() {
     const ballotIsOpen = isBallotOpen(position)
     const totalVotes = position.totalVotes || 0
     const totalParticipants = position.totalParticipants || 0
+    const maxPossibleVotes = totalParticipants * (position.maxVotes || 1)
 
     return (
       <div className="mb-8" key={position._id}>
@@ -271,7 +272,7 @@ export default function VoterDepartmentalResultsPage() {
               <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
                 <div className="flex items-center gap-1">
                   <CheckCircle className="w-4 h-4" />
-                  <span>Votes Cast: <span className="font-semibold">{totalVotes} of {totalParticipants}</span></span>
+                  <span>Votes Cast: <span className="font-semibold">{totalVotes} of {maxPossibleVotes}</span></span>
                 </div>
                 <div className="flex items-center gap-1">
                   <Users className="w-4 h-4" />
