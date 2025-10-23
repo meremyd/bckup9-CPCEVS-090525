@@ -1647,107 +1647,214 @@ static async getActiveOfficersByDepartmentCode(req, res, next) {
 
   // Get voter profile (for authenticated voters)
   static async getVoterProfile(req, res, next) {
-    try {
-      const voterId = req.voter.id 
+  try {
+    const voterId = req.user.voterId
 
-      const voter = await Voter.findById(voterId)
-        .populate("departmentId")
-        .select("-password -faceEncoding")
+    const voter = await Voter.findById(voterId)
+      .populate("departmentId")
+      .select("-password -faceEncoding")
 
-      if (!voter) {
-        const error = new Error("Voter profile not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      await AuditLog.logVoterAction(
-        "PROFILE_ACCESS",
-        voter,
-        `Profile accessed by voter - ${voter.firstName} ${voter.lastName} (${voter.schoolId})`,
-        req
-      )
-
-      res.json({
-        success: true,
-        data: voter
-      })
-    } catch (error) {
-      next(error)
+    if (!voter) {
+      const error = new Error("Voter profile not found")
+      error.statusCode = 404
+      return next(error)
     }
+
+    await AuditLog.logVoterAction(
+      "PROFILE_ACCESS",
+      voter,
+      `Profile accessed by voter - ${voter.firstName} ${voter.lastName} (${voter.schoolId})`,
+      req
+    )
+
+    res.json({
+      success: true,
+      data: {
+        id: voter._id,
+        schoolId: voter.schoolId,
+        firstName: voter.firstName,
+        middleName: voter.middleName,
+        lastName: voter.lastName,
+        sex: voter.sex,
+        birthdate: voter.birthdate,
+        yearLevel: voter.yearLevel,
+        email: voter.email,
+        department: voter.departmentId ? {
+          id: voter.departmentId._id,
+          departmentCode: voter.departmentId.departmentCode,
+          degreeProgram: voter.departmentId.degreeProgram,
+          college: voter.departmentId.college,
+          displayName: voter.departmentId.displayName
+        } : null,
+        isClassOfficer: voter.isClassOfficer,
+        isActive: voter.isActive,
+        isRegistered: voter.isRegistered,
+        passwordCreatedAt: voter.passwordCreatedAt,
+        passwordExpiresAt: voter.passwordExpiresAt,
+        isPasswordActive: voter.isPasswordActive,
+        createdAt: voter.createdAt,
+        updatedAt: voter.updatedAt
+      }
+    })
+  } catch (error) {
+    next(error)
   }
+}
 
   // Update voter profile (for authenticated voters)
   static async updateVoterProfile(req, res, next) {
-    try {
-      const voterId = req.voter.id
-      const { firstName, middleName, lastName, email } = req.body
+  try {
+    const voterId = req.user.voterId
+    const { firstName, middleName, lastName, email, yearLevel, currentPassword, newPassword, confirmNewPassword } = req.body
 
-      const voter = await Voter.findById(voterId)
-      if (!voter) {
-        const error = new Error("Voter profile not found")
-        error.statusCode = 404
+    const voter = await Voter.findById(voterId).populate("departmentId")
+    if (!voter) {
+      const error = new Error("Voter profile not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    let updateDetails = []
+
+    // Check for duplicate email if changed
+    if (email && email !== voter.email) {
+      const existingEmail = await Voter.findOne({ email, _id: { $ne: voterId } })
+      if (existingEmail) {
+        const error = new Error("Email already exists")
+        error.statusCode = 409
+        return next(error)
+      }
+      updateDetails.push(`Email changed from ${voter.email} to ${email}`)
+    }
+
+    // Handle password update
+    if (newPassword) {
+      // Validate current password
+      if (!currentPassword) {
+        const error = new Error("Current password is required to set a new password")
+        error.statusCode = 400
         return next(error)
       }
 
-      let updateDetails = []
-
-      // Check for duplicate email if changed
-      if (email && email !== voter.email) {
-        const existingEmail = await Voter.findOne({ email, _id: { $ne: voterId } })
-        if (existingEmail) {
-          const error = new Error("Email already exists")
-          error.statusCode = 409
-          return next(error)
-        }
-        updateDetails.push(`Email changed from ${voter.email} to ${email}`)
+      const isValidPassword = await voter.comparePassword(currentPassword)
+      if (!isValidPassword) {
+        await AuditLog.logVoterAction(
+          "PROFILE_UPDATE",
+          voter,
+          `Failed password update attempt - Invalid current password - ${voter.firstName} ${voter.lastName} (${voter.schoolId})`,
+          req
+        )
+        const error = new Error("Current password is incorrect")
+        error.statusCode = 401
+        return next(error)
       }
 
-      // Update allowed fields only
-      const updateData = {}
-      if (firstName) {
-        updateData.firstName = firstName
-        if (firstName !== voter.firstName) {
-          updateDetails.push(`First name changed from ${voter.firstName} to ${firstName}`)
-        }
+      // Validate new password
+      if (newPassword !== confirmNewPassword) {
+        const error = new Error("New passwords do not match")
+        error.statusCode = 400
+        return next(error)
       }
-      if (middleName !== undefined) {
-        updateData.middleName = middleName
-        if (middleName !== voter.middleName) {
-          updateDetails.push(`Middle name changed`)
-        }
+
+      if (newPassword.length < 6) {
+        const error = new Error("New password must be at least 6 characters long")
+        error.statusCode = 400
+        return next(error)
       }
-      if (lastName) {
-        updateData.lastName = lastName
-        if (lastName !== voter.lastName) {
-          updateDetails.push(`Last name changed from ${voter.lastName} to ${lastName}`)
-        }
+
+      // Check if new password is same as current
+      const isSamePassword = await voter.comparePassword(newPassword)
+      if (isSamePassword) {
+        const error = new Error("New password cannot be the same as current password")
+        error.statusCode = 400
+        return next(error)
       }
-      if (email) updateData.email = email
 
-      const updatedVoter = await Voter.findByIdAndUpdate(voterId, updateData, { new: true })
-        .populate("departmentId")
-        .select("-password -faceEncoding")
-
-      const detailsString = updateDetails.length > 0 
-        ? `Profile updated by voter - ${updatedVoter.firstName} ${updatedVoter.lastName} (${updatedVoter.schoolId}): ${updateDetails.join(', ')}`
-        : `Profile accessed by voter - ${updatedVoter.firstName} ${updatedVoter.lastName} (${updatedVoter.schoolId})`
-
-      await AuditLog.logVoterAction(
-        "PROFILE_UPDATE",
-        updatedVoter,
-        detailsString,
-        req
-      )
-
-      res.json({
-        success: true,
-        message: "Profile updated successfully",
-        data: updatedVoter
-      })
-    } catch (error) {
-      next(error)
+      voter.password = newPassword
+      updateDetails.push("Password updated")
     }
+
+    // Handle year level update
+    if (yearLevel !== undefined && yearLevel !== voter.yearLevel) {
+      const yearLevelNumber = Number(yearLevel)
+      if (isNaN(yearLevelNumber) || yearLevelNumber < 1 || yearLevelNumber > 4) {
+        const error = new Error("Year level must be between 1 and 4")
+        error.statusCode = 400
+        return next(error)
+      }
+      voter.yearLevel = yearLevelNumber
+      updateDetails.push(`Year level changed from ${voter.yearLevel} to ${yearLevelNumber}`)
+    }
+
+    // Update other allowed fields
+    if (firstName && firstName !== voter.firstName) {
+      voter.firstName = firstName
+      updateDetails.push(`First name changed from ${voter.firstName} to ${firstName}`)
+    }
+    
+    if (middleName !== undefined && middleName !== voter.middleName) {
+      voter.middleName = middleName
+      updateDetails.push("Middle name updated")
+    }
+    
+    if (lastName && lastName !== voter.lastName) {
+      voter.lastName = lastName
+      updateDetails.push(`Last name changed from ${voter.lastName} to ${lastName}`)
+    }
+    
+    if (email && email !== voter.email) {
+      voter.email = email
+    }
+
+    await voter.save()
+
+    const updatedVoter = await Voter.findById(voterId)
+      .populate("departmentId")
+      .select("-password -faceEncoding")
+
+    const detailsString = updateDetails.length > 0 
+      ? `Profile updated by voter - ${updatedVoter.firstName} ${updatedVoter.lastName} (${updatedVoter.schoolId}): ${updateDetails.join(', ')}`
+      : `Profile accessed by voter - ${updatedVoter.firstName} ${updatedVoter.lastName} (${updatedVoter.schoolId})`
+
+    await AuditLog.logVoterAction(
+      "PROFILE_UPDATE",
+      updatedVoter,
+      detailsString,
+      req
+    )
+
+    res.json({
+      success: true,
+      message: "Profile updated successfully",
+      data: {
+        id: updatedVoter._id,
+        schoolId: updatedVoter.schoolId,
+        firstName: updatedVoter.firstName,
+        middleName: updatedVoter.middleName,
+        lastName: updatedVoter.lastName,
+        sex: updatedVoter.sex,
+        birthdate: updatedVoter.birthdate,
+        yearLevel: updatedVoter.yearLevel,
+        email: updatedVoter.email,
+        department: updatedVoter.departmentId ? {
+          id: updatedVoter.departmentId._id,
+          departmentCode: updatedVoter.departmentId.departmentCode,
+          degreeProgram: updatedVoter.departmentId.degreeProgram,
+          college: updatedVoter.departmentId.college,
+          displayName: updatedVoter.departmentId.displayName
+        } : null,
+        isClassOfficer: updatedVoter.isClassOfficer,
+        isActive: updatedVoter.isActive,
+        isRegistered: updatedVoter.isRegistered,
+        passwordCreatedAt: updatedVoter.passwordCreatedAt,
+        passwordExpiresAt: updatedVoter.passwordExpiresAt,
+        isPasswordActive: updatedVoter.isPasswordActive
+      }
+    })
+  } catch (error) {
+    next(error)
   }
+}
 
   // Export voters (PDF/DOCX format)
   static async exportVoters(req, res, next) {

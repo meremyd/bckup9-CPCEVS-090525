@@ -70,7 +70,7 @@ const registrationLimiter = rateLimit({
 
 const adminLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
-  max: 150, // Reduced from 200, but still allows productive work
+  max: 1500, // Reduced from 200, but still allows productive work
   message: {
     error: "Admin request limit exceeded",
     message: "Please slow down your requests and try again in a few minutes",
@@ -90,7 +90,7 @@ const adminLimiter = rateLimit({
 // Voter operations limiter - restrictive to prevent voting manipulation
 const voterLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, 
-  max: 20000, 
+  max: 2000, 
   message: {
     error: "Voter request limit exceeded",
     message: "Please wait a few minutes before making more requests",
@@ -137,7 +137,7 @@ const votingLimiter = rateLimit({
 // Chat support limiter - prevent spam
 const chatSupportLimiter = rateLimit({
   windowMs: 30 * 60 * 1000, // 30 minutes
-  max: 5, // 5 support requests per 30 minutes
+  max: 500, // 5 support requests per 30 minutes
   message: {
     error: "Support request limit exceeded",
     message: "Please wait before submitting another support request",

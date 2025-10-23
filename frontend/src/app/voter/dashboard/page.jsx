@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Vote, GraduationCap, MessageSquare, HelpCircle, LogOut, ChevronRight, Loader2 } from "lucide-react"
+import { Vote, GraduationCap, MessageSquare, HelpCircle, LogOut, ChevronRight, Loader2, User, BookOpen } from "lucide-react"
 import Swal from 'sweetalert2'
 import { dashboardAPI } from '@/lib/api/dashboard'
 import { ssgElectionsAPI } from '@/lib/api/ssgElections'
@@ -10,6 +10,8 @@ import { departmentalElectionsAPI } from '@/lib/api/departmentalElections'
 import { votersAPI } from "@/lib/api/voters"
 import { getVoterFromToken, voterLogout } from '../../../lib/auth'
 import VoterLayout from '@/components/VoterLayout'
+import VoterProfileModal from '@/components/VoterProfileModal'
+import RulesRegulationsModal from '@/components/RulesRegulationsModal'
 
 export default function VoterDashboard() {
   const [dashboardData, setDashboardData] = useState(null)
@@ -21,6 +23,9 @@ export default function VoterDashboard() {
   const [error, setError] = useState("")
   const [voter, setVoter] = useState(null)
   const [authChecked, setAuthChecked] = useState(false)
+  const [showProfileModal, setShowProfileModal] = useState(false)
+  const [showRulesModal, setShowRulesModal] = useState(false)
+  const [isFirstLogin, setIsFirstLogin] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -52,6 +57,13 @@ export default function VoterDashboard() {
         
         await loadDashboardDataSafely()
         
+        // Check if this is first login (rules not accepted)
+        const rulesAccepted = localStorage.getItem('rulesAccepted')
+        if (!rulesAccepted) {
+          setIsFirstLogin(true)
+          setShowRulesModal(true)
+        }
+        
       } catch (error) {
         console.error("Auth check error:", error)
         setError("Authentication error occurred")
@@ -62,136 +74,125 @@ export default function VoterDashboard() {
   }, [router])
 
   const loadDashboardDataSafely = async () => {
-  const promises = []
-  let dashboardError = null
-  let votingError = null
+    const promises = []
+    let dashboardError = null
+    let votingError = null
 
-  // Load dashboard data first
-  const dashboardPromise = dashboardAPI.getVoterDashboard()
-    .then(data => {
-      console.log("Dashboard data received:", data)
-      setDashboardData(data)
-      return data // Return data for use in voting status loading
-    })
-    .catch(error => {
-      console.error("Dashboard API error:", error)
-      dashboardError = error
-      return null
-    })
+    const dashboardPromise = dashboardAPI.getVoterDashboard()
+      .then(data => {
+        console.log("Dashboard data received:", data)
+        setDashboardData(data)
+        return data
+      })
+      .catch(error => {
+        console.error("Dashboard API error:", error)
+        dashboardError = error
+        return null
+      })
 
-  promises.push(dashboardPromise)
+    promises.push(dashboardPromise)
 
-  const results = await Promise.allSettled(promises)
-  const dashboardResult = results[0]
-  const dashboardDataFromAPI = dashboardResult.status === 'fulfilled' ? dashboardResult.value : null
+    const results = await Promise.allSettled(promises)
+    const dashboardResult = results[0]
+    const dashboardDataFromAPI = dashboardResult.status === 'fulfilled' ? dashboardResult.value : null
 
-  // Now load voting status using the dashboard data
-  if (dashboardDataFromAPI) {
+    if (dashboardDataFromAPI) {
+      try {
+        await loadVotingStatusSafely(dashboardDataFromAPI)
+      } catch (error) {
+        console.error("Voting status error:", error)
+        votingError = error
+      }
+    }
+
+    if (dashboardError && dashboardError.response?.status === 401) {
+      console.log("Dashboard auth error, redirecting to login")
+      voterLogout()
+      router.push("/voterlogin")
+      return
+    }
+
+    if (dashboardError || votingError) {
+      let errorMessage = "Failed to load some dashboard data"
+      
+      if (dashboardError?.code === 'NETWORK_ERROR' || dashboardError?.message?.includes('Network Error')) {
+        errorMessage = "Network error - please check if the server is running"
+      } else if (dashboardError?.response?.status >= 500) {
+        errorMessage = "Server error - please try again later"
+      } else if (dashboardError?.message) {
+        errorMessage = dashboardError.message
+      }
+      
+      setError(errorMessage)
+    }
+
+    setLoading(false)
+  }
+
+  const loadVotingStatusSafely = async (dashboardDataFromAPI = null) => {
     try {
-      await loadVotingStatusSafely(dashboardDataFromAPI)
+      let ssgElections = []
+      let departmentalElections = []
+      let totalSSGElections = 0
+      let totalDepartmentalElections = 0
+
+      try {
+        const ssgResponse = await ssgElectionsAPI.getAllForVoters()
+        console.log('SSG Response:', ssgResponse)
+        
+        if (ssgResponse?.success && ssgResponse?.data?.elections) {
+          ssgElections = ssgResponse.data.elections.filter(e => e.status === 'active')
+        }
+      } catch (error) {
+        console.error("SSG elections error:", error)
+      }
+
+      try {
+        const deptResponse = await departmentalElectionsAPI.getAllForVoters()
+        console.log('Dept Response:', deptResponse)
+        
+        if (deptResponse?.success && deptResponse?.data?.elections) {
+          departmentalElections = deptResponse.data.elections.filter(e => e.status === 'active')
+        }
+      } catch (error) {
+        console.error("Departmental elections error:", error)
+      }
+
+      if (dashboardDataFromAPI?.totalElections) {
+        totalSSGElections = dashboardDataFromAPI.totalElections.ssg || 0
+        totalDepartmentalElections = dashboardDataFromAPI.totalElections.departmental || 0
+      }
+
+      console.log('Final counts - SSG:', { 
+        active: ssgElections.length, 
+        total: totalSSGElections
+      })
+      console.log('Final counts - Dept:', { 
+        active: departmentalElections.length, 
+        total: totalDepartmentalElections
+      })
+
+      setVotingStatus({
+        ssg: { 
+          hasVoted: false,
+          availableElections: ssgElections.length,
+          totalElections: totalSSGElections
+        },
+        departmental: { 
+          hasVoted: false,
+          availableElections: departmentalElections.length,
+          totalElections: totalDepartmentalElections
+        }
+      })
+
     } catch (error) {
       console.error("Voting status error:", error)
-      votingError = error
+      setVotingStatus({
+        ssg: { hasVoted: false, availableElections: 0, totalElections: 0 },
+        departmental: { hasVoted: false, availableElections: 0, totalElections: 0 }
+      })
     }
   }
-
-  if (dashboardError && dashboardError.response?.status === 401) {
-    console.log("Dashboard auth error, redirecting to login")
-    voterLogout()
-    router.push("/voterlogin")
-    return
-  }
-
-  if (dashboardError || votingError) {
-    let errorMessage = "Failed to load some dashboard data"
-    
-    if (dashboardError?.code === 'NETWORK_ERROR' || dashboardError?.message?.includes('Network Error')) {
-      errorMessage = "Network error - please check if the server is running"
-    } else if (dashboardError?.response?.status >= 500) {
-      errorMessage = "Server error - please try again later"
-    } else if (dashboardError?.message) {
-      errorMessage = dashboardError.message
-    }
-    
-    setError(errorMessage)
-  }
-
-  setLoading(false)
-}
-
-const loadVotingStatusSafely = async (dashboardDataFromAPI = null) => {
-  try {
-    let ssgElections = []
-    let departmentalElections = []
-    let totalSSGElections = 0
-    let totalDepartmentalElections = 0
-
-    try {
-      // Get SSG elections using voter endpoint
-      const ssgResponse = await ssgElectionsAPI.getAllForVoters()
-      console.log('SSG Response:', ssgResponse)
-      
-      // Extract available elections
-      if (ssgResponse?.success && ssgResponse?.data?.elections) {
-        ssgElections = ssgResponse.data.elections.filter(e => e.status === 'active')
-      }
-
-    } catch (error) {
-      console.error("SSG elections error:", error)
-    }
-
-    try {
-      // Get Departmental elections using voter endpoint
-      const deptResponse = await departmentalElectionsAPI.getAllForVoters()
-      console.log('Dept Response:', deptResponse)
-      
-      // Extract available elections
-      if (deptResponse?.success && deptResponse?.data?.elections) {
-        departmentalElections = deptResponse.data.elections.filter(e => e.status === 'active')
-      }
-
-    } catch (error) {
-      console.error("Departmental elections error:", error)
-    }
-
-    // FIXED: Use total counts from dashboard data parameter if available
-    if (dashboardDataFromAPI?.totalElections) {
-      totalSSGElections = dashboardDataFromAPI.totalElections.ssg || 0
-      totalDepartmentalElections = dashboardDataFromAPI.totalElections.departmental || 0
-    }
-
-    console.log('Final counts - SSG:', { 
-      active: ssgElections.length, 
-      total: totalSSGElections
-    })
-    console.log('Final counts - Dept:', { 
-      active: departmentalElections.length, 
-      total: totalDepartmentalElections
-    })
-
-    // Update voting status with proper counts
-    setVotingStatus({
-      ssg: { 
-        hasVoted: false, // This should come from API when available
-        availableElections: ssgElections.length,
-        totalElections: totalSSGElections
-      },
-      departmental: { 
-        hasVoted: false, // This should come from API when available
-        availableElections: departmentalElections.length,
-        totalElections: totalDepartmentalElections
-      }
-    })
-
-  } catch (error) {
-    console.error("Voting status error:", error)
-    // Set default empty state
-    setVotingStatus({
-      ssg: { hasVoted: false, availableElections: 0, totalElections: 0 },
-      departmental: { hasVoted: false, availableElections: 0, totalElections: 0 }
-    })
-  }
-}
 
   const handleLogout = async () => {
     const result = await Swal.fire({
@@ -247,6 +248,16 @@ const loadVotingStatusSafely = async (dashboardDataFromAPI = null) => {
     setError("")
     setLoading(true)
     loadDashboardDataSafely()
+  }
+
+  const handleProfileUpdate = async (updatedProfile) => {
+    // Reload dashboard data to reflect changes
+    await loadDashboardDataSafely()
+  }
+
+  const handleRulesClose = () => {
+    setShowRulesModal(false)
+    setIsFirstLogin(false)
   }
 
   if (!authChecked || loading) {
@@ -361,7 +372,7 @@ const loadVotingStatusSafely = async (dashboardDataFromAPI = null) => {
 
   return (
     <VoterLayout>
-      {/* Header with Logout */}
+      {/* Header with Navigation */}
       <div className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/30 px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center">
@@ -373,11 +384,32 @@ const loadVotingStatusSafely = async (dashboardDataFromAPI = null) => {
                 Voter Dashboard
               </h1>
               <p className="text-xs text-[#001f65]/70">
-                Welcome, {voter?.schoolId} - {voter?.firstName}
+                Welcome, {dashboardData?.voterInfo?.schoolId || voter?.schoolId} - {dashboardData?.voterInfo?.firstName || voter?.firstName} 
               </p>
             </div>
           </div>
-          <div className="flex items-center space-x-2 sm:space-x-4">
+          <div className="flex items-center space-x-2">
+            {/* Profile Button */}
+            <button
+              onClick={() => setShowProfileModal(true)}
+              className="flex items-center px-2 sm:px-3 py-2 text-xs sm:text-sm text-[#001f65] hover:bg-blue-50/80 rounded-lg transition-colors border border-blue-200 bg-white/60 backdrop-blur-sm"
+              title="My Profile"
+            >
+              <User className="w-4 h-4 sm:mr-1" />
+              <span className="hidden sm:inline">Profile</span>
+            </button>
+            
+            {/* Rules Button */}
+            <button
+              onClick={() => setShowRulesModal(true)}
+              className="flex items-center px-2 sm:px-3 py-2 text-xs sm:text-sm text-[#001f65] hover:bg-blue-50/80 rounded-lg transition-colors border border-blue-200 bg-white/60 backdrop-blur-sm"
+              title="Rules & Regulations"
+            >
+              <BookOpen className="w-4 h-4 sm:mr-1" />
+              <span className="hidden sm:inline">Rules</span>
+            </button>
+            
+            {/* Logout Button */}
             <button
               onClick={handleLogout}
               className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50/80 rounded-lg transition-colors border border-red-200 bg-white/60 backdrop-blur-sm"
@@ -404,7 +436,7 @@ const loadVotingStatusSafely = async (dashboardDataFromAPI = null) => {
                   className={`bg-white/90 backdrop-blur-sm rounded-xl shadow-lg cursor-pointer transform hover:scale-105 transition-all duration-300 hover:shadow-2xl ${colors.hover} border ${colors.border} h-64 lg:h-72 flex flex-col justify-center items-center hover:bg-white/95 relative`}
                 >
                   <div className="p-6 text-center h-full flex flex-col justify-center items-center w-full">
-                    {/* Icon - REMOVED fingerprint icon */}
+                    {/* Icon */}
                     <div className={`p-4 rounded-full ${colors.bg} mb-6 shadow-lg border ${colors.border}`}>
                       <div className={colors.text}>
                         {card.icon}
@@ -456,6 +488,19 @@ const loadVotingStatusSafely = async (dashboardDataFromAPI = null) => {
           </div>
         </div>
       </div>
+
+      {/* Modals */}
+      <VoterProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        onProfileUpdate={handleProfileUpdate}
+      />
+
+      <RulesRegulationsModal
+        isOpen={showRulesModal}
+        onClose={handleRulesClose}
+        isFirstLogin={isFirstLogin}
+      />
     </VoterLayout>
   )
 }
