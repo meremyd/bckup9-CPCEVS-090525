@@ -4,9 +4,6 @@ export default function RulesRegulationsModal({ isOpen, onClose, isFirstLogin = 
   if (!isOpen) return null
 
   const handleAccept = () => {
-    if (isFirstLogin) {
-      localStorage.setItem('rulesAccepted', 'true')
-    }
     onClose()
   }
 
@@ -19,26 +16,16 @@ export default function RulesRegulationsModal({ isOpen, onClose, isFirstLogin = 
             <BookOpen className="w-8 h-8 mr-3" />
             <h2 className="text-2xl font-bold">Rules and Regulations</h2>
           </div>
-          {!isFirstLogin && (
-            <button
-              onClick={onClose}
-              className="text-white hover:bg-white/20 p-2 rounded-lg transition-colors"
-            >
-              <X className="w-6 h-6" />
-            </button>
-          )}
+          <button
+            onClick={onClose}
+            className="text-white hover:bg-white/20 p-2 rounded-lg transition-colors"
+          >
+            <X className="w-6 h-6" />
+          </button>
         </div>
 
         {/* Content */}
         <div className="p-6 space-y-6">
-          {isFirstLogin && (
-            <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
-              <p className="text-blue-800 font-medium">
-                Welcome! Please read and accept the following rules and regulations before proceeding.
-              </p>
-            </div>
-          )}
-
           {/* Section 1: Voter Eligibility */}
           <div className="space-y-3">
             <h3 className="text-lg font-bold text-[#001f65] flex items-center">
@@ -158,26 +145,18 @@ export default function RulesRegulationsModal({ isOpen, onClose, isFirstLogin = 
           {/* Agreement Statement */}
           <div className="bg-gray-50 border-l-4 border-[#001f65] p-4 rounded mt-6">
             <p className="text-gray-800 font-medium">
-              By clicking "I Accept" or "OK", you acknowledge that you have read, understood, and agree to abide by all the rules and regulations stated above.
+              By using this voting system, you acknowledge that you have read, understood, and agree to abide by all the rules and regulations stated above.
             </p>
           </div>
         </div>
 
         {/* Action Buttons */}
         <div className="p-6 bg-gray-50 rounded-b-2xl flex justify-end space-x-3 border-t">
-          {!isFirstLogin && (
-            <button
-              onClick={onClose}
-              className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
-            >
-              Close
-            </button>
-          )}
           <button
             onClick={handleAccept}
             className="px-6 py-2 bg-[#001f65] text-white rounded-lg hover:bg-[#003399] transition-colors font-medium"
           >
-            {isFirstLogin ? 'I Accept' : 'OK'}
+            OK, I Understand
           </button>
         </div>
       </div>

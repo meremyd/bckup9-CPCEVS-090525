@@ -5,12 +5,15 @@ import Image from "next/image"
 import ChatSupportBtn from "../../components/ChatSupportBtn"
 import { useState } from "react"
 import { authAPI } from '@/lib/api/auth'
+import OtpModal from '@/components/OtpModal'
 
 export default function VoterLogin() {
   const router = useRouter()
   const [form, setForm] = useState({ userId: "", password: "" })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
+  const [otpModalVisible, setOtpModalVisible] = useState(false)
+  const [pendingVoterId, setPendingVoterId] = useState(null)
 
   const handlePreRegister = () => {
     router.push("/pre-register")
@@ -31,12 +34,16 @@ export default function VoterLogin() {
         userId: form.userId,
         password: form.password,
       })
-      
-      // Store voter data with correct token
+      // If backend requires OTP, open modal and wait for verification
+      if (data.otpRequired) {
+        setPendingVoterId(data.voterId)
+        setOtpModalVisible(true)
+        return
+      }
+
+      // Otherwise backend returned token immediately
       localStorage.setItem("voterToken", data.token) // Use voterToken for voters
       localStorage.setItem("voter", JSON.stringify(data.user))
-
-      // Use router.push instead of direct assignment
       router.push(data.redirectTo || "/voter/dashboard")
     } catch (error) {
       console.error("Voter login error:", error)
@@ -65,6 +72,20 @@ export default function VoterLogin() {
       setError(errorMessage)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleVerifyOtp = async ({ voterId, otp }) => {
+    try {
+      const data = await authAPI.voterLoginVerifyOtp({ voterId, otp })
+      // store token and proceed
+      localStorage.setItem("voterToken", data.token)
+      localStorage.setItem("voter", JSON.stringify(data.user))
+      setOtpModalVisible(false)
+      setPendingVoterId(null)
+      router.push(data.redirectTo || "/voter/dashboard")
+    } catch (err) {
+      throw err
     }
   }
 
@@ -139,6 +160,10 @@ export default function VoterLogin() {
               />
             </div>
 
+            <div className="w-full text-right mt-2">
+              <button type="button" onClick={() => router.push('/forgot-password')} className="text-sm text-blue-600 hover:underline">Forgot password?</button>
+            </div>
+
             <div className="mt-4" />
 
             <div className="flex flex-row justify-center space-x-0 mt-8 lg:text-2xl xl:text-2xl xl:mt-10 w-full">
@@ -170,6 +195,13 @@ export default function VoterLogin() {
             </div>
           </form>
         </div>
+
+        <OtpModal
+          visible={otpModalVisible}
+          onClose={() => { setOtpModalVisible(false); setPendingVoterId(null) }}
+          onSubmit={handleVerifyOtp}
+          initialVoterId={pendingVoterId}
+        />
 
         <ChatSupportBtn />
       </div>

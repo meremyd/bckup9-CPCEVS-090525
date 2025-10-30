@@ -50,7 +50,7 @@ const loginLimiter = rateLimit({
 // Registration limiter - prevents spam registrations
 const registrationLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, 
-  max: 3, 
+  max: 100, 
   message: {
     error: "Registration limit exceeded",
     message: "Too many registration attempts. Please wait 1 hour before trying again.",

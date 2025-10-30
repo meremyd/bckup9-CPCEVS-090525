@@ -381,7 +381,6 @@ export default function SSGCandidatesPage() {
             firstName: candidate.voterId.firstName || '',
             middleName: candidate.voterId.middleName || '',
             lastName: candidate.voterId.lastName || '',
-            yearLevel: candidate.voterId.yearLevel || 'N/A',
             departmentId: candidate.voterId.departmentId || null,
             isRegistered: candidate.voterId.isRegistered || false
           } : null,
@@ -417,7 +416,6 @@ export default function SSGCandidatesPage() {
         processedCandidate.positionOrder = processedCandidate.positionInfo?.positionOrder || 999
         processedCandidate.partylist = processedCandidate.partylistInfo?.partylistName || 'Independent'
         processedCandidate.schoolId = processedCandidate.voterInfo?.schoolId || 'N/A'
-        processedCandidate.yearLevel = processedCandidate.voterInfo?.yearLevel || 'N/A'
         processedCandidate.department = processedCandidate.voterInfo?.departmentId?.departmentCode || 'Unknown'
         processedCandidate.isRegistered = processedCandidate.voterInfo?.isRegistered || false
 
@@ -457,7 +455,6 @@ export default function SSGCandidatesPage() {
                    `${voter.firstName || ''} ${voter.middleName || ''} ${voter.lastName || ''}`.replace(/\s+/g, ' ').trim(),
           schoolId: voter.schoolId || 'N/A',
           departmentId: voter.departmentId || null,
-          yearLevel: voter.yearLevel || 'N/A',
           isRegistered: voter.isRegistered || false
         }))
 
@@ -710,7 +707,6 @@ export default function SSGCandidatesPage() {
         fullName: candidate.fullName || '',
         schoolId: candidate.voterInfo.schoolId || '',
         departmentId: candidate.voterInfo.departmentId || null,
-        yearLevel: candidate.voterInfo.yearLevel || '',
         isRegistered: candidate.voterInfo.isRegistered || false
       })
     }
@@ -1218,7 +1214,7 @@ export default function SSGCandidatesPage() {
                               {selectedVoter.fullName}
                             </p>
                             <p className={selectedVoter.isRegistered ? 'text-green-600' : 'text-blue-600'}>
-                              ID: {selectedVoter.schoolId} • {selectedVoter.departmentId?.departmentCode || 'N/A'} - Year {selectedVoter.yearLevel}
+                              ID: {selectedVoter.schoolId} • {selectedVoter.departmentId?.departmentCode || 'N/A'} 
                             </p>
                             {selectedVoter.isRegistered ? (
                               <p className="text-green-700 text-xs mt-1">
@@ -1733,9 +1729,7 @@ export default function SSGCandidatesPage() {
                         <div className="text-sm text-gray-900">
                           {candidate.department}
                         </div>
-                        <div className="text-sm text-gray-500">
-                          Year {candidate.yearLevel}
-                        </div>
+                        
                       </td>
 
                       {/* Partylist Column */}

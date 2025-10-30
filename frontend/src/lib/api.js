@@ -20,13 +20,15 @@ api.interceptors.request.use(
     const token = localStorage.getItem('token')
     const voterToken = localStorage.getItem('voterToken')
     
-    // Use voter token ONLY for voter-specific authentication routes
-    // Not for admin routes that happen to contain "voter" in the path
-    const isVoterAuthRoute = config.url?.includes('/auth/voter') || 
-                            config.url?.includes('/voter/') ||
-                            config.url?.startsWith('/voter/')
-    
-    const authToken = isVoterAuthRoute ? voterToken : token
+  // Use voter token ONLY for voter-specific authentication routes
+  // Not for admin routes that happen to contain "voter" in the path
+  // Additionally: when checking auth (/auth/me) prefer the voter token if one exists
+  const isVoterAuthRoute = config.url?.includes('/auth/voter') || 
+              config.url?.includes('/voter/') ||
+              config.url?.startsWith('/voter/') ||
+              (config.url?.includes('/auth/me') && !!voterToken)
+
+  const authToken = isVoterAuthRoute ? voterToken : token
     
     if (authToken) {
       config.headers['x-auth-token'] = authToken
@@ -48,10 +50,13 @@ api.interceptors.response.use(
                           error.config?.url?.includes('/auth/voter-login')
     
     if (error.response?.status === 401 && !isLoginAttempt) {
-      // Clear tokens and redirect based on route - but only for authenticated routes
-      if (error.config?.url?.includes('/auth/voter') || 
-          error.config?.url?.includes('/voter/') ||
-          error.config?.url?.startsWith('/voter/')) {
+      // Decide whether this 401 relates to a voter session or an admin session.
+      const isVoterErrorRoute = error.config?.url?.includes('/auth/voter') || 
+                               error.config?.url?.includes('/voter/') ||
+                               error.config?.url?.startsWith('/voter/') ||
+                               (error.config?.url?.includes('/auth/me') && !!localStorage.getItem('voterToken'))
+
+      if (isVoterErrorRoute) {
         localStorage.removeItem('voterToken')
         localStorage.removeItem('voter')
         window.location.href = '/voterlogin'
@@ -103,7 +108,8 @@ export const fetchWithAuth = async (endpoint, options = {}) => {
   // Use voter token ONLY for voter-specific authentication routes
   const isVoterAuthRoute = endpoint.includes('/auth/voter') || 
                           endpoint.includes('/voter/') ||
-                          endpoint.startsWith('/voter/')
+                          endpoint.startsWith('/voter/') ||
+                          (endpoint.includes('/auth/me') && !!voterToken)
   
   const authToken = isVoterAuthRoute ? voterToken : token
   

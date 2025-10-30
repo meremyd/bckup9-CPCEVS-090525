@@ -25,7 +25,6 @@ export default function VoterDashboard() {
   const [authChecked, setAuthChecked] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [showRulesModal, setShowRulesModal] = useState(false)
-  const [isFirstLogin, setIsFirstLogin] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -57,12 +56,8 @@ export default function VoterDashboard() {
         
         await loadDashboardDataSafely()
         
-        // Check if this is first login (rules not accepted)
-        const rulesAccepted = localStorage.getItem('rulesAccepted')
-        if (!rulesAccepted) {
-          setIsFirstLogin(true)
-          setShowRulesModal(true)
-        }
+        // Show rules modal every time on login
+        setShowRulesModal(true)
         
       } catch (error) {
         console.error("Auth check error:", error)
@@ -257,7 +252,6 @@ export default function VoterDashboard() {
 
   const handleRulesClose = () => {
     setShowRulesModal(false)
-    setIsFirstLogin(false)
   }
 
   if (!authChecked || loading) {
@@ -388,31 +382,33 @@ export default function VoterDashboard() {
               </p>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
-            {/* Profile Button */}
+          <div className="flex items-center space-x-1 sm:space-x-4">
+            {/* Profile Link */}
             <button
               onClick={() => setShowProfileModal(true)}
-              className="flex items-center px-2 sm:px-3 py-2 text-xs sm:text-sm text-[#001f65] hover:bg-blue-50/80 rounded-lg transition-colors border border-blue-200 bg-white/60 backdrop-blur-sm"
+              className="flex items-center px-2 sm:px-3 py-2 text-xs sm:text-sm text-[#001f65] hover:text-[#003399] transition-colors relative group"
               title="My Profile"
             >
               <User className="w-4 h-4 sm:mr-1" />
-              <span className="hidden sm:inline">Profile</span>
+              <span className="hidden sm:inline font-medium">Profile</span>
+              <span className="absolute bottom-0 left-0 w-full h-0.5 bg-[#001f65] transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left"></span>
             </button>
             
-            {/* Rules Button */}
+            {/* Rules Link */}
             <button
               onClick={() => setShowRulesModal(true)}
-              className="flex items-center px-2 sm:px-3 py-2 text-xs sm:text-sm text-[#001f65] hover:bg-blue-50/80 rounded-lg transition-colors border border-blue-200 bg-white/60 backdrop-blur-sm"
+              className="flex items-center px-2 sm:px-3 py-2 text-xs sm:text-sm text-[#001f65] hover:text-[#003399] transition-colors relative group"
               title="Rules & Regulations"
             >
               <BookOpen className="w-4 h-4 sm:mr-1" />
-              <span className="hidden sm:inline">Rules</span>
+              <span className="hidden sm:inline font-medium">Rules</span>
+              <span className="absolute bottom-0 left-0 w-full h-0.5 bg-[#001f65] transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left"></span>
             </button>
             
             {/* Logout Button */}
             <button
               onClick={handleLogout}
-              className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50/80 rounded-lg transition-colors border border-red-200 bg-white/60 backdrop-blur-sm"
+              className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors font-medium shadow-md"
             >
               <LogOut className="w-4 h-4 mr-1 sm:mr-2" />
               <span className="hidden sm:inline">Logout</span>
@@ -499,7 +495,7 @@ export default function VoterDashboard() {
       <RulesRegulationsModal
         isOpen={showRulesModal}
         onClose={handleRulesClose}
-        isFirstLogin={isFirstLogin}
+        isFirstLogin={false}
       />
     </VoterLayout>
   )

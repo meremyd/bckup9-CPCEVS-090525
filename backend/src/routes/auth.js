@@ -1,13 +1,21 @@
 const express = require("express")
 const AuthController = require("../controllers/authController")
+const { authMiddleware } = require("../middleware/authMiddleware")
 const router = express.Router()
 
 router.post("/pre-register-step1", AuthController.preRegisterStep1)
 router.post("/pre-register-step2", AuthController.preRegisterStep2)
+router.post("/pre-register-verify-otp", AuthController.verifyOtp)
+router.post("/pre-register-resend-otp", AuthController.preRegisterResendOtp)
+router.post("/pre-register-step3", AuthController.preRegisterStep3)
 router.post("/voter-login", AuthController.voterLogin)
+router.post("/voter-login-verify-otp", AuthController.voterLoginVerifyOtp)
 router.post("/login", AuthController.login)
+router.post("/voter-forgot-password", AuthController.voterForgotPasswordRequest)
+router.post("/voter-forgot-password-verify-otp", AuthController.verifyOtp)
+router.post("/voter-reset-password", AuthController.voterResetPassword)
 router.post("/logout", AuthController.logout)
-router.get("/me", AuthController.checkAuth)
+router.get("/me", authMiddleware, AuthController.checkAuth)
 router.post("/refresh", AuthController.refreshToken)
 
 module.exports = router

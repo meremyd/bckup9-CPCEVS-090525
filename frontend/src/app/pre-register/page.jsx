@@ -28,8 +28,9 @@ export default function PreRegister() {
     const { name, value } = e.target
 
     if (name === "schoolId") {
+      // Limit to 8 digits
       if (value.length > 8) {
-        return // Don't update if more than 8 digits
+        return
       }
 
       setForm({ ...form, [name]: value })
@@ -46,9 +47,12 @@ export default function PreRegister() {
         lastName: "",
       }))
 
-      if (value.length >= 4) {
+      // FIXED: Only lookup when exactly 8 digits are entered
+      if (value.length === 8) {
         try {
           const data = await votersAPI.lookupBySchoolId(value)
+          
+          // FIXED: Correctly map the voter data with department info
           setForm((prev) => ({
             ...prev,
             firstName: data.firstName || "",
@@ -69,15 +73,14 @@ export default function PreRegister() {
           }))
           setVoterFound(false)
           setVoterData(null)
-          if (value.length >= 8) {
-            // Only show error for complete IDs
-            Swal.fire({
-              icon: "error",
-              title: "Student Not Found",
-              text: error.message || "Student ID not found in voter database",
-              confirmButtonColor: "#2563eb",
-            })
-          }
+          
+          // Show error message for invalid 8-digit ID
+          Swal.fire({
+            icon: "error",
+            title: "Student Not Found",
+            text: error.message || "Student ID not found in voter database. Please check your School ID.",
+            confirmButtonColor: "#2563eb",
+          })
         }
       }
     }
@@ -90,19 +93,27 @@ export default function PreRegister() {
       Swal.fire({
         icon: "warning",
         title: "No Student Found",
-        text: "Please enter a valid school ID to find your information",
+        text: "Please enter a valid 8-digit school ID to find your information",
         confirmButtonColor: "#2563eb",
       })
       return
     }
 
+    // FIXED: Properly display department information in confirmation modal
+    const departmentInfo = voterData.department || voterData.departmentId
+    const departmentDisplay = departmentInfo 
+      ? `${departmentInfo.departmentCode} - ${departmentInfo.degreeProgram}` 
+      : "N/A"
+    
+   
     const result = await Swal.fire({
       title: "Confirm Your Information",
       html: `
         <div style="text-align: left; margin: 20px 0;">
           <p><strong>School ID:</strong> ${voterData.schoolId}</p>
           <p><strong>Name:</strong> ${voterData.firstName} ${voterData.middleName || ""} ${voterData.lastName}</p>
-          <p><strong>Degree:</strong> ${voterData.degree?.degreeName || "N/A"}</p>
+          <p><strong>Sex:</strong> ${voterData.sex || "N/A"}</p>
+          <p><strong>Department:</strong> ${departmentDisplay}</p>
         </div>
         <p style="margin-top: 20px;">Is this information correct?</p>
       `,
@@ -146,40 +157,40 @@ export default function PreRegister() {
         <div className="w-full flex-grow bg-white flex flex-col items-center justify-center p-6 relative rounded-t-3xl -mt-3 md:mt-0 md:rounded-none md:w-3/5 md:h-screen xl:min-w-[600px] xl:-mt-10">
           <div className="text-center mb-8 -mt-1 md:mb-10 md:mt-10 lg:mb-12 lg:-mt-0 xl:mb-16">
             <div className="flex flex-row items-center justify-center w-full mb-2 xl:mt-10">
-              <img src="/voteicon.png" alt="Vote Icon" className="w-12 h-12 md:w-16 md:h-16 xl:w-20 xl:h-20 mr-3" />
-              <h2 className="text-3xl font-bold text-blue-600 md:text-4xl lg:text-5xl xl:text-5xl m-0">
+              <img src="/voteicon.png" alt="Vote Icon" className="w-12 h-12 md:w-14 md:h-14 xl:w-18 xl:h-18 mr-3" />
+              <h2 className="text-2xl font-bold text-blue-700 md:text-3xl lg:text-4xl xl:text-4xl m-0">
                 Pre Registration
               </h2>
             </div>
-            <p className="text-base text-gray-600 md:text-lg xl:text-2xl">
-              Enter your school ID to verify your information
+            <p className="text-sm text-gray-600 md:text-base xl:text-lg">
+              Enter your 8-digit school ID to verify your information
             </p>
           </div>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm w-full max-w-sm md:max-w-md xl:max-w-xl 2xl:max-w-2xl">
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm w-full max-w-sm md:max-w-md xl:max-w-xl">
               {error}
             </div>
           )}
 
           <form className="w-full max-w-sm mb-4 md:max-w-md md:mb-6 xl:max-w-xl 2xl:max-w-2xl" onSubmit={handleMatch}>
-            <div className="relative flex items-center mb-3 border border-gray-300 rounded-full shadow-sm px-4 py-2 md:mb-4 md:py-3 xl:py-5 xl:mb-6 2xl:px-8 2xl:py-6">
+            <div className="relative flex items-center mb-3 border border-gray-200 rounded-full shadow-sm px-4 py-3 md:mb-4 md:py-3 xl:py-4 xl:mb-6 2xl:px-8 2xl:py-5 bg-gray-50">
               <input
                 type="number"
                 name="schoolId"
-                placeholder="Enter your School ID"
+                placeholder="School ID"
                 value={form.schoolId}
                 onChange={handleChange}
                 maxLength="8"
                 min="10000000"
                 max="99999999"
-                className="flex-1 bg-transparent outline-none text-gray-800 text-base placeholder-gray-500 md:text-lg xl:text-xl 2xl:text-2xl xl:ml-6 2xl:ml-10 2xl:placeholder:text-xl"
+                className="flex-1 bg-transparent outline-none text-gray-800 text-base placeholder-gray-500 md:text-lg xl:text-xl 2xl:text-2xl xl:ml-4 2xl:ml-6"
                 required
                 disabled={loading}
               />
             </div>
 
-            <div className="relative flex items-center mb-3 border border-gray-300 rounded-full shadow-sm px-4 py-2 md:mb-4 md:py-3 xl:py-5 xl:mb-6 2xl:px-8 2xl:py-6 bg-gray-50">
+            <div className="relative flex items-center mb-3 border border-gray-200 rounded-full shadow-sm px-4 py-2 md:mb-4 md:py-3 xl:py-4 xl:mb-6 2xl:px-8 2xl:py-5 bg-gray-50">
               <input
                 type="text"
                 name="firstName"
@@ -212,19 +223,19 @@ export default function PreRegister() {
               />
             </div>
 
-            <div className="flex flex-row justify-center space-x-0 mt-8 lg:text-2xl xl:text-2xl xl:mt-10 w-full">
+            <div className="flex flex-row justify-center gap-3 mt-8 lg:text-lg xl:mt-10 w-full">
               <button
                 type="button"
                 onClick={handleLogin}
                 disabled={loading}
-                className="flex-1 rounded-full py-3 text-blue-600 bg-white border-1 border-blue-700 font-semibold shadow-sm hover:bg-blue-50 transition xl:text-xl disabled:opacity-50"
+                className="flex-1 rounded-full py-3 text-blue-700 bg-white border border-blue-200 font-semibold shadow-sm hover:bg-blue-50 transition xl:text-lg disabled:opacity-50"
               >
                 Log In
               </button>
               <button
                 type="submit"
                 disabled={loading || !voterFound}
-                className="flex-1 rounded-full py-3 text-white bg-blue-600 font-semibold shadow-sm xl:text-xl ml-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 rounded-full py-3 text-white bg-blue-700 hover:bg-blue-800 font-semibold shadow-sm xl:text-lg ml-0 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? "Processing..." : "Pre Register"}
               </button>

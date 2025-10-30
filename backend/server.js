@@ -198,6 +198,21 @@ try {
 
 console.log("All routes loaded successfully")
 
+// Debug endpoint to send a test email directly from the running server
+app.post('/api/debug/send-test-email', async (req, res) => {
+  const { to, subject, text, html } = req.body || {}
+  if (!to) return res.status(400).json({ message: 'Missing `to` in body' })
+  try {
+    const { sendMail } = require('./src/utils/mailer')
+    const info = await sendMail({ to, subject: subject || 'Test email', text: text || 'Test', html })
+    return res.json({ ok: true, info })
+  } catch (err) {
+    console.error('Debug send-test-email failed:', err && err.message)
+    console.error(err && err.stack)
+    return res.status(500).json({ ok: false, message: err && err.message })
+  }
+})
+
 app.use(errorHandler)
 
 app.use((req, res) => {
@@ -213,6 +228,8 @@ app.listen(PORT, () => {
   console.log(`   - POST http://localhost:${PORT}/api/auth/voter-login`)
   console.log(`   - POST http://localhost:${PORT}/api/auth/pre-register-step1`)
   console.log(`   - POST http://localhost:${PORT}/api/auth/pre-register-step2`)
+  console.log(`   - POST http://localhost:${PORT}/api/auth/pre-register-verify-otp`)
+  console.log(`   - POST http://localhost:${PORT}/api/auth/pre-register-step3`)
   console.log(`   - GET  http://localhost:${PORT}/api/users (Protected - Admin)`)
   console.log(`   - GET  http://localhost:${PORT}/api/voters (Protected - Admin/Committee)`)
   console.log(`   - GET  http://localhost:${PORT}/api/departments`)

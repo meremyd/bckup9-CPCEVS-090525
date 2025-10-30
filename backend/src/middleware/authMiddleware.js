@@ -1,3 +1,4 @@
+
 const jwt = require("jsonwebtoken")
 const Voter = require("../models/Voter") 
 
@@ -62,12 +63,19 @@ const authorizeStaffAndVoters = (...staffRoles) => {
 const voterAuthMiddleware = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '')
-    
+
     if (!token) {
       return res.status(401).json({ message: 'Access denied. No token provided.' })
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET)
+    // Ensure we have a secret available; fall back to the same default used elsewhere
+    const secret = process.env.JWT_SECRET || 'your-secret-key'
+    if (!secret) {
+      console.error('Voter auth error: JWT secret is not defined')
+      return res.status(500).json({ message: 'Server misconfiguration: missing JWT secret' })
+    }
+
+    const decoded = jwt.verify(token, secret)
     
     // Check if this is a voter token (has voterId instead of userId)
     if (!decoded.voterId) {
