@@ -22,8 +22,28 @@ export default function VoterMessages() {
     email: "",
     message: ""
   })
+  const [photoFile, setPhotoFile] = useState(null)
   const [formErrors, setFormErrors] = useState({})
   const router = useRouter()
+
+  const getDepartmentName = (deptId) => {
+    if (!deptId) return null
+
+    // If deptId is an object (e.g., full department object), format it
+    if (typeof deptId === 'object') {
+      const dc = deptId.departmentCode || deptId.department_code || deptId.code || ''
+      const dp = deptId.degreeProgram || deptId.degree_program || deptId.name || ''
+      const combined = `${dc}${dc ? ' - ' : ''}${dp}`.trim()
+      return combined || JSON.stringify(deptId)
+    }
+
+    if (!departments || departments.length === 0) return deptId
+
+    // deptId may be an _id or a departmentCode or full degreeProgram string
+    const found = departments.find(d => String(d._id) === String(deptId) || d.departmentCode === deptId || d.degreeProgram === deptId)
+    if (found) return `${found.departmentCode || ''}${found.departmentCode ? ' - ' : ''}${found.degreeProgram || ''}`.trim()
+    return deptId
+  }
 
   useEffect(() => {
     const checkAuthAndLoadData = async () => {
@@ -130,6 +150,11 @@ export default function VoterMessages() {
     }
   }
 
+  const handleFileChange = (e) => {
+    const file = e.target.files && e.target.files[0]
+    setPhotoFile(file || null)
+  }
+
   const validateForm = () => {
     const errors = {}
     
@@ -192,10 +217,23 @@ export default function VoterMessages() {
         firstName: (voter?.firstName) || parsedFirst,
         middleName: (voter?.middleName) || parsedMiddle,
         lastName: (voter?.lastName) || parsedLast,
-        departmentId: formData.departmentId,
+        // Normalize departmentId to a string identifier backend recognizes
+        departmentId: (() => {
+          const d = formData.departmentId
+          if (!d) return ''
+          if (typeof d === 'object') {
+            return d._id || d.id || d.departmentCode || d.degreeProgram || ''
+          }
+          // if it's a string, try to map it to a known department _id first
+          const found = departments.find(dep => String(dep._id) === String(d) || dep.departmentCode === d || dep.degreeProgram === d)
+          if (found) return found._id || found.departmentCode || found.degreeProgram || d
+          return d
+        })(),
         email: formData.email.trim().toLowerCase(),
         message: formData.message.trim()
       }
+      // include uploaded file if present
+      if (photoFile) payload.photoFile = photoFile
 
       const response = await chatSupportAPI.submit(payload)
 
@@ -214,14 +252,9 @@ export default function VoterMessages() {
           confirmButtonColor: '#001f65'
         })
 
-        // Reset form but keep school ID and name
-        setFormData({
-          schoolId: voter.schoolId || "",
-          fullName: `${voter.firstName || ""} ${voter.lastName || ""}`.trim(),
-          departmentId: "",
-          email: "",
-          message: ""
-        })
+        // Reset only the message (preserve schoolId/fullName/department/email)
+        setFormData(prev => ({ ...prev, message: "" }))
+        setPhotoFile(null)
         setFormErrors({})
       }
     } catch (error) {
@@ -352,7 +385,7 @@ export default function VoterMessages() {
                   onChange={handleInputChange}
                   className={`w-full px-4 py-2 border ${formErrors.schoolId ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent bg-white/80`}
                   placeholder="Enter your school ID"
-                  disabled={submitting}
+                  disabled={true}
                 />
                 {formErrors.schoolId && (
                   <p className="mt-1 text-sm text-red-500">{formErrors.schoolId}</p>
@@ -371,7 +404,7 @@ export default function VoterMessages() {
                   onChange={handleInputChange}
                   className={`w-full px-4 py-2 border ${formErrors.fullName ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent bg-white/80`}
                   placeholder="Enter your full name"
-                  disabled={submitting}
+                  disabled={true}
                 />
                 {formErrors.fullName && (
                   <p className="mt-1 text-sm text-red-500">{formErrors.fullName}</p>
@@ -383,20 +416,10 @@ export default function VoterMessages() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Department <span className="text-red-500">*</span>
                 </label>
-                <select
-                  name="departmentId"
-                  value={formData.departmentId}
-                  onChange={handleInputChange}
-                  className={`w-full px-4 py-2 border ${formErrors.departmentId ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent bg-white/80`}
-                  disabled={submitting}
-                >
-                  <option value="">Select your department</option>
-                  {departments.map((dept) => (
-                    <option key={dept._id} value={dept._id}>
-                      {dept.departmentCode} - {dept.degreeProgram}
-                    </option>
-                  ))}
-                </select>
+                <div>
+                  <input type="hidden" name="departmentId" value={formData.departmentId || ''} />
+                  <p className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white/80 text-[#001f65]">{getDepartmentName(formData.departmentId) || 'N/A'}</p>
+                </div>
                 {formErrors.departmentId && (
                   <p className="mt-1 text-sm text-red-500">{formErrors.departmentId}</p>
                 )}
@@ -450,6 +473,25 @@ export default function VoterMessages() {
                 </div>
               </div>
 
+              {/* File Upload (optional) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Attach Photo (optional)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  name="photo"
+                  onChange={handleFileChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white/80"
+                  disabled={submitting}
+                />
+                {photoFile && (
+                  <div className="mt-2 flex items-center justify-between text-sm text-gray-700">
+                    <span>{photoFile.name}</span>
+                    <button type="button" onClick={() => setPhotoFile(null)} className="text-red-600 hover:underline">Remove</button>
+                  </div>
+                )}
+              </div>
+
               {/* Submit Button */}
               <div className="flex gap-3 pt-4">
                 <button
@@ -486,7 +528,6 @@ export default function VoterMessages() {
                 <ul className="text-sm text-gray-700 space-y-1">
                   <li>• Our support team typically responds within 24-48 hours</li>
                   <li>• Please check your email regularly for updates</li>
-                  <li>• For urgent matters, please contact your election committee</li>
                   <li>• You can only submit one request every 5 minutes</li>
                 </ul>
               </div>

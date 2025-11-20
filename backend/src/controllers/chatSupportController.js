@@ -238,10 +238,9 @@ class ChatSupportController {
       if (status) filter.status = status
       if (departmentId) {
         ChatSupportController.validateObjectId(departmentId, 'department ID')
-        filter.departmentId = departmentId
+        // ensure filter uses ObjectId (not plain string)
+        filter.departmentId = new mongoose.Types.ObjectId(departmentId)
       }
-
-      // Date range filter
       if (dateFrom || dateTo) {
         filter.submittedAt = {}
         if (dateFrom) filter.submittedAt.$gte = new Date(dateFrom)
@@ -551,7 +550,7 @@ class ChatSupportController {
 
       // Update request record with the response and mark respondedAt/status first
       const baseText = response.trim()
-      const appended = `\n\nTicket ID: ${request.ticketId || request._id}\nKindly check your email for upcoming response.`
+      const appended = `\n\nKindly check your email for upcoming response.`
       const text = `${baseText}${appended}`
 
       request.response = text
@@ -856,7 +855,7 @@ class ChatSupportController {
       // Build filter
       const filter = {}
       if (status) filter.status = status
-      if (departmentId) filter.departmentId = departmentId
+      if (departmentId) filter.departmentId = new mongoose.Types.ObjectId(departmentId)
       if (dateFrom || dateTo) {
         filter.submittedAt = {}
         if (dateFrom) filter.submittedAt.$gte = new Date(dateFrom)
@@ -944,7 +943,8 @@ class ChatSupportController {
       // Optional category filter by department
       if (category) {
         ChatSupportController.validateObjectId(category, 'category')
-        filter.departmentId = category
+        // ensure type matches Department ObjectId in documents
+        filter.departmentId = new mongoose.Types.ObjectId(category)
       }
 
       // Get frequently asked questions (most common messages)
