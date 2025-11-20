@@ -1,3 +1,4 @@
+export { adminAPI } from './admin'
 export { authAPI } from './auth'
 export { usersAPI } from './users'
 export { votersAPI } from './voters'

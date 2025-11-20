@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, User, Mail, Building2, Lock, Eye, EyeOff, Loader2, GraduationCap } from 'lucide-react'
+import { X, User, Mail, Building2, Lock, Eye, EyeOff, Loader2, GraduationCap, Edit2, Save } from 'lucide-react'
 import Swal from 'sweetalert2'
 import { votersAPI } from '@/lib/api/voters'
 
@@ -7,12 +7,13 @@ export default function VoterProfileModal({ isOpen, onClose, onProfileUpdate }) 
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
+  const [editMode, setEditMode] = useState(false)
   const [showCurrentPassword, setShowCurrentPassword] = useState(false)
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   
   const [formData, setFormData] = useState({
-    yearLevel: '',
+    email: '',
     currentPassword: '',
     newPassword: '',
     confirmNewPassword: ''
@@ -27,18 +28,73 @@ export default function VoterProfileModal({ isOpen, onClose, onProfileUpdate }) 
   const loadProfile = async () => {
     try {
       setLoading(true)
+      
+      // DEBUG: Check what tokens are available
+      const voterToken = localStorage.getItem('voterToken')
+      const regularToken = localStorage.getItem('token')
+      
+      console.log('=== VOTER PROFILE DEBUG ===')
+      console.log('Voter token exists:', !!voterToken)
+      console.log('Regular token exists:', !!regularToken)
+      console.log('Voter token (first 20 chars):', voterToken?.substring(0, 20))
+      
+      if (!voterToken) {
+        throw new Error('No voter token found. Please login again.')
+      }
+      
+      // Try to decode the token to see what's in it
+      try {
+        const base64Url = voterToken.split('.')[1]
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+        const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+        }).join(''))
+        
+        const decoded = JSON.parse(jsonPayload)
+        console.log('Decoded voter token:', {
+          hasVoterId: !!decoded.voterId,
+          hasUserId: !!decoded.userId,
+          userType: decoded.userType,
+          schoolId: decoded.schoolId,
+          exp: decoded.exp,
+          iat: decoded.iat
+        })
+      } catch (decodeError) {
+        console.error('Error decoding token:', decodeError)
+      }
+      
+      console.log('Calling votersAPI.getProfile()...')
       const response = await votersAPI.getProfile()
+      console.log('Profile loaded successfully:', response)
+      console.log('Profile data:', response.data)
+      console.log('Department in profile:', response.data.department)
+      console.log('DepartmentId in profile:', response.data.departmentId)
+      
       setProfile(response.data)
       setFormData(prev => ({
         ...prev,
-        yearLevel: response.data.yearLevel || ''
+        email: response.data.email || ''
       }))
+      setEditMode(false)
     } catch (error) {
-      console.error('Error loading profile:', error)
+      console.error('=== PROFILE LOAD ERROR ===')
+      console.error('Error object:', error)
+      console.error('Error response:', error.response)
+      console.error('Error message:', error.message)
+      console.error('Error response data:', error.response?.data)
+      console.error('Error response status:', error.response?.status)
+      console.error('Error response headers:', error.response?.headers)
+      
       Swal.fire({
         icon: 'error',
-        title: 'Error',
-        text: 'Failed to load profile. Please try again.'
+        title: 'Error Loading Profile',
+        html: `
+          <div style="text-align: left;">
+            <p><strong>Error:</strong> ${error.response?.data?.message || error.message}</p>
+            <p><strong>Status:</strong> ${error.response?.status || 'Unknown'}</p>
+            <p style="font-size: 12px; color: #666;">Check browser console for details</p>
+          </div>
+        `
       })
     } finally {
       setLoading(false)
@@ -53,19 +109,42 @@ export default function VoterProfileModal({ isOpen, onClose, onProfileUpdate }) 
     }))
   }
 
+  const handleCancel = () => {
+    setFormData({
+      email: profile?.email || '',
+      currentPassword: '',
+      newPassword: '',
+      confirmNewPassword: ''
+    })
+    setEditMode(false)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     
-    const hasYearLevelChange = formData.yearLevel && formData.yearLevel !== String(profile.yearLevel)
+    const hasEmailChange = formData.email !== (profile.email || '')
     const hasPasswordChange = formData.newPassword
 
-    if (!hasYearLevelChange && !hasPasswordChange) {
+    if (!hasEmailChange && !hasPasswordChange) {
       Swal.fire({
         icon: 'info',
         title: 'No Changes',
         text: 'Please make changes before updating.'
       })
       return
+    }
+
+    // Validate email format if changed
+    if (hasEmailChange && formData.email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(formData.email)) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Validation Error',
+          text: 'Please enter a valid email address'
+        })
+        return
+      }
     }
 
     if (hasPasswordChange) {
@@ -102,8 +181,8 @@ export default function VoterProfileModal({ isOpen, onClose, onProfileUpdate }) 
 
       const updateData = {}
       
-      if (hasYearLevelChange) {
-        updateData.yearLevel = Number(formData.yearLevel)
+      if (hasEmailChange) {
+        updateData.email = formData.email.trim() || null
       }
       
       if (hasPasswordChange) {
@@ -122,6 +201,7 @@ export default function VoterProfileModal({ isOpen, onClose, onProfileUpdate }) 
         showConfirmButton: false
       })
 
+      // Clear password fields
       setFormData(prev => ({
         ...prev,
         currentPassword: '',
@@ -173,8 +253,11 @@ export default function VoterProfileModal({ isOpen, onClose, onProfileUpdate }) 
             </div>
           ) : profile ? (
             <div className="space-y-6">
+              {/* Personal Information - READ ONLY */}
               <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-                <h3 className="font-semibold text-gray-800 mb-3">Personal Information</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-gray-800">Personal Information</h3>
+                </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -197,18 +280,18 @@ export default function VoterProfileModal({ isOpen, onClose, onProfileUpdate }) 
                   
                   <div>
                     <label className="text-sm text-gray-600 flex items-center">
-                      <Mail className="w-4 h-4 mr-2" />
-                      Email
-                    </label>
-                    <p className="font-medium text-gray-800">{profile.email || 'Not set'}</p>
-                  </div>
-                  
-                  <div>
-                    <label className="text-sm text-gray-600 flex items-center">
                       <User className="w-4 h-4 mr-2" />
                       Sex
                     </label>
                     <p className="font-medium text-gray-800">{profile.sex || 'Not set'}</p>
+                  </div>
+
+                  <div>
+                    <label className="text-sm text-gray-600 flex items-center">
+                      <GraduationCap className="w-4 h-4 mr-2" />
+                      Year Level
+                    </label>
+                    <p className="font-medium text-gray-800">{profile.yearLevelDisplay || `Year ${profile.yearLevel}`}</p>
                   </div>
                 </div>
 
@@ -217,10 +300,18 @@ export default function VoterProfileModal({ isOpen, onClose, onProfileUpdate }) 
                     <Building2 className="w-4 h-4 mr-2" />
                     Department
                   </label>
-                  <p className="font-medium text-gray-800">
-                    {profile.department?.departmentCode} - {profile.department?.degreeProgram}
-                  </p>
-                  <p className="text-sm text-gray-600">{profile.department?.college}</p>
+                  {profile.department || profile.departmentId ? (
+                    <>
+                      <p className="font-medium text-gray-800">
+                        {profile.department?.departmentCode || profile.departmentId?.departmentCode || 'N/A'} - {profile.department?.degreeProgram || profile.departmentId?.degreeProgram || 'N/A'}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        {profile.department?.college || profile.departmentId?.college || 'N/A'}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="font-medium text-gray-800">Not set</p>
+                  )}
                 </div>
 
                 {profile.isClassOfficer && (
@@ -233,136 +324,192 @@ export default function VoterProfileModal({ isOpen, onClose, onProfileUpdate }) 
                 )}
               </div>
 
-              <div className="space-y-4">
-                <h3 className="font-semibold text-gray-800">Update Information</h3>
+              {/* Editable Information */}
+              <div className="space-y-4 bg-white border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-gray-800">Other Information</h3>
+                  {!editMode ? (
+                    <button
+                      onClick={() => setEditMode(true)}
+                      className="flex items-center px-3 py-1.5 text-sm bg-[#001f65] text-white rounded-lg hover:bg-[#003399] transition-colors"
+                    >
+                      <Edit2 className="w-4 h-4 mr-1" />
+                      Edit
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleCancel}
+                      className="flex items-center px-3 py-1.5 text-sm bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
                 
+                {/* Email Field */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Year Level <span className="text-red-500">*</span>
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                    <Mail className="w-4 h-4 mr-2" />
+                    Email Address
                   </label>
-                  <select
-                    name="yearLevel"
-                    value={formData.yearLevel}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
-                  >
-                    <option value="">Select Year Level</option>
-                    <option value="1">1st Year</option>
-                    <option value="2">2nd Year</option>
-                    <option value="3">3rd Year</option>
-                    <option value="4">4th Year</option>
-                  </select>
-                  {formData.yearLevel !== String(profile.yearLevel) && formData.yearLevel && (
-                    <p className="text-sm text-blue-600 mt-1">
-                      Changing from {profile.yearLevel} to {formData.yearLevel}
-                    </p>
+                  {editMode ? (
+                    <>
+                      <input
+                        type="email"
+                        name="email"
+                        value={formData.email}
+                        onChange={handleChange}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                        placeholder="Enter your email address"
+                      />
+                      {formData.email !== (profile.email || '') && (
+                        <p className="text-sm text-blue-600 mt-1">
+                          {profile.email ? `Changing from ${profile.email}` : 'Adding email address'}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="font-medium text-gray-800">{profile.email || 'Not set'}</p>
                   )}
                 </div>
 
+                {/* Password Section */}
                 <div className="border-t pt-4">
                   <h4 className="font-medium text-gray-800 mb-3 flex items-center">
                     <Lock className="w-5 h-5 mr-2" />
-                    Change Password (Optional)
+                    Password Information
                   </h4>
                   
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Current Password
-                      </label>
-                      <div className="relative">
-                        <input
-                          type={showCurrentPassword ? "text" : "password"}
-                          name="currentPassword"
-                          value={formData.currentPassword}
-                          onChange={handleChange}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent pr-10"
-                          placeholder="Enter current password"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                        >
-                          {showCurrentPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
+                  {/* Password Status - Always visible */}
+                  {profile.passwordStatus && (
+                    <div className="mb-4 bg-gray-50 rounded-lg p-3">
+                      <div className="space-y-1 text-sm">
+                        <p className="text-gray-700">
+                          Status: <span className={`font-medium ${profile.passwordStatus.isActive ? 'text-green-600' : 'text-red-600'}`}>
+                            {profile.passwordStatus.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </p>
+                        {profile.passwordStatus.isExpired && (
+                          <p className="text-red-600 font-medium">⚠️ Password has expired</p>
+                        )}
+                        {profile.passwordStatus.expiresAt && (
+                          <p className="text-gray-600">
+                            Expires: {new Date(profile.passwordStatus.expiresAt).toLocaleDateString()}
+                          </p>
+                        )}
                       </div>
                     </div>
+                  )}
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        New Password
-                      </label>
-                      <div className="relative">
-                        <input
-                          type={showNewPassword ? "text" : "password"}
-                          name="newPassword"
-                          value={formData.newPassword}
-                          onChange={handleChange}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent pr-10"
-                          placeholder="Enter new password (min. 6 characters)"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowNewPassword(!showNewPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                        >
-                          {showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
+                  {/* Password Change Fields - Only in edit mode */}
+                  {editMode && (
+                    <div className="space-y-3">
+                      <p className="text-sm text-gray-600 italic">Leave blank to keep current password</p>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Current Password
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showCurrentPassword ? "text" : "password"}
+                            name="currentPassword"
+                            value={formData.currentPassword}
+                            onChange={handleChange}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent pr-10"
+                            placeholder="Enter current password"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                          >
+                            {showCurrentPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                          </button>
+                        </div>
                       </div>
-                    </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Confirm New Password
-                      </label>
-                      <div className="relative">
-                        <input
-                          type={showConfirmPassword ? "text" : "password"}
-                          name="confirmNewPassword"
-                          value={formData.confirmNewPassword}
-                          onChange={handleChange}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent pr-10"
-                          placeholder="Confirm new password"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                        >
-                          {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          New Password
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showNewPassword ? "text" : "password"}
+                            name="newPassword"
+                            value={formData.newPassword}
+                            onChange={handleChange}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent pr-10"
+                            placeholder="Enter new password (min. 6 characters)"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPassword(!showNewPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                          >
+                            {showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Confirm New Password
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showConfirmPassword ? "text" : "password"}
+                            name="confirmNewPassword"
+                            value={formData.confirmNewPassword}
+                            onChange={handleChange}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent pr-10"
+                            placeholder="Confirm new password"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                          >
+                            {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-3 pt-4 border-t">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                  disabled={updating}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  className="px-6 py-2 bg-[#001f65] text-white rounded-lg hover:bg-[#003399] transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={updating}
-                >
-                  {updating ? (
-                    <>
-                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                      Updating...
-                    </>
-                  ) : (
-                    'Update Profile'
-                  )}
-                </button>
-              </div>
+              {/* Action Buttons - Only show Save when in edit mode */}
+              {editMode && (
+                <div className="flex justify-end space-x-3 pt-4 border-t">
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    disabled={updating}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    className="px-6 py-2 bg-[#001f65] text-white rounded-lg hover:bg-[#003399] transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={updating}
+                  >
+                    {updating ? (
+                      <>
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        Updating...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-5 h-5 mr-2" />
+                        Save Changes
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-center py-12">

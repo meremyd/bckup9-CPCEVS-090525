@@ -6,12 +6,14 @@ export default function ChatSupportBtn() {
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({
     idNumber: "",
-    fullName: "",
+    firstName: "",
+    middleName: "",
+    lastName: "",
     course: "",
-    birthday: "",
     email: "",
     message: "",
   })
+  const [photoFile, setPhotoFile] = useState(null)
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
 
@@ -19,21 +21,29 @@ export default function ChatSupportBtn() {
     setForm({ ...form, [e.target.name]: e.target.value })
   }
 
+  const handleFileChange = (e) => {
+    const file = e.target.files && e.target.files[0]
+    setPhotoFile(file || null)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
 
     try {
-      await chatSupportAPI.submit(form)
+      // Pass photoFile along with the form. The API helper will build FormData.
+      await chatSupportAPI.submit({ ...form, photoFile })
       setSuccess(true)
       setForm({
         idNumber: "",
-        fullName: "",
+        firstName: "",
+        middleName: "",
+        lastName: "",
         course: "",
-        birthday: "",
         email: "",
         message: "",
       })
+      setPhotoFile(null)
       setTimeout(() => {
         setOpen(false)
         setSuccess(false)
@@ -47,56 +57,111 @@ export default function ChatSupportBtn() {
 
   return (
     <>
-      <div className="fixed bottom-4 right-4 z-50">
-        <button onClick={() => setOpen(true)} className="bg-none rounded-full p-3 shadow-lg transition duration-300">
-          <img src="/chatsprt.png" alt="Chat Support" className="w-20 h-20" />
+      {/* Floating Chat Button */}
+      <div className="fixed bottom-6 right-6 z-50">
+        <button 
+          onClick={() => setOpen(true)} 
+          className="bg-white rounded-full p-2 shadow-lg hover:scale-110 hover:bg-blue-50 transition"
+        >
+          <img src="/chatsprt.png" alt="Chat Support" className="w-16 h-16" />
         </button>
       </div>
+
+      {/* Modal */}
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="chatsupport bg-blue-200 rounded-2xl shadow-xl ">
-            <div className=" rounded-2xl shadow-xl p-8 w-full max-w-md relative animate-fade-in ">
-              <button
-                onClick={() => setOpen(false)}
-                className="absolute top-4 right-4 text-2xl text-gray-400 hover:text-gray-700"
-              >
-                &times;
-              </button>
-              <div className="flex items-center mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg relative max-h-[90vh] overflow-hidden">
+            
+            {/* Close Button */}
+            <button
+              onClick={() => setOpen(false)}
+              className="absolute top-4 right-4 text-2xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center transition"
+            >
+              &times;
+            </button>
+
+            {/* Header */}
+            <div className="p-8 pb-4 border-b">
+              <div className="flex items-center">
                 <img src="/chatsprt.png" alt="Chat Icon" className="w-14 h-14 mr-3" />
                 <div>
-                  <h2 className="text-2xl font-extrabold text-blue-700 leading-tight">CHAT SUPPORT</h2>
+                  <h2 className="text-2xl font-extrabold text-blue-700">CHAT SUPPORT</h2>
                   <p className="text-sm text-gray-500 -mt-1">Address your queries</p>
                 </div>
               </div>
-              {success ? (
-                <div className="text-center text-green-600 font-bold">Support request submitted successfully!</div>
-              ) : (
-                <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
-                  <label className="text-xs font-bold text-blue-900">ID NUMBER:</label>
+            </div>
+
+            {/* Success Message */}
+            {success ? (
+              <div className="p-8 text-center">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold text-green-700">Message Sent!</h3>
+                <p className="text-gray-500 mt-2">Your support request has been submitted successfully.</p>
+              </div>
+            ) : (
+              /* Form */
+              <form className="px-8 py-6 space-y-4 overflow-y-auto max-h-[65vh]" onSubmit={handleSubmit}>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-500">ID NUMBER:</label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     name="idNumber"
                     value={form.idNumber}
                     onChange={handleChange}
-                    className="rounded-md bg-blue-100 px-3 py-2 outline-none"
+                    maxLength={8}
+                    className="w-full rounded-lg bg-blue-50 px-4 py-2 outline-none border border-transparent focus:border-blue-300 focus:bg-white transition"
+                    placeholder="e.g. 20230001"
                     required
                   />
-                  <label className="text-xs font-bold text-blue-900">FULL NAME:</label>
-                  <input
-                    type="text"
-                    name="fullName"
-                    value={form.fullName}
-                    onChange={handleChange}
-                    className="rounded-md bg-blue-100 px-3 py-2 outline-none"
-                    required
-                  />
-                  <label className="text-xs font-bold text-blue-900">COURSE:</label>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-500">FIRST NAME:</label>
+                    <input
+                      type="text"
+                      name="firstName"
+                      value={form.firstName}
+                      onChange={handleChange}
+                      className="w-full rounded-lg bg-blue-50 px-4 py-2 outline-none focus:border-blue-300 focus:bg-white border border-transparent transition"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-500">MIDDLE NAME:</label>
+                    <input
+                      type="text"
+                      name="middleName"
+                      value={form.middleName}
+                      onChange={handleChange}
+                      className="w-full rounded-lg bg-blue-50 px-4 py-2 outline-none focus:border-blue-300 focus:bg-white border border-transparent transition"
+                      placeholder="(optional)"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-500">LAST NAME:</label>
+                    <input
+                      type="text"
+                      name="lastName"
+                      value={form.lastName}
+                      onChange={handleChange}
+                      className="w-full rounded-lg bg-blue-50 px-4 py-2 outline-none focus:border-blue-300 focus:bg-white border border-transparent transition"
+                      required
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-500">COURSE:</label>
                   <select
                     name="course"
                     value={form.course}
                     onChange={handleChange}
-                    className="rounded-md bg-blue-100 px-3 py-2 outline-none"
+                    className="w-full rounded-lg bg-blue-50 px-4 py-2 outline-none focus:border-blue-300 focus:bg-white border border-transparent transition"
                     required
                   >
                     <option value="">Select course</option>
@@ -105,67 +170,56 @@ export default function ChatSupportBtn() {
                     <option value="BEED">BEED</option>
                     <option value="BSHM">BSHM</option>
                   </select>
-                  <label className="text-xs font-bold text-blue-900">BIRTHDAY:</label>
-                  <input
-                    type="date"
-                    name="birthday"
-                    value={form.birthday}
-                    onChange={handleChange}
-                    className="rounded-md bg-blue-100 px-3 py-2 outline-none"
-                    required
-                  />
-                  <label className="text-xs font-bold text-blue-900">EMAIL:</label>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-500">EMAIL:</label>
                   <input
                     type="email"
                     name="email"
                     value={form.email}
                     onChange={handleChange}
-                    className="rounded-md bg-blue-100 px-3 py-2 outline-none"
+                    className="w-full rounded-lg bg-blue-50 px-4 py-2 outline-none focus:border-blue-300 focus:bg-white border border-transparent transition"
                     required
                   />
-                  <label className="text-xs font-bold text-blue-900">MESSAGE:</label>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-500">MESSAGE:</label>
                   <textarea
                     name="message"
                     value={form.message}
                     onChange={handleChange}
-                    className="rounded-md bg-blue-100 px-3 py-2 outline-none resize-none"
-                    rows={2}
+                    className="w-full rounded-lg bg-blue-50 px-4 py-2 outline-none focus:border-blue-300 focus:bg-white border border-transparent transition resize-none"
+                    rows={3}
                     required
                   ></textarea>
-                  <div className="text-xs text-center text-gray-500 mt-2 mb-1">
-                    PLEASE ATTACH YOUR ID PHOTO FOR VERIFICATION
-                  </div>
-                  <div className="flex items-center justify-between mt-1">
-                    <label className="cursor-pointer ml-24">
-                      <span className="inline-block bg-blue-100 p-2 rounded-md">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          strokeWidth={1.5}
-                          stroke="currentColor"
-                          className="size-6"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"
-                          />
-                        </svg>
-                      </span>
-                      <input type="file" className="hidden" />
-                    </label>
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="bg-blue-600 text-white font-bold rounded-full px-8 py-2 shadow-md hover:bg-blue-700 transition disabled:opacity-50"
-                    >
-                      {loading ? "SENDING..." : "SEND"}
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
+                </div>
+
+                {/* File Upload */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-500">PHOTO (optional):</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    name="photo"
+                    onChange={handleFileChange}
+                    className="w-full rounded-lg bg-blue-50 px-4 py-2 outline-none focus:border-blue-300 focus:bg-white border border-transparent transition"
+                  />
+                </div>
+                
+
+                {/* Submit Button */}
+                <div className="pt-4">
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full bg-blue-600 text-white font-bold rounded-full py-3 shadow-md hover:bg-blue-700 transition disabled:opacity-50"
+                  >
+                    {loading ? "SENDING..." : "SEND"}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

@@ -12,18 +12,30 @@ const chatSupportSchema = new mongoose.Schema(
       ref: "Voter",
       default: null, // Optional reference to Voter document
     },
-    fullName: {
+    firstName: {
       type: String,
       required: true,
       trim: true,
     },
+    middleName: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    lastName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    ticketId: {
+      type: String,
+      trim: true,
+      unique: true,
+      default: null,
+    },
     departmentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Department",
-      required: true,
-    },
-    birthday: {
-      type: Date,
       required: true,
     },
     email: {
@@ -39,9 +51,14 @@ const chatSupportSchema = new mongoose.Schema(
       trim: true,
       maxlength: 1000,
     },
+    photo: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     status: {
       type: String,
-      enum: ["pending", "in-progress", "resolved", "closed"],
+      enum: ["pending", "in-progress", "resolved", "archived"],
       default: "pending",
     },
     response: {
@@ -81,6 +98,23 @@ chatSupportSchema.pre('save', async function(next) {
       }
     } catch (error) {
       console.log('Could not auto-populate voterId:', error.message)
+    }
+  }
+  // Auto-generate an auto-incrementing ticketId if not set
+  if (!this.ticketId) {
+    try {
+      // Use a dedicated counters collection to atomically increment
+      const countersColl = mongoose.connection.collection('counters')
+      const result = await countersColl.findOneAndUpdate(
+        { _id: 'chatSupportTicket' },
+        { $inc: { seq: 1 } },
+        { upsert: true, returnDocument: 'after' }
+      )
+      const seq = result.value.seq || 1
+      // Format: CS-000001, incrementing
+      this.ticketId = `CS-${String(seq).padStart(6, '0')}`
+    } catch (err) {
+      console.error('Failed to generate ticketId:', err.message)
     }
   }
   next()

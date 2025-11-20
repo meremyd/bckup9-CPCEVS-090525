@@ -1089,16 +1089,7 @@ export default function DepartmentalCandidatesPage() {
             </button>
           </div>
 
-          {/* Election Info */}
-          {election && (
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="text-sm text-blue-800">
-                <strong>Election:</strong> {election.title} • 
-                <strong> Department:</strong> {election.departmentId?.departmentCode} - {election.departmentId?.degreeProgram} • 
-                <strong> Date:</strong> {new Date(election.electionDate).toLocaleDateString()}
-              </div>
-            </div>
-          )}
+          
         </div>
 
         {/* Table Content */}

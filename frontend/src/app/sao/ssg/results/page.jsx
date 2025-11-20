@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { ssgElectionsAPI } from "@/lib/api/ssgElections"
 import { votingAPI } from "@/lib/api/voting"
 import { departmentsAPI } from "@/lib/api/departments"
+import SAOSSGLayout from "@/components/SAOSSGLayout"
 import Swal from 'sweetalert2'
 import { 
   PieChart, 
@@ -14,13 +15,13 @@ import {
   YAxis, 
   CartesianGrid, 
   Tooltip, 
+  Legend, 
   ResponsiveContainer,
   BarChart,
   Bar
 } from 'recharts'
 import { 
   BarChart3,
-  TrendingUp,
   Users,
   Award,
   AlertCircle,
@@ -53,7 +54,6 @@ export default function SAOSSGStatisticsPage() {
   const searchParams = useSearchParams()
   const ssgElectionId = searchParams.get('ssgElectionId')
 
-  // Color schemes for charts
   const COLORS = {
     primary: ['#001f65', '#003399', '#0052cc', '#0066ff', '#3385ff', '#66a3ff', '#99c2ff'],
     success: ['#059669', '#10b981', '#34d399', '#6ee7b7', '#a7f3d0'],
@@ -158,7 +158,6 @@ export default function SAOSSGStatisticsPage() {
       setLoadingDepartment(true)
       setSelectedDepartment(departmentId)
       
-      // Use staff/user endpoint (not voter)
       const response = await votingAPI.getSSGElectionResultsByDepartment(ssgElectionId, departmentId)
       
       if (response?.success) {
@@ -181,7 +180,6 @@ export default function SAOSSGStatisticsPage() {
     try {
       setDownloading(true)
       
-      // Use staff/user endpoint for export
       const blob = await votingAPI.exportSSGElectionResults(ssgElectionId)
       
       const electionTitle = ssgElectionData?.title || ssgElectionData?.ssgElectionId || 'Election'
@@ -450,79 +448,83 @@ export default function SAOSSGStatisticsPage() {
     )
   }
 
-  // Authentication screen
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-8 w-full max-w-md">
-          <div className="text-center mb-6">
-            <Lock className="w-12 h-12 mx-auto text-[#001f65] mb-4" />
-            <h2 className="text-2xl font-bold text-[#001f65] mb-2">Restricted Access</h2>
-            <p className="text-gray-600">Enter password to view statistics</p>
-          </div>
-
-          <form onSubmit={handlePasswordSubmit} className="space-y-4">
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter password"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent pr-12"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
-              >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              </button>
+      <SAOSSGLayout
+        ssgElectionId={ssgElectionId}
+        title="Election Statistics"
+        subtitle="Statistical Analysis & Results"
+        activeItem="statistics"
+      >
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-8 w-full max-w-md">
+            <div className="text-center mb-6">
+              <Lock className="w-12 h-12 mx-auto text-[#001f65] mb-4" />
+              <h2 className="text-2xl font-bold text-[#001f65] mb-2">Restricted Access</h2>
+              <p className="text-gray-600">Enter password to view statistics</p>
             </div>
 
-            {authError && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center">
-                <AlertCircle className="w-5 h-5 text-red-500 mr-2 flex-shrink-0" />
-                <p className="text-red-700 text-sm">{authError}</p>
+            <form onSubmit={handlePasswordSubmit} className="space-y-4">
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter password"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent pr-12"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
               </div>
-            )}
 
-            <button
-              type="submit"
-              className="w-full bg-[#001f65] hover:bg-[#003399] text-white font-medium py-3 px-4 rounded-lg transition-colors"
-            >
-              Access Statistics
-            </button>
-          </form>
+              {authError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center">
+                  <AlertCircle className="w-5 h-5 text-red-500 mr-2 flex-shrink-0" />
+                  <p className="text-red-700 text-sm">{authError}</p>
+                </div>
+              )}
 
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => router.push('/sao/ssg')}
-              className="text-sm text-gray-600 hover:text-[#001f65] transition-colors"
-            >
-              ← Back to SSG Elections
-            </button>
+              <button
+                type="submit"
+                className="w-full bg-[#001f65] hover:bg-[#003399] text-white font-medium py-3 px-4 rounded-lg transition-colors"
+              >
+                Access Statistics
+              </button>
+            </form>
           </div>
         </div>
-      </div>
+      </SAOSSGLayout>
     )
   }
 
   if (!ssgElectionId) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <div className="text-center bg-white/90 backdrop-blur-md p-8 rounded-2xl border border-white/20">
-          <AlertCircle className="w-12 h-12 mx-auto text-red-400 mb-4" />
-          <h3 className="text-xl font-bold text-gray-900 mb-2">No Election Selected</h3>
-          <p className="text-gray-600 mb-6">Please select an election to view statistics.</p>
-          <button
-            onClick={() => router.push('/sao/ssg')}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-          >
-            Back to Elections
-          </button>
+      <SAOSSGLayout
+        ssgElectionId={null}
+        title="Election Statistics"
+        subtitle="Statistical Analysis & Results"
+        activeItem="statistics"
+      >
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center bg-white/10 backdrop-blur-md p-8 rounded-2xl border border-white/20">
+            <AlertCircle className="w-12 h-12 mx-auto text-red-400 mb-4" />
+            <h3 className="text-xl font-bold text-white mb-2">No Election Selected</h3>
+            <p className="text-white/80 mb-6">Please select an election to view statistics.</p>
+            <button
+              onClick={() => router.push('/sao/ssg')}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            >
+              Back to Elections
+            </button>
+          </div>
         </div>
-      </div>
+      </SAOSSGLayout>
     )
   }
 
@@ -532,77 +534,74 @@ export default function SAOSSGStatisticsPage() {
   const deptChartData = getDepartmentChartData()
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <SAOSSGLayout
+      ssgElectionId={ssgElectionId}
+      title="Election Statistics"
+      subtitle="Statistical Analysis & Results"
+      activeItem="statistics"
+    >
       <div className="max-w-7xl mx-auto space-y-6 p-4">
-        {/* Header */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-6">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div>
-              <h1 className="text-3xl font-bold text-[#001f65] mb-2">SSG Election Statistics</h1>
-              <p className="text-gray-600">
-                {ssgElectionData?.title} - {ssgElectionData?.electionYear}
-              </p>
-            </div>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-white mb-2"></h2>
+          </div>
 
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={refreshData}
-                disabled={loading}
-                className="flex items-center px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-gray-300"
-              >
-                {loading ? (
-                  <Loader2 className="animate-spin h-4 w-4 mr-2" />
-                ) : (
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                )}
-                Refresh
-              </button>
-              
-              <button
-                onClick={showResultsSummary}
-                className="flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors shadow-lg"
-              >
-                <Trophy className="w-4 h-4 mr-2" />
-                Summary
-              </button>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={refreshData}
+              disabled={loading}
+              className="flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
+            >
+              {loading ? (
+                <Loader2 className="animate-spin h-4 w-4 mr-2" />
+              ) : (
+                <RefreshCw className="w-4 h-4 mr-2" />
+              )}
+              Refresh
+            </button>
+            
+            <button
+              onClick={showResultsSummary}
+              className="flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors shadow-lg"
+            >
+              <Trophy className="w-4 h-4 mr-2" />
+              Summary
+            </button>
 
-              <button
-                onClick={handleDownloadStatistics}
-                disabled={downloading}
-                className="flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
-              >
-                {downloading ? (
-                  <Loader2 className="animate-spin h-4 w-4 mr-2" />
-                ) : (
-                  <FileDown className="w-4 h-4 mr-2" />
-                )}
-                Download
-              </button>
+            <button
+              onClick={handleDownloadStatistics}
+              disabled={downloading}
+              className="flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+            >
+              {downloading ? (
+                <Loader2 className="animate-spin h-4 w-4 mr-2" />
+              ) : (
+                <FileDown className="w-4 h-4 mr-2" />
+              )}
+              Download
+            </button>
 
-              <button
-                onClick={() => router.push(`/sao/ssg/results?ssgElectionId=${ssgElectionId}`)}
-                disabled={ssgElectionData?.status !== 'completed'}
-                className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
-              >
-                <BarChart3 className="w-4 h-4 mr-2" />
-                Results
-              </button>
-            </div>
+            <button
+              onClick={() => router.push(`/sao/ssg/results?ssgElectionId=${ssgElectionId}`)}
+              disabled={ssgElectionData?.status !== 'completed'}
+              className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+            >
+              <BarChart3 className="w-4 h-4 mr-2" />
+              Results
+            </button>
           </div>
         </div>
 
-        {/* Department Filter */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-6">
-          <h2 className="text-lg font-bold text-[#001f65] mb-4">Filter by Department</h2>
+        <div className="mb-8">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {departments.map((dept) => (
               <button
                 key={dept._id}
                 onClick={() => loadDepartmentResults(dept._id)}
-                className={`bg-white rounded-xl p-4 shadow-md border-2 transition-all hover:shadow-xl hover:scale-105 ${
+                className={`bg-white/95 backdrop-blur-sm rounded-xl p-4 shadow-lg border-2 transition-all hover:shadow-xl hover:scale-105 ${
                   selectedDepartment === dept._id 
                     ? 'border-[#001f65] bg-blue-50' 
-                    : 'border-gray-200'
+                    : 'border-white/20'
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -629,7 +628,7 @@ export default function SAOSSGStatisticsPage() {
                   setSelectedDepartment(null)
                   setDepartmentResults(null)
                 }}
-                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-colors"
+                className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors border border-white/30"
               >
                 Clear Department Filter
               </button>
@@ -637,33 +636,29 @@ export default function SAOSSGStatisticsPage() {
           )}
         </div>
 
-        {/* Loading State */}
         {(loading || loadingDepartment) && (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="animate-spin h-8 w-8 text-[#001f65] mr-3" />
-            <span className="text-gray-700">Loading data...</span>
+            <Loader2 className="animate-spin h-8 w-8 text-white mr-3" />
+            <span className="text-white">Loading data...</span>
           </div>
         )}
 
-        {/* Charts Section */}
         {!loading && !loadingDepartment && (
           <div className="space-y-6">
             {selectedDepartment && departmentResults ? (
               <>
-                {/* Department Results Header */}
-                <div className="bg-white/90 backdrop-blur-sm rounded-xl p-6 border border-white/20">
-                  <h2 className="text-2xl font-bold text-[#001f65] text-center mb-2">
+                <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
+                  <h2 className="text-2xl font-bold text-white text-center mb-2">
                     Department Results
                   </h2>
-                  <p className="text-gray-700 text-center">
+                  <p className="text-blue-100 text-center">
                     {departmentResults.department?.departmentCode} - {departmentResults.department?.degreeProgram}
                   </p>
-                  <p className="text-gray-600 text-center text-sm mt-2">
+                  <p className="text-blue-200 text-center text-sm mt-2">
                     Total Ballots: {departmentResults.summary?.totalDepartmentBallots || 0}
                   </p>
                 </div>
 
-                {/* Department Charts Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {deptChartData.president.length > 0 && (
                     <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
@@ -737,12 +732,10 @@ export default function SAOSSGStatisticsPage() {
               </>
             ) : (
               <>
-                {/* Overall Results Header */}
-                <div className="bg-white/90 backdrop-blur-sm rounded-xl p-6 border border-white/20">
-                  <h2 className="text-2xl font-bold text-[#001f65] text-center">Overall Election Results</h2>
+                <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
+                  <h2 className="text-2xl font-bold text-white text-center">Overall Election Results</h2>
                 </div>
 
-                {/* Overall Charts Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {presidentData.length > 0 && (
                     <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
@@ -827,7 +820,6 @@ export default function SAOSSGStatisticsPage() {
           </div>
         )}
 
-        {/* No Data State */}
         {!loading && !loadingDepartment && (!presidentData.length && !vicePresidentData.length && !senatorData.length) && !selectedDepartment && (
           <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-12 text-center">
             <BarChart3 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
@@ -844,20 +836,14 @@ export default function SAOSSGStatisticsPage() {
           </div>
         )}
 
-        {/* Error Alert */}
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center">
             <AlertCircle className="w-5 h-5 text-red-500 mr-3 flex-shrink-0" />
             <p className="text-red-700">{error}</p>
-            <button
-              onClick={() => setError('')}
-              className="ml-auto text-red-500 hover:text-red-700"
-            >
-              ✕
-            </button>
           </div>
         )}
+
       </div>
-    </div>
+    </SAOSSGLayout>
   )
 }

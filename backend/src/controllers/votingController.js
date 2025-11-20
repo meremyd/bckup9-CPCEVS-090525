@@ -1472,9 +1472,6 @@ static async getDepartmentalElectionLiveResults(req, res, next) {
           return sum + (yearLevelCounts[yearLevel] || 0)
         }, 0)
 
-        // ✅ FIX: Calculate max possible votes = eligible participants × maxVotes
-        const maxPossibleVotes = eligibleParticipants * (position.maxVotes || 1)
-
         const candidates = await Candidate.find({
           deptElectionId: id,
           positionId: position._id,
@@ -1502,12 +1499,13 @@ static async getDepartmentalElectionLiveResults(req, res, next) {
           })
         )
 
+        // ✅ UPDATED: Calculate total votes for THIS position
         const totalVotes = candidatesWithVotes.reduce((sum, candidate) => sum + candidate.voteCount, 0)
         
-        // ✅ FIX: Calculate percentage based on MAX POSSIBLE VOTES
+        // ✅ UPDATED: Calculate percentage based on TOTAL VOTES (like SSG)
         candidatesWithVotes.forEach(candidate => {
-          candidate.percentage = maxPossibleVotes > 0 ? 
-            Math.round((candidate.voteCount / maxPossibleVotes) * 100) : 0
+          candidate.percentage = totalVotes > 0 ? 
+            Math.round((candidate.voteCount / totalVotes) * 100) : 0
         })
 
         candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount)
@@ -1525,7 +1523,6 @@ static async getDepartmentalElectionLiveResults(req, res, next) {
           candidates: candidatesWithVotes,
           totalVotes,
           totalParticipants: eligibleParticipants,
-          maxPossibleVotes, // ✅ ADD: Include for reference
           allowedYearLevels
         }
       })
@@ -1744,7 +1741,7 @@ static async getDepartmentalElectionLiveResultsForVoter(req, res, next) {
 
     // Helper function to extract allowed year levels 
     const getAllowedYearLevels = (position) => {
-      if (!position.description) return [1, 2, 3, 4] // Default: all years
+      if (!position.description) return [1, 2, 3, 4]
 
       const yearLevelMatch = position.description.match(/Year levels?: (.*?)(?:\n|$)/)
       if (!yearLevelMatch) return [1, 2, 3, 4]
@@ -1786,13 +1783,12 @@ static async getDepartmentalElectionLiveResultsForVoter(req, res, next) {
       }
     ])
 
-    // Create a map of year level -> participant count
     const yearLevelCounts = {}
     participantsByYearLevel.forEach(item => {
       yearLevelCounts[item._id] = item.count
     })
 
-    // Process each position with timing info and year-level-based percentages
+    // Process each position with timing info and percentage based on total votes
     const positionsWithResults = await Promise.all(
       positions.map(async (position) => {
         // Check if ballot is currently open for this position
@@ -1842,12 +1838,13 @@ static async getDepartmentalElectionLiveResultsForVoter(req, res, next) {
           })
         )
 
+        // ✅ UPDATED: Calculate total votes for THIS position
         const totalVotes = candidatesWithVotes.reduce((sum, candidate) => sum + candidate.voteCount, 0)
         
-        // Calculate percentage based on ELIGIBLE participants for this position
+        // ✅ UPDATED: Calculate percentage based on TOTAL VOTES (like SSG)
         candidatesWithVotes.forEach(candidate => {
-          candidate.percentage = eligibleParticipants > 0 ? 
-            Math.round((candidate.voteCount / eligibleParticipants) * 100) : 0
+          candidate.percentage = totalVotes > 0 ? 
+            Math.round((candidate.voteCount / totalVotes) * 100) : 0
         })
 
         candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount)
@@ -1862,8 +1859,8 @@ static async getDepartmentalElectionLiveResultsForVoter(req, res, next) {
           isBallotOpen,
           candidates: candidatesWithVotes,
           totalVotes,
-          totalParticipants: eligibleParticipants, // Use eligible participants for this position
-          allowedYearLevels // Include for transparency
+          totalParticipants: eligibleParticipants,
+          allowedYearLevels
         }
       })
     )
@@ -1880,7 +1877,7 @@ static async getDepartmentalElectionLiveResultsForVoter(req, res, next) {
       data: {
         election,
         positions: positionsWithResults,
-        totalParticipants, // Overall participants
+        totalParticipants,
         viewerInfo: {
           hasVoted: false,
           votedAt: null
@@ -2414,10 +2411,9 @@ static async exportDepartmentalElectionResults(req, res, next) {
       return next(error)
     }
 
-    // ✅ FIX: Get participants for percentage calculation
+    // Get participants for reference
     const ElectionParticipation = require('../models/ElectionParticipation')
     
-    // Get participants grouped by year level
     const participantsByYearLevel = await ElectionParticipation.aggregate([
       { 
         $match: { 
@@ -2447,7 +2443,6 @@ static async exportDepartmentalElectionResults(req, res, next) {
       yearLevelCounts[item._id] = item.count
     })
 
-    // Helper to get allowed year levels
     const getAllowedYearLevels = (position) => {
       if (!position.description) return [1, 2, 3, 4]
 
@@ -2474,14 +2469,10 @@ static async exportDepartmentalElectionResults(req, res, next) {
 
     const exportData = await Promise.all(
       positions.map(async (position) => {
-        // ✅ Calculate eligible participants for this position
         const allowedYearLevels = getAllowedYearLevels(position)
         const eligibleParticipants = allowedYearLevels.reduce((sum, yearLevel) => {
           return sum + (yearLevelCounts[yearLevel] || 0)
         }, 0)
-
-        // ✅ Calculate max possible votes
-        const maxPossibleVotes = eligibleParticipants * (position.maxVotes || 1)
 
         const candidates = await Candidate.find({
           deptElectionId: id,
@@ -2506,20 +2497,25 @@ static async exportDepartmentalElectionResults(req, res, next) {
               `${candidate.voterId.firstName} ${candidate.voterId.middleName || ''} ${candidate.voterId.lastName}`.replace(/\s+/g, ' ').trim() : 
               'Unknown Candidate'
 
-            // ✅ FIX: Calculate percentage based on max possible votes
-            const percentage = maxPossibleVotes > 0 ? 
-              ((voteCount / maxPossibleVotes) * 100).toFixed(1) : '0.0'
-
             return {
               candidateNumber: candidate.candidateNumber,
               candidateName: candidateName,
               schoolId: candidate.voterId?.schoolId || 'N/A',
               yearLevel: candidate.voterId?.yearLevel || 'N/A',
               voteCount: voteCount,
-              percentage: percentage // ✅ Now correctly calculated
+              percentage: 0 // Will be calculated below
             }
           })
         )
+
+        // ✅ UPDATED: Calculate total votes for this position
+        const totalVotes = candidatesWithVotes.reduce((sum, c) => sum + c.voteCount, 0)
+
+        // ✅ UPDATED: Calculate percentage based on TOTAL VOTES (like SSG)
+        candidatesWithVotes.forEach(candidate => {
+          candidate.percentage = totalVotes > 0 ? 
+            ((candidate.voteCount / totalVotes) * 100).toFixed(1) : '0.0'
+        })
 
         // Sort by vote count descending
         candidatesWithVotes.sort((a, b) => b.voteCount - a.voteCount)
@@ -2528,10 +2524,9 @@ static async exportDepartmentalElectionResults(req, res, next) {
           positionName: position.positionName,
           positionOrder: position.positionOrder,
           maxVotes: position.maxVotes,
-          eligibleParticipants: eligibleParticipants, // ✅ ADD
-          maxPossibleVotes: maxPossibleVotes, // ✅ ADD
+          eligibleParticipants: eligibleParticipants,
           candidates: candidatesWithVotes,
-          totalVotes: candidatesWithVotes.reduce((sum, c) => sum + c.voteCount, 0)
+          totalVotes: totalVotes
         }
       })
     )
@@ -2697,11 +2692,11 @@ static async exportDepartmentalElectionResults(req, res, next) {
         currentPageNumber++
       }
 
-      // Position header with ✅ ENHANCED INFO
+      // ✅ UPDATED: Position header without max possible votes
       doc.fontSize(13).font('Helvetica-Bold').fillColor('#000000')
       doc.text(`${position.positionOrder}. ${position.positionName}`, 50, doc.y)
       doc.fontSize(10).font('Helvetica')
-      doc.text(`Total Votes: ${position.totalVotes.toLocaleString()} | Eligible Participants: ${position.eligibleParticipants} | Max Possible Votes: ${position.maxPossibleVotes}`, 50, doc.y + 5)
+      doc.text(`Total Votes: ${position.totalVotes.toLocaleString()} | Eligible Participants: ${position.eligibleParticipants}`, 50, doc.y + 5)
       doc.moveDown(0.8)
 
       const tableTop = doc.y
@@ -2758,7 +2753,7 @@ static async exportDepartmentalElectionResults(req, res, next) {
         currentX += columnWidths.votes
         doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
         
-        // ✅ Now shows correct percentage
+        // ✅ Percentage now based on total votes
         doc.text(`${candidate.percentage}%`, currentX + 5, currentY + 8, { 
           width: columnWidths.percentage - 10,
           align: 'center'

@@ -41,13 +41,19 @@ class DashboardController {
         userAgent: req.get("User-Agent"),
       })
 
+      // Provide both the new key and legacy keys so frontend remains compatible
       res.json({
-        totalVoters, 
-        registeredVoters, 
+        totalVoters,
+        registeredVoters,
         systemUsers,
         auditLogs,
         totalDepartments,
+        // canonical key
         totalChatSupport,
+        // legacy / compatibility keys expected by frontend
+        totalMessages: totalChatSupport,
+        supportRequests: totalChatSupport,
+        totalSupportRequests: totalChatSupport,
         pendingChatSupport,
         recentActivities
       })

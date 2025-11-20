@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from "react"
 import Swal from 'sweetalert2'
 import { chatSupportAPI } from '@/lib/api/chatSupport'
+import { adminAPI } from '@/lib/api/admin'
+import api from '@/lib/api'
 import { Search, Loader2, AlertCircle, MessageSquare, X, Eye, ChevronLeft, ChevronRight } from 'lucide-react'
 
 export default function MessagesPage() {
@@ -14,6 +16,15 @@ export default function MessagesPage() {
   const [selectedMessage, setSelectedMessage] = useState(null)
   const [showMessageModal, setShowMessageModal] = useState(false)
   const [responseText, setResponseText] = useState("")
+  const [accountLookupStatus, setAccountLookupStatus] = useState(null) // null | 'not-found' | 'found-activated' | 'found-inactivated'
+  const [accountResult, setAccountResult] = useState(null)
+  const [accountLoading, setAccountLoading] = useState(false)
+  const [showAccountForm, setShowAccountForm] = useState(false)
+  const [accountFormMode, setAccountFormMode] = useState('create') // 'create' | 'edit'
+  const [accountFormData, setAccountFormData] = useState({ firstName: '', middleName: '', lastName: '', schoolId: '', email: '', department: '' })
+  const [hasSentResponse, setHasSentResponse] = useState(false)
+  const [departments, setDepartments] = useState([])
+  const [departmentsLoading, setDepartmentsLoading] = useState(false)
   const [pagination, setPagination] = useState({
     current: 1,
     total: 0,
@@ -23,21 +34,56 @@ export default function MessagesPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const debounceTimeout = useRef(null)
+  const createdPhotoUrlsRef = useRef([])
 
-  // SweetAlert function
+  // Small helper to show alerts using SweetAlert2 (keeps behavior consistent with other admin pages)
   const showAlert = (type, title, text) => {
     Swal.fire({
       icon: type,
       title: title,
       text: text,
-      confirmButtonColor: "#001f65",
+      confirmButtonColor: '#001f65',
     })
   }
+
+  // cleanup blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      try {
+        if (createdPhotoUrlsRef.current && createdPhotoUrlsRef.current.length) {
+          createdPhotoUrlsRef.current.forEach((u) => { try { URL.revokeObjectURL(u) } catch (e) {} })
+          createdPhotoUrlsRef.current = []
+        }
+      } catch (e) {}
+    }
+  }, [])
 
   useEffect(() => {
     fetchMessages()
     // eslint-disable-next-line
   }, [currentPage, pageSize, selectedStatus])
+
+  // fetch departments once for the dropdown
+  useEffect(() => {
+    let mounted = true
+    const fetchDepartments = async () => {
+      try {
+        setDepartmentsLoading(true)
+        const resp = await api.get('/departments')
+        // backend returns array or { data: [] }
+        const list = Array.isArray(resp.data) ? resp.data : (resp.data?.departments || resp.data?.data || [])
+        if (mounted) setDepartments(list)
+      } catch (e) {
+        // ignore - dropdown will fallback to text input
+        // eslint-disable-next-line no-console
+        console.error('Failed to load departments', e)
+      } finally {
+        if (mounted) setDepartmentsLoading(false)
+      }
+    }
+    fetchDepartments()
+    return () => { mounted = false }
+  }, [])
 
   // Debounce search
   useEffect(() => {
@@ -55,37 +101,65 @@ export default function MessagesPage() {
   const fetchMessages = async () => {
     try {
       setLoading(true)
+      // Map client-side 'archived' view to backend 'resolved' status
+      const effectiveStatusParam = selectedStatus === 'archived' ? 'resolved' : (selectedStatus || undefined)
       const params = {
         page: currentPage,
         limit: pageSize,
         search: searchTerm,
-        status: selectedStatus || undefined
+        status: effectiveStatusParam
       }
       const response = await chatSupportAPI.getAll(params)
       if (response.success) {
         const data = response.data
-        setMessages(data.requests || data || [])
+        const itemsFull = data.requests || data || []
+        // Client-side filtering so that "All" does NOT include archived (resolved) items.
+        let items = itemsFull
+        if (selectedStatus === 'archived') {
+          items = itemsFull.filter(m => m.status === 'resolved')
+        } else if (!selectedStatus) {
+          // 'All' view - exclude archived/resolved items
+          items = itemsFull.filter(m => m.status !== 'resolved')
+        }
+        setMessages(items)
+        // fetch photo blobs for items that have a photo
+        fetchPhotosForMessages(items)
+        // Build basic pagination info from filtered items for client display
         setPagination(data.pagination || {
           current: currentPage,
-          total: Math.ceil((data.total || data.length) / pageSize),
-          count: data.requests?.length || data.length || 0,
-          totalMessages: data.total || data.length || 0
+          total: Math.ceil((items.length) / pageSize),
+          count: items.length,
+          totalMessages: items.length
         })
       } else if (response.requests && Array.isArray(response.requests)) {
-        setMessages(response.requests)
+        let itemsFull = response.requests
+        let items = itemsFull
+        if (selectedStatus === 'archived') {
+          items = itemsFull.filter(m => m.status === 'resolved')
+        } else if (!selectedStatus) {
+          items = itemsFull.filter(m => m.status !== 'resolved')
+        }
+        setMessages(items)
         setPagination(response.pagination || {
           current: currentPage,
-          total: Math.ceil(response.requests.length / pageSize),
-          count: response.requests.length,
-          totalMessages: response.requests.length
+          total: Math.ceil(items.length / pageSize),
+          count: items.length,
+          totalMessages: items.length
         })
       } else if (Array.isArray(response)) {
-        setMessages(response)
+        let itemsFull = response
+        let items = itemsFull
+        if (selectedStatus === 'archived') {
+          items = itemsFull.filter(m => m.status === 'resolved')
+        } else if (!selectedStatus) {
+          items = itemsFull.filter(m => m.status !== 'resolved')
+        }
+        setMessages(items)
         setPagination({
           current: currentPage,
-          total: Math.ceil(response.length / pageSize),
-          count: response.length,
-          totalMessages: response.length
+          total: Math.ceil(items.length / pageSize),
+          count: items.length,
+          totalMessages: items.length
         })
       } else {
         setMessages([])
@@ -114,29 +188,226 @@ export default function MessagesPage() {
   const handleViewMessage = async (message) => {
     try {
       const fullMessage = await chatSupportAPI.getById(message._id)
-      setSelectedMessage(fullMessage.success ? fullMessage.data : fullMessage)
-      setResponseText(fullMessage.response || message.response || "")
+      const payload = fullMessage.success ? fullMessage.data : fullMessage
+      setSelectedMessage(payload)
+      setResponseText(payload.response || message.response || "")
+      // reset account info on open
+      setAccountLookupStatus(null)
+      setAccountResult(null)
+      setShowAccountForm(false)
+      setAccountFormData({ firstName: '', middleName: '', lastName: '', schoolId: '', email: '', department: '' })
       setShowMessageModal(true)
     } catch (error) {
       setSelectedMessage(message)
       setResponseText(message.response || "")
+      setAccountLookupStatus(null)
+      setAccountResult(null)
+      setShowAccountForm(false)
+      setAccountFormData({ firstName: '', middleName: '', lastName: '', schoolId: '', email: '', department: '' })
       setShowMessageModal(true)
+    }
+  }
+
+  const handleIdentifyAccount = async () => {
+    if (!selectedMessage) return
+    // reset previous result immediately
+    setAccountResult(null)
+    setAccountLookupStatus(null)
+    setAccountLoading(true)
+    try {
+      // Prefer identifying by schoolId (studentId) first
+      let resp = null
+      if (selectedMessage.schoolId) {
+        resp = await adminAPI.lookupAccount({ studentId: selectedMessage.schoolId })
+      }
+
+      // If not found by studentId and email exists, try email lookup
+      if ((!resp || resp.found === false || !Array.isArray(resp.accounts) || resp.accounts.length === 0) && selectedMessage.email) {
+        resp = await adminAPI.lookupAccount({ email: selectedMessage.email })
+      }
+
+      // Normalize: treat only explicit accounts array with length > 0 as found
+      if (!resp || !Array.isArray(resp.accounts) || resp.accounts.length === 0) {
+        setAccountLookupStatus('not-found')
+        setAccountResult(null)
+      } else {
+        const acc = resp.accounts[0] || null
+        setAccountResult(acc)
+        const activeFlags = !!(acc && (acc.isActive || acc.otpVerified || acc.active || acc.isRegistered))
+        setAccountLookupStatus(activeFlags ? 'found-activated' : 'found-inactivated')
+      }
+    } catch (err) {
+      console.error('Identify account error', err)
+      showAlert('error', 'Identify failed', err.message || 'Failed to identify account')
+      setAccountLookupStatus('not-found')
+      setAccountResult(null)
+    } finally {
+      setAccountLoading(false)
+    }
+  }
+
+  const handleAddToFAQ = async () => {
+    if (!selectedMessage) return
+    try {
+      // Ensure there's a response before allowing to add to FAQs
+      if (!selectedMessage.response && !selectedMessage.respondedAt) {
+        showAlert('error', 'No response', 'Please send a response first before adding to FAQs')
+        return
+      }
+
+      const res = await chatSupportAPI.updateStatus(selectedMessage._id, { status: 'resolved' })
+      if (res && (res.request || res.message || res.success)) {
+        showAlert('success', 'Added', 'Message marked resolved and eligible for FAQs')
+        fetchMessages()
+        setShowMessageModal(false)
+        setSelectedMessage(null)
+      } else {
+        throw new Error(res.message || 'Failed to add to FAQ')
+      }
+    } catch (err) {
+      console.error('Add to FAQ error', err)
+      showAlert('error', 'Error', err.message || err || 'Failed to add to FAQ')
+    }
+  }
+
+  const openCreateForm = () => {
+    if (!selectedMessage) return
+    setAccountFormMode('create')
+    setAccountFormData({
+      firstName: selectedMessage.firstName || selectedMessage.first_name || '',
+      middleName: selectedMessage.middleName || selectedMessage.middle_name || '',
+      lastName: selectedMessage.lastName || selectedMessage.last_name || '',
+      schoolId: selectedMessage.schoolId || '',
+      email: selectedMessage.email || '',
+      department: selectedMessage.departmentId?.departmentCode || selectedMessage.departmentId?.degreeProgram || selectedMessage.department || ''
+    })
+    setShowAccountForm(true)
+  }
+
+  const openEditForm = () => {
+    if (!accountResult) return
+    setAccountFormMode('edit')
+    // map departmentId or department string to a department value used by backend (departmentCode or degreeProgram)
+    let deptVal = ''
+    try {
+      const deptId = accountResult.departmentId || accountResult.departmentId?._id || accountResult.department
+      if (deptId && departments && departments.length) {
+        const found = departments.find(d => String(d._id) === String(deptId) || d.departmentCode === deptId || d.degreeProgram === deptId)
+        if (found) deptVal = found.departmentCode || found.degreeProgram || ''
+      }
+      if (!deptVal) {
+        // fallback to any department string on the account
+        deptVal = accountResult.department || accountResult.departmentCode || ''
+      }
+    } catch (e) {
+      deptVal = accountResult.department || ''
+    }
+
+    setAccountFormData({
+      firstName: accountResult.firstName || accountResult.first_name || accountResult.name || '',
+      middleName: accountResult.middleName || accountResult.middle_name || '',
+      lastName: accountResult.lastName || accountResult.last_name || '',
+      schoolId: accountResult.schoolId || accountResult.studentId || accountResult.schoolId || '',
+      email: accountResult.email || '',
+      department: deptVal
+    })
+    setShowAccountForm(true)
+  }
+
+  const handleAccountFormSubmit = async (e) => {
+    e.preventDefault()
+    try {
+      // basic client-side validation
+      if (!accountFormData.firstName || !accountFormData.lastName) {
+        showAlert('error', 'Validation', 'First name and last name are required')
+        return
+      }
+      if (!accountFormData.schoolId || String(accountFormData.schoolId).trim() === '') {
+        showAlert('error', 'Validation', 'School ID is required')
+        return
+      }
+      if (!accountFormData.department || String(accountFormData.department).trim() === '') {
+        showAlert('error', 'Validation', 'Department is required')
+        return
+      }
+      if (accountFormMode === 'create') {
+        // confirm create
+        const name = `${accountFormData.firstName} ${accountFormData.lastName}`.trim()
+        const confirmRes = await Swal.fire({
+          title: 'Create account? ',
+          text: `Create account for ${name} (School ID: ${accountFormData.schoolId})?`,
+          icon: 'question',
+          showCancelButton: true,
+          confirmButtonText: 'Yes, create',
+          cancelButtonText: 'Cancel',
+          confirmButtonColor: '#001f65'
+        })
+        if (!confirmRes.isConfirmed) return
+
+        // send create - omit email when creating from a support message
+        const { email, ...rest } = accountFormData || {}
+        const payload = { ...rest, type: 'voter' }
+        const res = await adminAPI.createAccount(payload)
+        if (res.success) {
+          showAlert('success', 'Account created', 'Account created successfully')
+          setShowAccountForm(false)
+          fetchMessages()
+        } else {
+          throw new Error(res.message || 'Failed to create account')
+        }
+      } else {
+        // confirm update
+        const name = `${accountFormData.firstName} ${accountFormData.lastName}`.trim()
+        const confirmRes = await Swal.fire({
+          title: 'Save changes?',
+          text: `Save changes to ${name} (School ID: ${accountFormData.schoolId})?`,
+          icon: 'question',
+          showCancelButton: true,
+          confirmButtonText: 'Yes, save',
+          cancelButtonText: 'Cancel',
+          confirmButtonColor: '#001f65'
+        })
+        if (!confirmRes.isConfirmed) return
+
+        // update (omit department and schoolId -- schoolId is not editable)
+        const id = accountResult?._id || accountResult?.id
+        if (!id) throw new Error('Account id not available')
+        const updatePayload = {
+          firstName: accountFormData.firstName,
+          middleName: accountFormData.middleName,
+          lastName: accountFormData.lastName,
+          email: accountFormData.email || undefined
+        }
+        // include yearLevel if provided
+        if (typeof accountFormData.yearLevel !== 'undefined' && accountFormData.yearLevel !== null && accountFormData.yearLevel !== '') {
+          updatePayload.yearLevel = accountFormData.yearLevel
+        }
+        const res = await adminAPI.updateAccount(id, updatePayload)
+        if (res.success) {
+          showAlert('success', 'Account updated', 'Account updated successfully')
+          setShowAccountForm(false)
+          setAccountResult(res.account || res.data || null)
+          setAccountLookupStatus(res.account?.isActive ? 'found-activated' : 'found-inactivated')
+          fetchMessages()
+        } else {
+          throw new Error(res.message || 'Failed to update account')
+        }
+      }
+    } catch (err) {
+      console.error('Account form submit error', err)
+      showAlert('error', 'Error', err.message || err || 'Failed to save account')
     }
   }
 
   const handleUpdateStatus = async (status) => {
     if (!selectedMessage) return
     try {
-      const updateData = {
-        status: status,
-        response: responseText.trim() || undefined
-      }
+      const updateData = { status: status }
       const response = await chatSupportAPI.updateStatus(selectedMessage._id, updateData)
       if (response.success || response.message) {
         fetchMessages()
         setShowMessageModal(false)
         setSelectedMessage(null)
-        setResponseText("")
         showAlert("success", "Success!", "Message status updated successfully")
       } else {
         throw new Error("Failed to update message status")
@@ -154,11 +425,15 @@ export default function MessagesPage() {
         return "bg-blue-100 text-blue-800"
       case "resolved":
         return "bg-green-100 text-green-800"
-      case "closed":
-        return "bg-gray-100 text-gray-800"
       default:
         return "bg-gray-100 text-gray-800"
     }
+  }
+
+  const formatStatusLabel = (status) => {
+    if (!status) return 'NEW'
+    if (status === 'pending') return 'NEW'
+    return status.replace('-', ' ').toUpperCase()
   }
 
   const formatDate = (dateString) => {
@@ -173,6 +448,136 @@ export default function MessagesPage() {
       })
     } catch {
       return 'Invalid Date'
+    }
+  }
+
+  const formatName = (obj) => {
+    if (!obj) return 'N/A'
+    const first = obj.firstName || obj.first_name || ''
+    const middle = obj.middleName || obj.middle_name || ''
+    const last = obj.lastName || obj.last_name || ''
+    const fullFromLegacy = obj.fullName || obj.full_name
+    const composed = `${first} ${middle ? middle + ' ' : ''}${last}`.trim()
+    return composed || fullFromLegacy || 'N/A'
+  }
+
+  const getPhotoSrc = (photo) => {
+    if (!photo) return null
+
+    // If already a data URI, return as-is
+    if (typeof photo === 'string' && photo.startsWith('data:')) return photo
+
+    // If includes 'base64' (maybe already data URI) return as-is
+    if (typeof photo === 'string' && photo.includes('base64')) return photo
+
+    try {
+      // If starts with /uploads (server-served file), prefix with API root
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+      const API_ROOT = API_BASE.replace(/\/api\/?$/, '')
+      if (typeof photo === 'string' && (photo.startsWith('/uploads') || photo.startsWith('uploads/'))) {
+        return `${API_ROOT}${photo.startsWith('/') ? photo : '/' + photo}`
+      }
+
+      // If absolute URL
+      if (typeof photo === 'string' && (photo.startsWith('http') || photo.startsWith('//'))) return photo
+
+      // Heuristic: raw base64 string without data URI - return a data URI (avoid creating object URLs during render)
+      if (typeof photo === 'string') {
+        const possibleBase64 = photo.replace(/\s+/g, '')
+        if (possibleBase64.length > 100 && /^[A-Za-z0-9+/=]+$/.test(possibleBase64)) {
+          return `data:image/jpeg;base64,${possibleBase64}`
+        }
+      }
+
+      // Buffer-like object from MongoDB (e.g., { type: 'Buffer', data: [...] }) - convert to base64 data URI
+      if (photo && photo.type === 'Buffer' && Array.isArray(photo.data)) {
+        try {
+          const u8 = new Uint8Array(photo.data)
+          let binary = ''
+          for (let i = 0; i < u8.length; i++) binary += String.fromCharCode(u8[i])
+          const b64 = typeof window !== 'undefined' ? btoa(binary) : Buffer.from(u8).toString('base64')
+          return `data:image/jpeg;base64,${b64}`
+        } catch (err) {
+          return null
+        }
+      }
+
+      // nothing matched
+      return null
+    } catch (err) {
+      return null
+    }
+  }
+
+  // When a message is opened, fetch a stable blob URL for the selectedMessage if available
+  useEffect(() => {
+    const fetchSelectedPhoto = async () => {
+      if (!selectedMessage) return
+      // if already has a blob src, nothing to do
+      if (selectedMessage._photoSrc) return
+      // try to reuse from messages list
+      const found = messages.find(m => m._id === selectedMessage._id || m.id === selectedMessage._id)
+      if (found && found._photoSrc) {
+        setSelectedMessage(prev => ({ ...(prev || {}), _photoSrc: found._photoSrc }))
+        return
+      }
+
+      // otherwise fetch from backend endpoint
+      try {
+        const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+        const token = localStorage.getItem('token')
+        const resp = await fetch(`${API_BASE}/chat-support/${selectedMessage._id}/photo`, {
+          headers: {
+            'x-auth-token': token || '',
+            'Authorization': token ? `Bearer ${token}` : ''
+          }
+        })
+        if (!resp.ok) return
+        const blob = await resp.blob()
+        const url = URL.createObjectURL(blob)
+        createdPhotoUrlsRef.current.push(url)
+        setSelectedMessage(prev => ({ ...(prev || {}), _photoSrc: url }))
+      } catch (e) {
+        // ignore - fallback to getPhotoSrc
+        // eslint-disable-next-line no-console
+        console.error('Failed to fetch selected message photo blob', e)
+      }
+    }
+
+    fetchSelectedPhoto()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMessage])
+
+  // Fetch photo blob from backend endpoint and create object URLs for images
+  const fetchPhotosForMessages = async (items) => {
+    if (!items || items.length === 0) return
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+    const token = localStorage.getItem('token')
+
+    for (const msg of items) {
+      try {
+        if (!msg.photo) continue
+        if (msg._photoSrc) continue
+
+        const resp = await fetch(`${API_BASE}/chat-support/${msg._id}/photo`, {
+          headers: {
+            'x-auth-token': token || '',
+            'Authorization': token ? `Bearer ${token}` : ''
+          }
+        })
+
+        if (!resp.ok) continue
+        const blob = await resp.blob()
+        const url = URL.createObjectURL(blob)
+        createdPhotoUrlsRef.current.push(url)
+
+        // update message in state
+        setMessages(prev => (prev || []).map(m => (m._id === msg._id ? { ...m, _photoSrc: url } : m)))
+      } catch (e) {
+        // if fetch failed, skip; the getPhotoSrc fallback may handle base64/raw formats
+        // eslint-disable-next-line no-console
+        console.error('Failed to fetch photo blob for message', msg._id, e)
+      }
     }
   }
 
@@ -226,7 +631,7 @@ export default function MessagesPage() {
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <input
                     type="text"
-                    placeholder="Search by school ID, name, email, or message..."
+                    placeholder="Search by ticket ID, school ID, name, email, or message..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
@@ -235,7 +640,7 @@ export default function MessagesPage() {
                 </div>
               </div>
               {/* Status Filter */}
-              <div className="min-w-[150px]">
+                <div className="min-w-[150px]">
                 <select
                   value={selectedStatus}
                   onChange={(e) => setSelectedStatus(e.target.value)}
@@ -245,7 +650,7 @@ export default function MessagesPage() {
                   <option value="pending">Pending</option>
                   <option value="in-progress">In Progress</option>
                   <option value="resolved">Resolved</option>
-                  <option value="closed">Closed</option>
+                  <option value="archived">Archived</option>
                 </select>
               </div>
               {/* Page Size */}
@@ -290,10 +695,19 @@ export default function MessagesPage() {
                     School ID
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                    Ticket ID
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                    Photo
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
                     Full Name
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
                     Email
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
+                    Source
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
                     Message Preview
@@ -316,12 +730,45 @@ export default function MessagesPage() {
                       {message.schoolId || 'N/A'}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-[#001f65]">
-                      {message.fullName || 'N/A'}
+                      {message.ticketId || 'N/A'}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-[#001f65]">
+                      {(message._photoSrc || getPhotoSrc(message.photo)) ? (
+                        <img
+                          src={message._photoSrc || getPhotoSrc(message.photo)}
+                          alt="photo"
+                          className="w-10 h-10 object-cover rounded-full"
+                          onError={(e) => { e.target.onerror = null; e.target.src = '/no-image.png' }}
+                        />
+                      ) : (
+                        <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-xs text-gray-400">N/A</div>
+                      )}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-[#001f65]">
+                      {formatName(message)}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-[#001f65]">
                       <div className="max-w-xs truncate">
-                        {message.email || 'N/A'}
-                      </div>
+                          {message.email ? (
+                            <a
+                              href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(message.email)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline"
+                            >
+                              {message.email}
+                            </a>
+                          ) : (
+                            'N/A'
+                          )}
+                        </div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-[#001f65]">
+                      {message.voterId ? (
+                        <span className="inline-block px-2 py-1 text-xs bg-green-100 text-green-800 rounded">Voter Dashboard</span>
+                      ) : (
+                        <span className="inline-block px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded">Anonymous</span>
+                      )}
                     </td>
                     <td className="px-4 py-4 text-sm text-[#001f65]">
                       <div className="max-w-xs truncate">
@@ -330,20 +777,80 @@ export default function MessagesPage() {
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(message.status)}`}>
-                        {message.status?.replace("-", " ").toUpperCase() || 'PENDING'}
+                        {formatStatusLabel(message.status)}
                       </span>
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-[#001f65]/70">
                       {formatDate(message.submittedAt || message.createdAt)}
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
-                      <button
-                        onClick={() => handleViewMessage(message)}
-                        className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-sm flex items-center gap-1 transition-colors"
-                      >
-                        <Eye className="w-3 h-3" />
-                        View
-                      </button>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium flex items-center gap-2">
+                      {message.status === 'resolved' ? (
+                        // Archived row: only allow Unarchive action
+                        <button
+                          onClick={async () => {
+                            try {
+                              const name = message.ticketId || message.schoolId || 'this message'
+                              const confirmed = await Swal.fire({
+                                title: 'Unarchive message?',
+                                text: `Are you sure you want to unarchive ${name}? This will set its status to In Progress.`,
+                                icon: 'question',
+                                showCancelButton: true,
+                                confirmButtonText: 'Yes, unarchive',
+                                cancelButtonText: 'Cancel',
+                                confirmButtonColor: '#001f65'
+                              })
+                              if (!confirmed.isConfirmed) return
+                              await chatSupportAPI.updateStatus(message._id, { status: 'in-progress' })
+                              fetchMessages()
+                              showAlert('success', 'Unarchived', 'Message restored for action')
+                            } catch (err) {
+                              console.error('Unarchive error (row)', err)
+                              showAlert('error', 'Error', err.message || 'Failed to unarchive')
+                            }
+                          }}
+                          className="px-3 py-1 bg-blue-600 text-white rounded text-sm"
+                        >
+                          Unarchive
+                        </button>
+                      ) : (
+                        // Non-archived row: normal actions
+                        <>
+                          <button
+                            onClick={() => handleViewMessage(message)}
+                            className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-sm flex items-center gap-1 transition-colors"
+                          >
+                            <Eye className="w-3 h-3" />
+                            View
+                          </button>
+
+                          {/* If message was submitted by a logged-in voter (has voterId), show Add to FAQ button in table row.
+                              Enabled only when a response exists for that message. */}
+                          {message.voterId && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  if (!message.response && !message.respondedAt) {
+                                    showAlert('error', 'No response', 'Please respond to the message before adding to FAQs')
+                                    return
+                                  }
+                                  const resp = await chatSupportAPI.updateStatus(message._id, { status: 'resolved' })
+                                  if (resp) {
+                                    showAlert('success', 'Added', 'Message marked resolved and eligible for FAQs')
+                                    fetchMessages()
+                                  }
+                                } catch (err) {
+                                  console.error('Add to FAQ error (row)', err)
+                                  showAlert('error', 'Error', err.message || 'Failed to add to FAQ')
+                                }
+                              }}
+                              disabled={!(message.response || message.respondedAt)}
+                              className={`px-3 py-1 rounded text-sm ${message.response || message.respondedAt ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-200 text-gray-600 cursor-not-allowed'}`}
+                            >
+                              Add to FAQ
+                            </button>
+                          )}
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -441,6 +948,7 @@ export default function MessagesPage() {
                   <X className="w-6 h-6" />
                 </button>
               </div>
+
               <div className="p-6 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -448,85 +956,133 @@ export default function MessagesPage() {
                     <p className="mt-1 text-sm text-[#001f65]">{selectedMessage.schoolId || 'N/A'}</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-[#001f65]">Full Name</label>
-                    <p className="mt-1 text-sm text-[#001f65]">{selectedMessage.fullName || 'N/A'}</p>
+                    <label className="block text-sm font-medium text-[#001f65]">Ticket ID</label>
+                    <p className="mt-1 text-sm text-[#001f65]">{selectedMessage.ticketId || 'N/A'}</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-[#001f65]">Email</label>
-                    <p className="mt-1 text-sm text-[#001f65]">{selectedMessage.email || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-[#001f65]">Birthday</label>
-                    <p className="mt-1 text-sm text-[#001f65]">
-                      {formatDate(selectedMessage.birthday)}
-                    </p>
-                  </div>
-                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-[#001f65]">Submitted</label>
-                  <p className="mt-1 text-sm text-[#001f65]">
-                    {formatDate(selectedMessage.submittedAt || selectedMessage.createdAt)}
-                  </p>
+                  <p className="mt-1 text-sm text-[#001f65]">{formatDate(selectedMessage.submittedAt || selectedMessage.createdAt)}</p>
                 </div>
+
                 <div>
                   <label className="block text-sm font-medium text-[#001f65]">Message</label>
-                  <div className="mt-1 text-sm text-[#001f65] bg-[#f3f7fe] p-3 rounded-lg border">
-                    {selectedMessage.message || 'No message content'}
-                  </div>
+                  <div className="mt-1 text-sm text-[#001f65] bg-[#f3f7fe] p-3 rounded-lg border">{selectedMessage.message || 'No message content'}</div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-[#001f65]">Current Status</label>
-                  <span className={`mt-1 inline-flex px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedMessage.status)}`}>
-                    {selectedMessage.status?.replace("-", " ").toUpperCase() || 'PENDING'}
-                  </span>
-                </div>
-                {selectedMessage.response && (
-                  <div>
-                    <label className="block text-sm font-medium text-[#001f65]">Previous Response</label>
-                    <div className="mt-1 text-sm text-[#001f65] bg-blue-50 p-3 rounded-lg border">
-                      {selectedMessage.response}
+
+                {/* Archived - read only */}
+                {selectedMessage.status === 'resolved' && (
+                  <div className="mt-4 p-4 bg-gray-50 border rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-[#001f65]">Archived Message</h4>
+                        <p className="text-xs text-[#475569]">This message is archived and read-only. Use "Unarchive" to restore it for further action.</p>
+                      </div>
+                      <div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const name = selectedMessage.ticketId || selectedMessage.schoolId || 'this message'
+                              const confirmed = await Swal.fire({
+                                title: 'Unarchive message?',
+                                text: `Are you sure you want to unarchive ${name}? This will set its status to In Progress.`,
+                                icon: 'question',
+                                showCancelButton: true,
+                                confirmButtonText: 'Yes, unarchive',
+                                cancelButtonText: 'Cancel',
+                                confirmButtonColor: '#001f65'
+                              })
+                              if (!confirmed.isConfirmed) return
+                              await handleUpdateStatus('in-progress')
+                            } catch (err) {
+                              showAlert('error', 'Error', err.message || 'Failed to unarchive message')
+                            }
+                          }}
+                          className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm"
+                        >
+                          Unarchive
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
 
-                <div>
-                  <label className="block text-sm font-medium text-[#001f65] mb-2">
-                    {selectedMessage.response ? 'Update Response' : 'Response'}
-                  </label>
-                  <textarea
-                    value={responseText}
-                    onChange={(e) => setResponseText(e.target.value)}
-                    rows={4}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
-                    placeholder="Enter your response..."
-                  />
-                </div>
+                {/* Non-archived controls */}
+                {selectedMessage.status !== 'resolved' && (
+                  <>
+                    {(selectedMessage._photoSrc || selectedMessage.photo) && (
+                      <div>
+                        <label className="block text-sm font-medium text-[#001f65]">Photo</label>
+                        <div className="mt-1">
+                          <img src={selectedMessage._photoSrc || getPhotoSrc(selectedMessage.photo)} alt="support-photo" className="max-w-full h-auto rounded-lg border" onError={(e) => { e.target.onerror = null; e.target.src = '/no-image.png' }} />
+                        </div>
+                      </div>
+                    )}
 
-                <div className="flex flex-wrap gap-2 pt-4 border-t">
-                  <button
-                    onClick={() => handleUpdateStatus("in-progress")}
-                    disabled={selectedMessage.status === "in-progress"}
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-md transition-colors"
-                  >
-                    Mark In Progress
-                  </button>
-                  <button
-                    onClick={() => handleUpdateStatus("resolved")}
-                    disabled={selectedMessage.status === "resolved"}
-                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-md transition-colors"
-                  >
-                    Mark Resolved
-                  </button>
-                  <button
-                    onClick={() => handleUpdateStatus("closed")}
-                    disabled={selectedMessage.status === "closed"}
-                    className="px-4 py-2 text-sm font-medium text-white bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-md transition-colors"
-                  >
-                    Close
-                  </button>
-                </div>
+                    <div>
+                      <label className="block text-sm font-medium text-[#001f65]">Account</label>
+                      <div className="mt-2 flex items-center gap-3">
+                        {accountLoading ? (
+                          <div className="text-sm text-[#001f65]">Checking account...</div>
+                        ) : (
+                          <>
+                            {!selectedMessage?.voterId && !accountLookupStatus && (
+                              <button onClick={handleIdentifyAccount} className="px-3 py-1 rounded-md text-sm bg-[#001f65] text-white">Identify Account</button>
+                            )}
+
+                            {selectedMessage?.voterId && (
+                              <button onClick={handleAddToFAQ} disabled={!(selectedMessage.response || selectedMessage.respondedAt)} className={`px-3 py-1 rounded-md text-sm ${selectedMessage.response || selectedMessage.respondedAt ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600 cursor-not-allowed'}`}>Add to FAQ</button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <label className="block text-sm font-medium text-[#001f65]">Current Status</label>
+                      <span className={`mt-1 inline-flex px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedMessage.status)}`}>{formatStatusLabel(selectedMessage.status)}</span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 pt-4 border-t">
+                      <button onClick={() => handleUpdateStatus('in-progress')} disabled={selectedMessage.status === 'in-progress'} className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md">Mark In Progress</button>
+                      <button onClick={() => handleUpdateStatus('resolved')} disabled={selectedMessage.status === 'resolved'} className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md">Mark Resolved</button>
+                      <button onClick={async () => {
+                        try {
+                          const confirmed = await Swal.fire({ title: 'Archive message?', text: 'Archive this message (mark as resolved)?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Yes, archive', cancelButtonText: 'Cancel', confirmButtonColor: '#b91c1c' })
+                          if (!confirmed.isConfirmed) return
+                          await handleUpdateStatus('resolved')
+                        } catch (err) {
+                          showAlert('error', 'Error', err.message || 'Failed to archive message')
+                        }
+                      }} className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md">Archive</button>
+                    </div>
+
+                    <div className="mt-3">
+                      <label className="block text-sm font-medium text-[#001f65] mb-2">Response</label>
+                      <textarea value={responseText} onChange={(e) => setResponseText(e.target.value)} rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 mb-3" placeholder="Type a response to send to the requester via email..." />
+                      <div className="flex gap-2">
+                        <button onClick={async () => {
+                          try {
+                            if (!responseText || responseText.trim().length === 0) { showAlert('error', 'Error', 'Response text cannot be empty'); return }
+                            const res = await chatSupportAPI.sendResponse(selectedMessage._id, { response: responseText })
+                            if (res.success) {
+                              showAlert('success', 'Sent', 'Response emailed successfully')
+                              fetchMessages()
+                              setShowMessageModal(false)
+                              setSelectedMessage(null)
+                              setResponseText('')
+                            } else {
+                              throw new Error(res.message || 'Failed to send response')
+                            }
+                          } catch (err) {
+                            showAlert('error', 'Error', err.message || 'Failed to send response')
+                          }
+                        }} className="px-4 py-2 bg-indigo-600 text-white rounded-md">Send</button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

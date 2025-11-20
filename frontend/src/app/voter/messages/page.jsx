@@ -6,7 +6,7 @@ import { MessageSquare, Send, HelpCircle, ArrowLeft, Loader2, CheckCircle, Alert
 import VoterLayout from '@/components/VoterLayout'
 import { chatSupportAPI } from '@/lib/api/chatSupport'
 import { departmentsAPI } from '@/lib/api/departments'
-import { getVoterFromToken } from '@/lib/auth'
+import { getVoterFromToken, getStoredVoter } from '@/lib/auth'
 import Swal from 'sweetalert2'
 
 export default function VoterMessages() {
@@ -19,7 +19,6 @@ export default function VoterMessages() {
     schoolId: "",
     fullName: "",
     departmentId: "",
-    birthday: "",
     email: "",
     message: ""
   })
@@ -41,13 +40,23 @@ export default function VoterMessages() {
           return
         }
 
-        setVoter(voterFromToken)
-        
-        // Pre-fill form with voter data
+        // Prefer the stored voter object (from localStorage) when available
+        const storedVoter = getStoredVoter()
+        const voterData = storedVoter || voterFromToken
+
+        setVoter(voterData)
+
+        // Pre-fill form with voter data (include department and email when available)
+        const resolvedDeptId = voterData.departmentId
+          ? (typeof voterData.departmentId === 'string' ? voterData.departmentId : (voterData.departmentId._id || voterData.departmentId.id || ''))
+          : (voterData.department || '')
+
         setFormData(prev => ({
           ...prev,
-          schoolId: voterFromToken.schoolId || "",
-          fullName: `${voterFromToken.firstName || ""} ${voterFromToken.lastName || ""}`.trim()
+          schoolId: voterData.schoolId || voterData.studentId || "",
+          fullName: `${voterData.firstName || ""}${voterData.middleName ? ' ' + voterData.middleName : ''} ${voterData.lastName || ""}`.trim(),
+          departmentId: resolvedDeptId,
+          email: voterData.email || ""
         }))
 
         // Load departments
@@ -66,10 +75,35 @@ export default function VoterMessages() {
     try {
       setLoading(true)
       const response = await departmentsAPI.getAll()
-      
-      if (response.success && response.data) {
-        setDepartments(response.data.departments || response.data || [])
+
+      // departmentsAPI.getAll may return different shapes depending on backend wrapper:
+      // - an array of departments
+      // - { success: true, data: { departments: [...] } }
+      // - { data: { departments: [...] } }
+      // - { departments: [...] }
+      let departmentsArray = []
+      if (response) {
+        if (Array.isArray(response)) {
+          departmentsArray = response
+        } else if (response.departments && Array.isArray(response.departments)) {
+          departmentsArray = response.departments
+        } else if (response.data && Array.isArray(response.data)) {
+          departmentsArray = response.data
+        } else if (response.data && response.data.departments && Array.isArray(response.data.departments)) {
+          departmentsArray = response.data.departments
+        } else if (response.success && response.data) {
+          if (Array.isArray(response.data)) departmentsArray = response.data
+          else if (response.data.departments && Array.isArray(response.data.departments)) departmentsArray = response.data.departments
+        }
       }
+
+      // Debug: log the parsed departments shape when running in dev
+      if (process?.env?.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.debug('Loaded departments for messages form:', { raw: response, parsed: departmentsArray })
+      }
+
+      setDepartments(departmentsArray)
       
       setError("")
     } catch (error) {
@@ -99,7 +133,7 @@ export default function VoterMessages() {
   const validateForm = () => {
     const errors = {}
     
-    if (!formData.schoolId || formData.schoolId.trim() === "") {
+    if (!formData.schoolId || String(formData.schoolId).trim() === "") {
       errors.schoolId = "School ID is required"
     }
     
@@ -111,15 +145,7 @@ export default function VoterMessages() {
       errors.departmentId = "Department is required"
     }
     
-    if (!formData.birthday) {
-      errors.birthday = "Birthday is required"
-    } else {
-      const birthDate = new Date(formData.birthday)
-      const age = (new Date() - birthDate) / (365.25 * 24 * 60 * 60 * 1000)
-      if (age < 16 || age > 100) {
-        errors.birthday = "Please enter a valid birthday"
-      }
-    }
+    // Birthday no longer required or collected
     
     if (!formData.email || formData.email.trim() === "") {
       errors.email = "Email is required"
@@ -155,14 +181,23 @@ export default function VoterMessages() {
     try {
       setSubmitting(true)
       
-      const response = await chatSupportAPI.submit({
+      // derive first/middle/last name to satisfy chatSupportAPI validation
+      const nameParts = (formData.fullName || '').trim().split(/\s+/).filter(Boolean)
+      const parsedFirst = nameParts.length > 0 ? nameParts[0] : ''
+      const parsedLast = nameParts.length > 1 ? nameParts[nameParts.length - 1] : ''
+      const parsedMiddle = nameParts.length > 2 ? nameParts.slice(1, -1).join(' ') : ''
+
+      const payload = {
         schoolId: Number(formData.schoolId),
-        fullName: formData.fullName.trim(),
+        firstName: (voter?.firstName) || parsedFirst,
+        middleName: (voter?.middleName) || parsedMiddle,
+        lastName: (voter?.lastName) || parsedLast,
         departmentId: formData.departmentId,
-        birthday: formData.birthday,
         email: formData.email.trim().toLowerCase(),
         message: formData.message.trim()
-      })
+      }
+
+      const response = await chatSupportAPI.submit(payload)
 
       if (response.success) {
         await Swal.fire({
@@ -184,7 +219,6 @@ export default function VoterMessages() {
           schoolId: voter.schoolId || "",
           fullName: `${voter.firstName || ""} ${voter.lastName || ""}`.trim(),
           departmentId: "",
-          birthday: "",
           email: "",
           message: ""
         })
@@ -368,23 +402,7 @@ export default function VoterMessages() {
                 )}
               </div>
 
-              {/* Birthday */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Birthday <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  name="birthday"
-                  value={formData.birthday}
-                  onChange={handleInputChange}
-                  className={`w-full px-4 py-2 border ${formErrors.birthday ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent bg-white/80`}
-                  disabled={submitting}
-                />
-                {formErrors.birthday && (
-                  <p className="mt-1 text-sm text-red-500">{formErrors.birthday}</p>
-                )}
-              </div>
+              {/* Birthday removed: not collected from users anymore */}
 
               {/* Email */}
               <div>

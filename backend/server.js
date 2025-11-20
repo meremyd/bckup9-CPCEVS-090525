@@ -5,7 +5,7 @@ const helmet = require("helmet")
 const morgan = require("morgan")
 require("dotenv").config()
 
-const { authMiddleware, authorizeRoles } = require("./src/middleware/authMiddleware")
+const { authMiddleware, authorizeRoles, voterAuthMiddleware } = require("./src/middleware/authMiddleware")
 const errorHandler = require("./src/middleware/errorHandler")
 
 const {
@@ -81,7 +81,7 @@ try {
 
 try {
   console.log("Loading voters routes...")
-  app.use("/api/voters", authMiddleware, authorizeRoles("admin", "election_committee", "sao"), adminLimiter, require("./src/routes/voters"))
+  app.use("/api/voters", require("./src/routes/voters"))
   console.log("Voters routes loaded")
 } catch (error) {
   console.error("Error loading voters routes:", error.message)
@@ -166,6 +166,15 @@ try {
   console.log("Chat-support routes loaded")
 } catch (error) {
   console.error("Error loading chat-support routes:", error.message)
+  process.exit(1)
+}
+
+try {
+  console.log("Loading admin routes...")
+  app.use("/api/admin", require("./src/routes/admin-accounts"))
+  console.log("Admin routes loaded")
+} catch (error) {
+  console.error("Error loading admin routes:", error.message)
   process.exit(1)
 }
 

@@ -11,7 +11,6 @@ import {
   Pie, 
   Cell, 
   Tooltip, 
-  Legend, 
   ResponsiveContainer
 } from 'recharts'
 import { 
@@ -24,7 +23,6 @@ import {
   Eye,
   EyeOff,
   Trophy,
-  Download,
   RefreshCw,
   FileDown,
   ChevronDown
@@ -47,12 +45,8 @@ export default function DepartmentalStatisticsPage() {
   const searchParams = useSearchParams()
   const deptElectionId = searchParams.get('deptElectionId')
 
-  // Color schemes for charts
   const COLORS = {
-    primary: ['#001f65', '#003399', '#0052cc', '#0066ff', '#3385ff', '#66a3ff', '#99c2ff', '#cce0ff'],
-    success: ['#059669', '#10b981', '#34d399', '#6ee7b7', '#a7f3d0'],
-    warning: ['#d97706', '#f59e0b', '#fbbf24', '#fcd34d', '#fde68a'],
-    info: ['#0ea5e9', '#38bdf8', '#7dd3fc', '#bae6fd', '#e0f2fe']
+    primary: ['#001f65', '#003399', '#0052cc', '#0066ff', '#3385ff', '#66a3ff', '#99c2ff', '#cce0ff']
   }
 
   useEffect(() => {
@@ -128,20 +122,32 @@ export default function DepartmentalStatisticsPage() {
   }
 
   const fetchResultsData = async () => {
-    try {
-      const response = await votingAPI.getDepartmentalElectionLiveResults(deptElectionId)
-      if (response?.success) {
-        setResultsData(response.data)
-        setPositions(response.data.positions || [])
-        // Auto-select first position
-        if (response.data.positions && response.data.positions.length > 0) {
-          setSelectedPosition(response.data.positions[0])
-        }
+  try {
+    // ✅ Changed from getDepartmentalElectionLiveResults to staff endpoint
+    const response = await votingAPI.getDepartmentalElectionLiveResults(deptElectionId)
+    
+    console.log('Results response:', response) // Debug log
+    
+    if (response?.success && response?.data) {
+      setResultsData(response.data)
+      setPositions(response.data.positions || [])
+      if (response.data.positions && response.data.positions.length > 0) {
+        setSelectedPosition(response.data.positions[0])
       }
-    } catch (error) {
-      console.error("Error fetching results:", error)
+    } else if (response?.data?.positions) {
+      // Handle case where success flag might not be present
+      setResultsData(response.data)
+      setPositions(response.data.positions || [])
+      if (response.data.positions.length > 0) {
+        setSelectedPosition(response.data.positions[0])
+      }
     }
+  } catch (error) {
+    console.error("Error fetching results:", error)
+    // Don't set error state here - let positions remain empty
+    setPositions([])
   }
+}
 
   const handleDownloadStatistics = async () => {
     try {
@@ -246,6 +252,10 @@ export default function DepartmentalStatisticsPage() {
             `${candidate.voterId.firstName} ${candidate.voterId.lastName}` : 
             `Candidate #${candidate.candidateNumber}`
           
+          // ✅ UPDATED: Calculate percentage based on total votes
+          const totalVotes = position.totalVotes || 0
+          const percentage = totalVotes > 0 ? ((candidate.voteCount / totalVotes) * 100).toFixed(1) : '0.0'
+          
           summaryHTML += `
             <div class="flex items-center justify-between py-2 px-3 rounded ${isWinner ? 'bg-yellow-100 border-l-4 border-yellow-500' : ''}">
               <div class="flex items-center gap-2">
@@ -255,7 +265,7 @@ export default function DepartmentalStatisticsPage() {
               </div>
               <div class="text-right">
                 <div class="font-bold ${isWinner ? 'text-[#001f65]' : 'text-gray-700'}">${candidate.voteCount?.toLocaleString() || 0}</div>
-                <div class="text-xs text-gray-500">${candidate.percentage ? `${candidate.percentage.toFixed(1)}%` : '0%'}</div>
+                <div class="text-xs text-gray-500">${percentage}%</div>
               </div>
             </div>
           `
@@ -279,18 +289,24 @@ export default function DepartmentalStatisticsPage() {
     })
   }
 
+  // ✅ UPDATED: Calculate percentage based on TOTAL VOTES
   const getPositionChartData = (position) => {
     if (!position || !position.candidates) return []
+    
+    const totalVotes = position.totalVotes || 0
     
     return position.candidates.map((candidate) => {
       const candidateName = candidate.voterId ? 
         `${candidate.voterId.firstName} ${candidate.voterId.lastName}` : 
         `Candidate #${candidate.candidateNumber}`
       
+      // Calculate percentage based on total votes cast
+      const percentage = totalVotes > 0 ? ((candidate.voteCount || 0) / totalVotes) * 100 : 0
+      
       return {
         name: candidateName,
         votes: candidate.voteCount || 0,
-        percentage: candidate.percentage || 0
+        percentage: percentage
       }
     })
   }
@@ -328,7 +344,6 @@ export default function DepartmentalStatisticsPage() {
     )
   }
 
-  // Authentication screen
   if (!isAuthenticated) {
     return (
       <DepartmentalLayout
@@ -422,7 +437,6 @@ export default function DepartmentalStatisticsPage() {
       activeItem="statistics"
     >
       <div className="max-w-7xl mx-auto space-y-6 p-4">
-        {/* Header with Action Buttons */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <h2 className="text-2xl font-bold text-white mb-2"></h2>
@@ -474,22 +488,26 @@ export default function DepartmentalStatisticsPage() {
           </div>
         </div>
 
-        {/* Position Selector */}
         {positions.length > 0 && (
           <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
             <label className="block text-white font-medium mb-2">Select Position to View Statistics</label>
             <div className="relative">
               <select
-                value={selectedPosition?._id || ''}
+                value={selectedPosition?.position?._id || selectedPosition?._id || ''}
                 onChange={(e) => {
-                  const position = positions.find(p => p._id === e.target.value)
+                  const position = positions.find(p => 
+                    (p.position?._id === e.target.value) || (p._id === e.target.value)
+                  )
                   setSelectedPosition(position)
                 }}
                 className="w-full px-4 py-3 bg-white rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#001f65] focus:border-transparent appearance-none cursor-pointer"
               >
-                {positions.map((pos) => (
-                  <option key={pos._id} value={pos._id}>
-                    {pos.position.positionName} - {pos.candidates.length} candidates
+                {positions.map((pos, index) => (
+                  <option 
+                    key={pos.position?._id || pos._id || `position-${index}`} 
+                    value={pos.position?._id || pos._id}
+                  >
+                    {pos.position?.positionName || pos.positionName || 'Unknown Position'} - {pos.candidates?.length || 0} candidates
                   </option>
                 ))}
               </select>
@@ -498,7 +516,6 @@ export default function DepartmentalStatisticsPage() {
           </div>
         )}
 
-        {/* Loading State */}
         {loading && (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="animate-spin h-8 w-8 text-white mr-3" />
@@ -506,10 +523,8 @@ export default function DepartmentalStatisticsPage() {
           </div>
         )}
 
-        {/* Charts Section */}
         {!loading && selectedPosition && (
           <div className="space-y-6">
-            {/* Position Results Header */}
             <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
               <h2 className="text-2xl font-bold text-white text-center mb-2">
                 {selectedPosition.position.positionName}
@@ -519,10 +534,7 @@ export default function DepartmentalStatisticsPage() {
                   <Users className="w-4 h-4" />
                   <span>Total Votes: <span className="font-semibold">{selectedPosition.totalVotes || 0}</span></span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Users className="w-4 h-4" />
-                  <span>Max Votes: <span className="font-semibold">{selectedPosition.position.maxVotes || 1}</span></span>
-                </div>
+                
                 <div className="flex items-center gap-1">
                   <Users className="w-4 h-4" />
                   <span>Participants: <span className="font-semibold">{selectedPosition.totalParticipants || 0}</span></span>
@@ -530,7 +542,6 @@ export default function DepartmentalStatisticsPage() {
               </div>
             </div>
 
-            {/* Position Chart */}
             {positionChartData.length > 0 ? (
               <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
                 <div className="flex items-center mb-4">
@@ -569,7 +580,6 @@ export default function DepartmentalStatisticsPage() {
           </div>
         )}
 
-        {/* No Data State */}
         {!loading && positions.length === 0 && (
           <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-12 text-center">
             <BarChart3 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
@@ -586,7 +596,6 @@ export default function DepartmentalStatisticsPage() {
           </div>
         )}
 
-        {/* Error Alert */}
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center">
             <AlertCircle className="w-5 h-5 text-red-500 mr-3 flex-shrink-0" />

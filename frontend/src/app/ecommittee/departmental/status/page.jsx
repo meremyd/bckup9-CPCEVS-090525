@@ -21,6 +21,19 @@ import {
   School
 } from "lucide-react"
 
+// Helper: produce a local datetime string suitable for <input type="datetime-local">
+const toDateTimeLocalValue = (date) => {
+  if (!date) return ''
+  const d = new Date(date)
+  const pad = (n) => String(n).padStart(2, '0')
+  const yyyy = d.getFullYear()
+  const mm = pad(d.getMonth() + 1)
+  const dd = pad(d.getDate())
+  const hh = pad(d.getHours())
+  const min = pad(d.getMinutes())
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`
+}
+
 export default function DepartmentalStatusPage() {
   const [election, setElection] = useState(null)
   const [department, setDepartment] = useState(null)
@@ -79,8 +92,7 @@ export default function DepartmentalStatusPage() {
               electionYear: parsed.electionYear || new Date().getFullYear(),
               title: parsed.title || '',
               status: parsed.status || 'upcoming',
-              electionDate: parsed.electionDate ? 
-                new Date(parsed.electionDate).toISOString().slice(0, 16) : '',
+              electionDate: parsed.electionDate ? toDateTimeLocalValue(parsed.electionDate) : '',
               departmentId: parsed.departmentId?._id || parsed.departmentId || ''
             })
             return
@@ -139,8 +151,7 @@ export default function DepartmentalStatusPage() {
         electionYear: electionData.electionYear || new Date().getFullYear(),
         title: electionData.title || '',
         status: electionData.status || 'upcoming',
-        electionDate: electionData.electionDate ? 
-          new Date(electionData.electionDate).toISOString().slice(0, 16) : '',
+        electionDate: electionData.electionDate ? toDateTimeLocalValue(electionData.electionDate) : '',
         departmentId: electionData.departmentId?._id || electionData.departmentId || ''
       })
       
@@ -255,8 +266,7 @@ export default function DepartmentalStatusPage() {
           electionYear: updatedElectionData.electionYear || new Date().getFullYear(),
           title: updatedElectionData.title || '',
           status: updatedElectionData.status || 'upcoming',
-          electionDate: updatedElectionData.electionDate ? 
-            new Date(updatedElectionData.electionDate).toISOString().slice(0, 16) : '',
+          electionDate: updatedElectionData.electionDate ? toDateTimeLocalValue(updatedElectionData.electionDate) : '',
           departmentId: updatedElectionData.departmentId?._id || updatedElectionData.departmentId || ''
         })
       }
@@ -322,8 +332,7 @@ export default function DepartmentalStatusPage() {
             electionYear: election.electionYear || new Date().getFullYear(),
             title: election.title || '',
             status: election.status || 'upcoming',
-            electionDate: election.electionDate ? 
-              new Date(election.electionDate).toISOString().slice(0, 16) : '',
+            electionDate: election.electionDate ? toDateTimeLocalValue(election.electionDate) : '',
             departmentId: election.departmentId?._id || election.departmentId || ''
           })
         }

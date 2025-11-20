@@ -4,14 +4,27 @@ export const chatSupportAPI = {
   // Submit support request (public) - Enhanced with validation
   submit: async (data) => {
     try {
+      // Normalize alternate frontend keys to the expected backend field names
+      const payload = { ...data }
+      if (!payload.schoolId && payload.idNumber) payload.schoolId = payload.idNumber
+      if (!payload.departmentId && payload.course) payload.departmentId = payload.course
+      // Map frontend course labels to backend-recognized department identifiers
+      if (payload.departmentId === 'BSED') {
+        payload.departmentId = 'Bachelor of Secondary Education'
+      } else if (payload.departmentId === 'BSED') {
+        payload.departmentId = 'Bachelor of Secondary Education'
+      }
+      // keep photoFile on payload if present
+      if (data.photoFile) payload.photoFile = data.photoFile
+      
       // Client-side validation before sending
       const errors = []
-      if (!data.schoolId) errors.push("School ID is required")
-      if (!data.fullName) errors.push("Full name is required")
-      if (!data.departmentId) errors.push("Department is required")
-      if (!data.birthday) errors.push("Birthday is required")
-      if (!data.email) errors.push("Email is required")
-      if (!data.message) errors.push("Message is required")
+      if (!payload.schoolId) errors.push("School ID is required")
+      if (!payload.firstName) errors.push("First name is required")
+      if (!payload.lastName) errors.push("Last name is required")
+      if (!payload.departmentId) errors.push("Department is required")
+      if (!payload.email) errors.push("Email is required")
+      if (!payload.message) errors.push("Message is required")
 
       if (errors.length > 0) {
         throw new Error(errors.join(', '))
@@ -19,11 +32,38 @@ export const chatSupportAPI = {
 
       // Email format validation
       const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
-      if (!emailRegex.test(data.email)) {
+      if (!emailRegex.test(payload.email)) {
         throw new Error("Please enter a valid email address")
       }
 
-      const response = await api.post('/chat-support', data)
+      // If a file is present (from the form component), submit as multipart/form-data
+      let response
+      if (payload instanceof FormData || payload.photoFile) {
+        const formData = payload instanceof FormData ? payload : new FormData()
+
+        if (!(payload instanceof FormData)) {
+          // Append normalized payload fields
+          if (payload.schoolId) formData.append('schoolId', payload.schoolId)
+          if (payload.firstName) formData.append('firstName', payload.firstName)
+          if (payload.middleName) formData.append('middleName', payload.middleName)
+          if (payload.lastName) formData.append('lastName', payload.lastName)
+          if (payload.departmentId) formData.append('departmentId', payload.departmentId)
+          if (payload.email) formData.append('email', payload.email)
+          if (payload.message) formData.append('message', payload.message)
+          if (payload.photoFile) formData.append('photo', payload.photoFile)
+        }
+
+        response = await api.post('/chat-support', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        })
+      } else {
+        response = await api.post('/chat-support', payload)
+      }
+      // Map frontend course labels to department lookup keys the backend accepts
+      // (some departments are identified by their full degreeProgram string)
+      // NOTE: We map common BSED variants to the backend degreeProgram strings
+      // so the existing department lookup in the backend will match.
+      // This mapping is applied before sending when payload.departmentId comes from `course`.
       return response.data
     } catch (error) {
       console.error('Error submitting support request:', error)
@@ -70,22 +110,23 @@ export const chatSupportAPI = {
     }
   },
   
-  // Update support request status and response (admin only)
+  // Update support request status, response, or link a voter (admin only)
   updateStatus: async (id, updateData) => {
     try {
       if (!id) {
         throw new Error('Request ID is required')
       }
 
-      if (!updateData.status) {
-        throw new Error('Status is required')
+      if (!updateData || (typeof updateData !== 'object')) {
+        throw new Error('Update data is required')
       }
 
+      // If status is provided, validate it
       const validStatuses = ["pending", "in-progress", "resolved", "closed"]
-      if (!validStatuses.includes(updateData.status)) {
+      if (updateData.status && !validStatuses.includes(updateData.status)) {
         throw new Error('Invalid status. Must be one of: ' + validStatuses.join(', '))
       }
-      
+
       const response = await api.put(`/chat-support/${id}`, updateData)
       return response.data
     } catch (error) {
@@ -117,6 +158,21 @@ export const chatSupportAPI = {
         throw new Error('Support request not found')
       }
       
+      throw error
+    }
+  },
+
+  // Send response email to requester (admin only)
+  sendResponse: async (id, data) => {
+    try {
+      if (!id) throw new Error('Request ID is required')
+      if (!data || !data.response) throw new Error('Response text is required')
+      const response = await api.post(`/chat-support/${id}/send`, { response: data.response })
+      return response.data
+    } catch (error) {
+      console.error(`Error sending response for support request ${id}:`, error)
+      if (error.response?.status === 404) throw new Error('Support request not found')
+      if (error.response?.status === 400) throw new Error(error.response.data.message || 'Invalid data')
       throw error
     }
   },
@@ -216,26 +272,15 @@ export const chatSupportAPI = {
       errors.schoolId = 'School ID must be a valid positive number'
     }
     
-    if (!data.fullName || data.fullName.trim().length < 2) {
-      errors.fullName = 'Full name must be at least 2 characters'
+    if (!data.firstName || data.firstName.trim().length < 2) {
+      errors.firstName = 'First name must be at least 2 characters'
+    }
+    if (!data.lastName || data.lastName.trim().length < 2) {
+      errors.lastName = 'Last name must be at least 2 characters'
     }
     
     if (!data.departmentId) {
       errors.departmentId = 'Department selection is required'
-    }
-    
-    if (!data.birthday) {
-      errors.birthday = 'Birthday is required'
-    } else {
-      const birthDate = new Date(data.birthday)
-      if (isNaN(birthDate.getTime())) {
-        errors.birthday = 'Please enter a valid birthday'
-      } else {
-        const age = (new Date() - birthDate) / (365.25 * 24 * 60 * 60 * 1000)
-        if (age < 16 || age > 100) {
-          errors.birthday = 'Please enter a realistic birthday'
-        }
-      }
     }
     
     if (!data.email) {

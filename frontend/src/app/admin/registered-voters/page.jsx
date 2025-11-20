@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { ChevronLeft, Search, Edit, UserX, Users, Loader2, Eye, EyeOff } from "lucide-react"
+import { ChevronLeft, Search, Edit, UserX, Users, Loader2 } from "lucide-react"
 import Swal from 'sweetalert2'
 import { votersAPI } from '@/lib/api/voters'
 import { departmentsAPI } from '@/lib/api/departments'
@@ -16,7 +16,6 @@ export default function RegisteredVotersPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedDepartment, setSelectedDepartment] = useState("")
   const [departmentStats, setDepartmentStats] = useState({})
-  const [showPasswords, setShowPasswords] = useState({})
   const [pagination, setPagination] = useState({
     currentPage: 1,
     totalPages: 1,
@@ -212,8 +211,35 @@ export default function RegisteredVotersPage() {
   }
 
   const handleEdit = (voter) => {
-    setEditingVoter(voter)
+    setEditingVoter({ ...voter })
     setShowEditModal(true)
+  }
+
+  const handleEditChange = (field, value) => {
+    setEditingVoter(prev => ({
+      ...prev,
+      [field]: value
+    }))
+  }
+
+  const handleSaveEdit = async () => {
+    try {
+      if (!editingVoter.email || editingVoter.email.trim() === "") {
+        showAlert("error", "Error!", "Email cannot be empty")
+        return
+      }
+
+      await votersAPI.update(editingVoter._id, {
+        email: editingVoter.email
+      })
+
+      showAlert("success", "Updated!", "Voter email updated successfully")
+      setShowEditModal(false)
+      setEditingVoter(null)
+      await fetchRegisteredVoters()
+    } catch (error) {
+      showAlert("error", "Error!", error.message || "Failed to update voter")
+    }
   }
 
   const handleDeactivate = async (voterId) => {
@@ -232,23 +258,6 @@ export default function RegisteredVotersPage() {
     }
   }
 
-  const togglePasswordVisibility = (voterId) => {
-    setShowPasswords(prev => ({
-      ...prev,
-      [voterId]: !prev[voterId]
-    }))
-  }
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A'
-    return new Date(dateString).toLocaleDateString()
-  }
-
-  const formatDateTime = (dateString) => {
-    if (!dateString) return 'N/A'
-    return new Date(dateString).toLocaleString()
-  }
-
   const isPasswordExpired = (expiresAt) => {
     if (!expiresAt) return false
     return new Date(expiresAt) < new Date()
@@ -260,6 +269,11 @@ export default function RegisteredVotersPage() {
     const now = new Date()
     const daysUntilExpiry = Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24))
     return daysUntilExpiry <= 30 && daysUntilExpiry > 0
+  }
+
+  const formatDateTime = (dateString) => {
+    if (!dateString) return 'N/A'
+    return new Date(dateString).toLocaleString()
   }
 
   const getDepartmentCardColor = (index) => {
@@ -429,9 +443,6 @@ export default function RegisteredVotersPage() {
               <thead className="bg-[#b0c8fe]/10">
                 <tr>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
-                    Voter ID
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
                     School ID
                   </th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
@@ -450,9 +461,6 @@ export default function RegisteredVotersPage() {
                     Year Level
                   </th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
-                    Password
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
                     Role
                   </th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
@@ -466,7 +474,7 @@ export default function RegisteredVotersPage() {
               <tbody className="bg-white/50 divide-y divide-gray-200/50">
                 {voters.length === 0 ? (
                   <tr>
-                    <td colSpan="11" className="px-3 sm:px-6 py-12 text-center text-[#001f65]/60">
+                    <td colSpan="10" className="px-3 sm:px-6 py-12 text-center text-[#001f65]/60">
                       <Users className="mx-auto h-12 w-12 text-[#001f65]/40 mb-4" />
                       <p className="text-lg font-medium">
                         {selectedDepartment ? "No registered voters found in this department" : "No registered voters found"}
@@ -482,11 +490,6 @@ export default function RegisteredVotersPage() {
                 ) : (
                   voters.map((voter) => (
                     <tr key={voter._id} className="hover:bg-[#b0c8fe]/10">
-                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
-                        <span className="font-mono text-xs bg-[#e9f0fe] px-2 py-1 rounded">
-                          {voter._id.slice(-6).toUpperCase()}
-                        </span>
-                      </td>
                       <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-[#001f65]">{voter.schoolId || 'N/A'}</div>
                       </td>
@@ -518,27 +521,10 @@ export default function RegisteredVotersPage() {
                         {voter.yearLevel || 1}
                       </td>
                       <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-sm font-mono text-[#001f65]">
-                            {showPasswords[voter._id] ? (voter.password || '••••••••') : '••••••••'}
-                          </span>
-                          <button
-                            onClick={() => togglePasswordVisibility(voter._id)}
-                            className="text-gray-400 hover:text-gray-600 transition-colors"
-                          >
-                            {showPasswords[voter._id] ? (
-                              <EyeOff className="w-4 h-4" />
-                            ) : (
-                              <Eye className="w-4 h-4" />
-                            )}
-                          </button>
-                        </div>
-                      </td>
-                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          voter.isOfficer ? "bg-purple-100 text-purple-800" : "bg-blue-100 text-blue-800"
+                          voter.isClassOfficer ? "bg-purple-100 text-purple-800" : "bg-blue-100 text-blue-800"
                         }`}>
-                          {voter.isOfficer ? "Class Officer" : "Student"}
+                          {voter.isClassOfficer ? "Class Officer" : "Student"}
                         </span>
                       </td>
                       <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
@@ -668,9 +654,9 @@ export default function RegisteredVotersPage() {
         {/* Edit Modal */}
         {showEditModal && editingVoter && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-white/20">
+            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl max-w-md w-full border border-white/20">
               <div className="flex justify-between items-center p-6 border-b border-gray-200/50">
-                <h3 className="text-lg font-semibold text-[#001f65]">Registered Voter Details</h3>
+                <h3 className="text-lg font-semibold text-[#001f65]">Edit Voter Email</h3>
                 <button
                   onClick={() => {
                     setShowEditModal(false)
@@ -682,88 +668,25 @@ export default function RegisteredVotersPage() {
                 </button>
               </div>
               <div className="p-6 space-y-4">
-                <div className="font-mono text-xs bg-[#e9f0fe] px-2 py-1 rounded w-fit">
-                  Voter ID: {editingVoter._id.slice(-6).toUpperCase()}
+                <div className="bg-[#e9f0fe] px-3 py-2 rounded">
+                  <p className="text-xs text-[#001f65]/60">School ID</p>
+                  <p className="text-sm font-semibold text-[#001f65]">{editingVoter.schoolId}</p>
+                </div>
+                <div className="bg-[#e9f0fe] px-3 py-2 rounded">
+                  <p className="text-xs text-[#001f65]/60">Name</p>
+                  <p className="text-sm font-semibold text-[#001f65]">{editingVoter.firstName} {editingVoter.middleName} {editingVoter.lastName}</p>
                 </div>
                 <div>
-                  <span className="font-semibold text-[#001f65]">School ID:</span> {editingVoter.schoolId}
+                  <label className="block text-sm font-semibold text-[#001f65] mb-2">Email</label>
+                  <input
+                    type="email"
+                    value={editingVoter.email || ''}
+                    onChange={(e) => handleEditChange('email', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                    placeholder="Enter email address"
+                  />
                 </div>
-                <div>
-                  <span className="font-semibold text-[#001f65]">Name:</span> {editingVoter.firstName} {editingVoter.middleName} {editingVoter.lastName}
-                </div>
-                <div>
-                  <span className="font-semibold text-[#001f65]">Email:</span> {editingVoter.email}
-                </div>
-                <div>
-                  <span className="font-semibold text-[#001f65]">Department:</span> {editingVoter.departmentId?.departmentCode}
-                </div>
-                <div>
-                  <span className="font-semibold text-[#001f65]">Year Level:</span> {editingVoter.yearLevel}
-                </div>
-                <div>
-                  <span className="font-semibold text-[#001f65]">Birthdate:</span> {editingVoter.birthdate ? formatDate(editingVoter.birthdate) : "N/A"}
-                </div>
-                <div>
-                  <span className="font-semibold text-[#001f65]">Registration Date:</span> {formatDate(editingVoter.updatedAt || editingVoter.createdAt)}
-                </div>
-                <div>
-                  <span className="font-semibold text-[#001f65]">Password:</span>{" "}
-                  <span className="font-mono bg-gray-100 px-2 py-1 rounded">
-                    {showPasswords[editingVoter._id] ? (editingVoter.password || '••••••••') : '••••••••'}
-                  </span>
-                  <button
-                    onClick={() => togglePasswordVisibility(editingVoter._id)}
-                    className="ml-2 text-gray-400 hover:text-gray-600 transition-colors inline"
-                  >
-                    {showPasswords[editingVoter._id] ? (
-                      <EyeOff className="w-4 h-4 inline" />
-                    ) : (
-                      <Eye className="w-4 h-4 inline" />
-                    )}
-                  </button>
-                </div>
-                <div>
-                  <span className="font-semibold text-[#001f65]">Password Created At:</span> {formatDateTime(editingVoter.passwordCreatedAt)}
-                </div>
-                <div>
-                  <span className="font-semibold text-[#001f65]">Password Expires At:</span>{" "}
-                  <span className={`${
-                    isPasswordExpired(editingVoter.passwordExpiresAt)
-                      ? 'text-red-600 font-medium'
-                      : isPasswordExpiringSoon(editingVoter.passwordExpiresAt)
-                        ? 'text-yellow-600 font-medium'
-                        : 'text-[#001f65]'
-                  }`}>
-                    {formatDateTime(editingVoter.passwordExpiresAt)}
-                  </span>
-                  {isPasswordExpired(editingVoter.passwordExpiresAt) && (
-                    <span className="text-xs text-red-500 ml-2">Password has expired</span>
-                  )}
-                  {isPasswordExpiringSoon(editingVoter.passwordExpiresAt) && !isPasswordExpired(editingVoter.passwordExpiresAt) && (
-                    <span className="text-xs text-yellow-600 ml-2">Password expires soon</span>
-                  )}
-                </div>
-                <div>
-                  <span className="font-semibold text-[#001f65]">Account Status:</span>{" "}
-                  <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                    editingVoter.isActive
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-red-100 text-red-800'
-                  }`}>
-                    {editingVoter.isActive ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
-                <div>
-                  <span className="font-semibold text-[#001f65]">Roles & Status:</span>{" "}
-                  <span className="inline-flex px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 ml-2">
-                    Registered
-                  </span>
-                  {editingVoter.isOfficer
-                    ? <span className="inline-flex px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 ml-2">Class Officer</span>
-                    : <span className="inline-flex px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 ml-2">Student</span>
-                  }
-                </div>
-                <div className="flex justify-end space-x-3 pt-6">
+                <div className="flex justify-end space-x-3 pt-4">
                   <button
                     onClick={() => {
                       setShowEditModal(false)
@@ -771,7 +694,13 @@ export default function RegisteredVotersPage() {
                     }}
                     className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
                   >
-                    Close
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveEdit}
+                    className="px-4 py-2 text-sm font-medium text-white bg-[#001f65] hover:bg-blue-900 rounded-md transition-colors"
+                  >
+                    Save Changes
                   </button>
                 </div>
               </div>

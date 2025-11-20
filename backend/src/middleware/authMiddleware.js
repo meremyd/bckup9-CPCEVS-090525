@@ -62,42 +62,75 @@ const authorizeStaffAndVoters = (...staffRoles) => {
 
 const voterAuthMiddleware = async (req, res, next) => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '')
+    // Try to get token from both possible header formats
+    let token = req.header('Authorization')?.replace('Bearer ', '')
+    
+    // Fallback to x-auth-token if Authorization header is not present
+    if (!token) {
+      token = req.header('x-auth-token')
+    }
 
     if (!token) {
+      console.log('voterAuthMiddleware: No token provided')
       return res.status(401).json({ message: 'Access denied. No token provided.' })
     }
 
-    // Ensure we have a secret available; fall back to the same default used elsewhere
+    // Ensure we have a secret available
     const secret = process.env.JWT_SECRET || 'your-secret-key'
     if (!secret) {
-      console.error('Voter auth error: JWT secret is not defined')
+      console.error('voterAuthMiddleware: JWT secret is not defined')
       return res.status(500).json({ message: 'Server misconfiguration: missing JWT secret' })
     }
 
+    // Verify and decode token
     const decoded = jwt.verify(token, secret)
+    
+    // DETAILED LOGGING for debugging
+    console.log('voterAuthMiddleware: Token decoded:', {
+      hasVoterId: !!decoded.voterId,
+      hasUserId: !!decoded.userId,
+      userType: decoded.userType,
+      schoolId: decoded.schoolId
+    })
     
     // Check if this is a voter token (has voterId instead of userId)
     if (!decoded.voterId) {
+      console.log('voterAuthMiddleware: Token does not have voterId')
       return res.status(401).json({ message: 'Invalid token. Voter access required.' })
     }
 
     // Get voter information
     const voter = await Voter.findById(decoded.voterId)
-    if (!voter || !voter.isActive) {
-      return res.status(401).json({ message: 'Voter account not found or inactive.' })
+    if (!voter) {
+      console.log('voterAuthMiddleware: Voter not found for ID:', decoded.voterId)
+      return res.status(401).json({ message: 'Voter account not found.' })
+    }
+    
+    if (!voter.isActive) {
+      console.log('voterAuthMiddleware: Voter account is inactive:', decoded.voterId)
+      return res.status(401).json({ message: 'Voter account is inactive.' })
     }
 
+    // Attach voter info to request
     req.user = {
       voterId: decoded.voterId,
       schoolId: voter.schoolId,
       userType: 'voter'
     }
     
+    console.log('voterAuthMiddleware: Authentication successful for voter:', voter.schoolId)
     next()
   } catch (error) {
-    console.error('Voter auth error:', error)
-    res.status(401).json({ message: 'Invalid token.' })
+    console.error('voterAuthMiddleware error:', error.message)
+    
+    // Provide more specific error messages
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Token has expired. Please login again.' })
+    } else if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ message: 'Invalid token format.' })
+    }
+    
+    res.status(401).json({ message: 'Authentication failed.' })
   }
 }
 

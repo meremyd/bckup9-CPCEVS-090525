@@ -169,7 +169,6 @@ export default function VoterDepartmentalResultsPage() {
   const formatTimeDisplay = (timeString) => {
     if (!timeString) return ''
     try {
-      // If it's already formatted as HH:mm, use it directly
       if (typeof timeString === 'string' && timeString.match(/^\d{2}:\d{2}$/)) {
         const [hours, minutes] = timeString.split(':').map(Number)
         const period = hours >= 12 ? 'PM' : 'AM'
@@ -177,7 +176,6 @@ export default function VoterDepartmentalResultsPage() {
         return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`
       }
       
-      // Otherwise parse as Date
       const date = new Date(timeString)
       const hours = date.getHours()
       const minutes = date.getMinutes()
@@ -189,9 +187,18 @@ export default function VoterDepartmentalResultsPage() {
     }
   }
 
+  // ✅ UPDATED: Calculate percentage based on TOTAL VOTES (like SSG)
+  const calculatePercentage = (voteCount, totalVotes) => {
+    if (!totalVotes || totalVotes === 0) return 0
+    return ((voteCount / totalVotes) * 100).toFixed(1)
+  }
+
   const renderCandidateCard = (candidate, index, position) => {
     const ballotIsOpen = isBallotOpen(position)
-    const totalParticipants = position.totalParticipants || 0
+    const totalVotes = position.totalVotes || 0
+    
+    // ✅ Calculate percentage based on total votes cast, not max possible votes
+    const percentage = calculatePercentage(candidate.voteCount || 0, totalVotes)
     
     return (
       <div
@@ -200,14 +207,12 @@ export default function VoterDepartmentalResultsPage() {
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4 min-w-0 flex-1">
-            {/* Rank Badge */}
             <div className={`flex-shrink-0 w-12 h-12 sm:w-14 sm:h-14 text-white rounded-lg flex items-center justify-center font-bold text-2xl ${
               index === 0 ? 'bg-red-600' : index === 1 ? 'bg-blue-600' : 'bg-gray-600'
             }`}>
               {index + 1}
             </div>
 
-            {/* Candidate Info */}
             <div className="min-w-0 flex-1">
               {ballotIsOpen ? (
                 <>
@@ -232,14 +237,12 @@ export default function VoterDepartmentalResultsPage() {
             </div>
           </div>
 
-          {/* Vote Count */}
           <div className="text-right flex-shrink-0 ml-4">
             <div className="text-2xl font-bold text-[#001f65]">
-              {candidate.voteCount?.toLocaleString() ?? 0}
+              {(candidate.voteCount || 0).toLocaleString()}
             </div>
-            {candidate.percentage !== undefined && (
-              <div className="text-sm text-gray-500">{candidate.percentage}%</div>
-            )}
+            {/* ✅ Display recalculated percentage */}
+            <div className="text-sm text-gray-500">{percentage}%</div>
             {index === 0 && candidate.voteCount > 0 && !ballotIsOpen && (
               <div className="mt-1">
                 <span className="inline-block px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded">
@@ -258,11 +261,9 @@ export default function VoterDepartmentalResultsPage() {
     const ballotIsOpen = isBallotOpen(position)
     const totalVotes = position.totalVotes || 0
     const totalParticipants = position.totalParticipants || 0
-    const maxPossibleVotes = totalParticipants * (position.maxVotes || 1)
 
     return (
       <div className="mb-8" key={position._id}>
-        {/* Position Header Card */}
         <div className="bg-white/90 backdrop-blur-sm rounded-xl p-4 sm:p-6 shadow-lg border border-white/20 mb-4">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div className="flex-1">
@@ -270,9 +271,10 @@ export default function VoterDepartmentalResultsPage() {
                 {position.positionName}
               </h2>
               <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
+                {/* ✅ UPDATED: Show total votes cast instead of max possible votes */}
                 <div className="flex items-center gap-1">
                   <CheckCircle className="w-4 h-4" />
-                  <span>Votes Cast: <span className="font-semibold">{totalVotes} of {maxPossibleVotes}</span></span>
+                  <span>Total Votes: <span className="font-semibold">{totalVotes}</span></span>
                 </div>
                 <div className="flex items-center gap-1">
                   <Users className="w-4 h-4" />
@@ -281,7 +283,6 @@ export default function VoterDepartmentalResultsPage() {
               </div>
             </div>
             
-            {/* Ballot Status Badge */}
             {timing && timing.status !== 'not_scheduled' && (
               <div className={`flex items-center gap-2 px-3 py-2 rounded-lg flex-shrink-0 whitespace-nowrap ${
                 ballotIsOpen 
@@ -296,7 +297,6 @@ export default function VoterDepartmentalResultsPage() {
             )}
           </div>
 
-          {/* Ballot Status Info Messages */}
           {ballotIsOpen && timing && (
             <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
               <p className="text-xs sm:text-sm text-amber-800 font-medium flex items-center gap-2">
@@ -332,7 +332,6 @@ export default function VoterDepartmentalResultsPage() {
           )}
         </div>
 
-        {/* Candidates List */}
         {position.candidates.length === 0 ? (
           <div className="bg-white/95 backdrop-blur-sm rounded-xl p-6 sm:p-8 shadow-lg border border-white/20 text-center">
             <Award className="w-12 h-12 text-gray-400 mx-auto mb-3" />
@@ -383,7 +382,6 @@ export default function VoterDepartmentalResultsPage() {
 
   return (
     <VoterLayout>
-      {/* Navbar */}
       <div className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/30 px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center min-w-0">
@@ -408,10 +406,8 @@ export default function VoterDepartmentalResultsPage() {
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="p-4 lg:p-6">
         <div className="max-w-2xl mx-auto">
-          {/* Header */}
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-full mb-4">
               <Trophy className="w-8 h-8 text-white" />
@@ -420,7 +416,6 @@ export default function VoterDepartmentalResultsPage() {
             <p className="text-lg text-blue-100 mb-1">{formatDateTime(election?.electionDate)}</p>
             <p className="text-sm text-blue-200/80">Departmental Election Results</p>
             
-            {/* Total Participants Summary */}
             {results?.totalParticipants > 0 && (
               <div className="mt-4 inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-2 rounded-lg">
                 <Users className="w-5 h-5 text-white" />

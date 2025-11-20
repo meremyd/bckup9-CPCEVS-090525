@@ -367,81 +367,82 @@ export const votersAPI = {
 
   // Get voter profile (for authenticated voters)
   getProfile: async () => {
-  try {
-    const response = await api.get('/voters/profile')
-    return response.data
-  } catch (error) {
-    console.error('Error fetching voter profile:', error)
-    throw error
-  }
-},
+    try {
+      // Force use of voter token by ensuring the URL matches voter patterns
+      const response = await api.get('/voters/profile')
+      return response.data
+    } catch (error) {
+      console.error('Error fetching voter profile:', error)
+      throw error
+    }
+  },
 
   // Update voter profile (for authenticated voters)
   updateProfile: async (profileData) => {
-  try {
-    // Validate password fields if password update is requested
-    if (profileData.newPassword) {
-      if (!profileData.currentPassword) {
-        throw new Error('Current password is required to set a new password')
+    try {
+      // Validate year level if provided
+      if (profileData.yearLevel !== undefined) {
+        const yearLevel = Number(profileData.yearLevel)
+        if (isNaN(yearLevel) || yearLevel < 1 || yearLevel > 4) {
+          throw new Error('Year level must be between 1 and 4')
+        }
       }
-      if (profileData.newPassword !== profileData.confirmNewPassword) {
-        throw new Error('New passwords do not match')
-      }
-      if (profileData.newPassword.length < 6) {
-        throw new Error('New password must be at least 6 characters long')
-      }
-    }
 
+      // Validate password fields if password update is requested
+      if (profileData.newPassword) {
+        if (!profileData.currentPassword) {
+          throw new Error('Current password is required to set a new password')
+        }
+        if (profileData.newPassword !== profileData.confirmNewPassword) {
+          throw new Error('New passwords do not match')
+        }
+        if (profileData.newPassword.length < 6) {
+          throw new Error('New password must be at least 6 characters long')
+        }
+      }
+
+      const response = await api.put('/voters/profile', profileData)
+      return response.data
+    } catch (error) {
+      console.error('Error updating voter profile:', error)
+      throw error
+    }
+  },
+
+validateProfileUpdate: (profileData) => {
+    const errors = []
+    
+    // Validate email if provided
+    if (profileData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profileData.email)) {
+      errors.push('Invalid email format')
+    }
+    
     // Validate year level if provided
     if (profileData.yearLevel !== undefined) {
       const yearLevel = Number(profileData.yearLevel)
       if (isNaN(yearLevel) || yearLevel < 1 || yearLevel > 4) {
-        throw new Error('Year level must be between 1 and 4')
+        errors.push('Year level must be between 1 and 4')
       }
     }
-
-    const response = await api.put('/voters/profile', profileData)
-    return response.data
-  } catch (error) {
-    console.error('Error updating voter profile:', error)
-    throw error
-  }
-},
-
-validateProfileUpdate: (profileData) => {
-  const errors = []
-  
-  // Validate email if provided
-  if (profileData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profileData.email)) {
-    errors.push('Invalid email format')
-  }
-  
-  // Validate year level if provided
-  if (profileData.yearLevel !== undefined) {
-    const yearLevel = Number(profileData.yearLevel)
-    if (isNaN(yearLevel) || yearLevel < 1 || yearLevel > 4) {
-      errors.push('Year level must be between 1 and 4')
+    
+    // Validate password update if requested
+    if (profileData.newPassword) {
+      if (!profileData.currentPassword) {
+        errors.push('Current password is required')
+      }
+      if (profileData.newPassword !== profileData.confirmNewPassword) {
+        errors.push('New passwords do not match')
+      }
+      if (profileData.newPassword.length < 6) {
+        errors.push('New password must be at least 6 characters long')
+      }
     }
-  }
-  
-  // Validate password update if requested
-  if (profileData.newPassword) {
-    if (!profileData.currentPassword) {
-      errors.push('Current password is required')
+    
+    return {
+      isValid: errors.length === 0,
+      errors
     }
-    if (profileData.newPassword !== profileData.confirmNewPassword) {
-      errors.push('New passwords do not match')
-    }
-    if (profileData.newPassword.length < 6) {
-      errors.push('New password must be at least 6 characters long')
-    }
-  }
-  
-  return {
-    isValid: errors.length === 0,
-    errors
-  }
-},
+  },
 
   // Validate voter data before submission - UPDATED: Remove required validation for optional fields
   validateVoterData: (voterData) => {

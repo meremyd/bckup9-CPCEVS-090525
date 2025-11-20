@@ -24,6 +24,7 @@ api.interceptors.request.use(
   // Not for admin routes that happen to contain "voter" in the path
   // Additionally: when checking auth (/auth/me) prefer the voter token if one exists
   const isVoterAuthRoute = config.url?.includes('/auth/voter') || 
+              config.url?.includes('/voters/profile') ||
               config.url?.includes('/voter/') ||
               config.url?.startsWith('/voter/') ||
               (config.url?.includes('/auth/me') && !!voterToken)

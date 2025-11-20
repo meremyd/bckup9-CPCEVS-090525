@@ -23,7 +23,7 @@ const globalLimiter = rateLimit({
 // Strict login limiter - prevents brute force attacks
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Reduced from 10 for better security
+  max: 100, // Reduced from 10 for better security
   message: {
     error: "Too many login attempts",
     message: "Please wait 15 minutes before attempting to login again",

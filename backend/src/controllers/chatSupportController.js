@@ -3,6 +3,9 @@ const ChatSupport = require("../models/ChatSupport")
 const Department = require("../models/Department")
 const Voter = require("../models/Voter")
 const AuditLog = require("../models/AuditLog")
+const { v4: uuidv4 } = require('uuid')
+const fs = require('fs')
+const path = require('path')
 
 class ChatSupportController {
   // Helper method to validate ObjectId format
@@ -42,14 +45,14 @@ class ChatSupportController {
   // Submit chat support request
   static async submitRequest(req, res, next) {
     try {
-      const { schoolId, fullName, departmentId, birthday, email, message } = req.body
+  const { schoolId, firstName, middleName, lastName, departmentId, email, message } = req.body
 
       // Enhanced validation
       const errors = []
       if (!schoolId) errors.push("School ID is required")
-      if (!fullName) errors.push("Full name is required")
-      if (!departmentId) errors.push("Department is required")
-      if (!birthday) errors.push("Birthday is required")
+  if (!firstName) errors.push("First name is required")
+  if (!lastName) errors.push("Last name is required")
+  if (!departmentId) errors.push("Department is required")
       if (!email) errors.push("Email is required")
       if (!message) errors.push("Message is required")
 
@@ -81,9 +84,20 @@ class ChatSupportController {
         return next(error)
       }
 
-      // Validate department exists
-      ChatSupportController.validateObjectId(departmentId, 'department ID')
-      const department = await Department.findById(departmentId)
+      // Validate department exists. Accept either an ObjectId or a departmentCode string.
+      let department = null
+      if (mongoose.Types.ObjectId.isValid(departmentId)) {
+        department = await Department.findById(departmentId)
+      } else {
+        // try lookup by departmentCode or degreeProgram
+        department = await Department.findOne({
+          $or: [
+            { departmentCode: departmentId },
+            { degreeProgram: departmentId }
+          ]
+        })
+      }
+
       if (!department) {
         await ChatSupportController.logAuditAction(
           "UNAUTHORIZED_ACCESS_ATTEMPT",
@@ -97,7 +111,10 @@ class ChatSupportController {
         return next(error)
       }
 
-      // Enhanced email validation
+  // Ensure we use the resolved department ObjectId when saving
+  const resolvedDepartmentId = department._id
+
+  // Enhanced email validation
       const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
       if (!emailRegex.test(email)) {
         await ChatSupportController.logAuditAction(
@@ -112,21 +129,7 @@ class ChatSupportController {
         return next(error)
       }
 
-      // Validate birthday
-      const birthdayDate = new Date(birthday)
-      if (isNaN(birthdayDate.getTime())) {
-        const error = new Error("Please enter a valid birthday")
-        error.statusCode = 400
-        return next(error)
-      }
-
-      // Check for reasonable age limits (optional)
-      const age = (new Date() - birthdayDate) / (365.25 * 24 * 60 * 60 * 1000)
-      if (age < 16 || age > 100) {
-        const error = new Error("Please enter a valid birthday")
-        error.statusCode = 400
-        return next(error)
-      }
+      // No birthday required anymore
 
       // Check if voter exists (optional linkage)
       const voter = await Voter.findOne({ schoolId: schoolIdNumber })
@@ -156,14 +159,23 @@ class ChatSupportController {
       }
 
       // Create support request
+      // If a file was uploaded by multer, attach its public URL/path
+      const photoPath = req.file ? `/uploads/chat-support/${req.file.filename}` : null
+
+      // Generate a human-readable ticket id for tracking
+      const ticketId = `CS-${Date.now().toString(36)}-${uuidv4().split('-')[0]}`
+
       const chatSupport = new ChatSupport({
         schoolId: schoolIdNumber,
         voterId: voter ? voter._id : null,
-        fullName: fullName.trim(),
-        departmentId,
-        birthday: birthdayDate,
+        firstName: firstName.trim(),
+        middleName: middleName ? middleName.trim() : '',
+        lastName: lastName.trim(),
+        ticketId,
+        departmentId: resolvedDepartmentId,
         email: email.toLowerCase().trim(),
         message: message.trim(),
+        photo: photoPath,
         status: "pending",
       })
 
@@ -172,7 +184,7 @@ class ChatSupportController {
       await ChatSupportController.logAuditAction(
         "CHAT_SUPPORT_REQUEST",
         { schoolId: schoolIdNumber, _id: voter?._id },
-        `Support request submitted: ${fullName} (${email}) - ID: ${chatSupport._id}`,
+        `Support request submitted: ${firstName} ${middleName || ''} ${lastName} (${email}) - ID: ${chatSupport._id}`,
         req,
         !!voter
       )
@@ -239,12 +251,16 @@ class ChatSupportController {
       // Search filter
       if (search) {
         const searchRegex = new RegExp(search.trim(), 'i')
+        const schoolIdCondition = isNaN(search) ? null : Number(search)
         filter.$or = [
-          { fullName: searchRegex },
+          { firstName: searchRegex },
+          { middleName: searchRegex },
+          { lastName: searchRegex },
+          { ticketId: searchRegex },
           { email: searchRegex },
           { message: searchRegex },
-          { schoolId: isNaN(search) ? null : Number(search) }
-        ].filter(condition => condition.schoolId !== null)
+          ...(schoolIdCondition !== null ? [{ schoolId: schoolIdCondition }] : [])
+        ]
       }
 
       // Pagination
@@ -329,11 +345,12 @@ class ChatSupportController {
       }
 
       // Log successful access to specific request
+      const requesterName = `${request.firstName || ''} ${request.middleName || ''} ${request.lastName || ''}`.replace(/\s+/g, ' ').trim()
       await AuditLog.create({
         action: "SYSTEM_ACCESS",
         username: req.user?.username || "system",
         userId: req.user?.userId,
-        details: `Admin viewed chat support request ${id} from ${request.fullName} (School ID: ${request.schoolId})`,
+        details: `Admin viewed chat support request ${id} from ${requesterName} (School ID: ${request.schoolId})`,
         ipAddress: req.ip,
         userAgent: req.get("User-Agent"),
       })
@@ -351,13 +368,77 @@ class ChatSupportController {
     }
   }
 
+  // Serve photo for a chat support request (admin protected)
+  static async getPhoto(req, res, next) {
+    try {
+      const { id } = req.params
+      const request = await ChatSupport.findById(id)
+      if (!request || !request.photo) {
+        const error = new Error('Photo not found')
+        error.statusCode = 404
+        return next(error)
+      }
+
+      const photo = request.photo
+
+      // If stored as server file path (/uploads/...), serve the file
+      if (typeof photo === 'string' && (photo.startsWith('/uploads') || photo.startsWith('uploads/'))) {
+        const relPath = photo.replace(/^\/+/, '') // remove leading slash
+        const filePath = path.join(__dirname, '../../', relPath)
+        if (fs.existsSync(filePath)) {
+          return res.sendFile(filePath)
+        } else {
+          const error = new Error('Photo file not found on server')
+          error.statusCode = 404
+          return next(error)
+        }
+      }
+
+      // If photo is a data URI
+      if (typeof photo === 'string' && photo.startsWith('data:')) {
+        const matches = photo.match(/^data:(.+);base64,(.+)$/)
+        if (!matches) {
+          const err = new Error('Invalid data URI')
+          err.statusCode = 400
+          return next(err)
+        }
+        const contentType = matches[1]
+        const data = Buffer.from(matches[2], 'base64')
+        res.set('Content-Type', contentType)
+        return res.send(data)
+      }
+
+      // If photo is raw base64 string
+      if (typeof photo === 'string' && /^[A-Za-z0-9+/=\s]+$/.test(photo) && photo.replace(/\s+/g, '').length > 100) {
+        const cleaned = photo.replace(/\s+/g, '')
+        const data = Buffer.from(cleaned, 'base64')
+        res.set('Content-Type', 'image/jpeg')
+        return res.send(data)
+      }
+
+      // If photo stored as Buffer-like object { type: 'Buffer', data: [...] }
+      if (typeof photo === 'object' && photo.data && Array.isArray(photo.data)) {
+        const buf = Buffer.from(photo.data)
+        res.set('Content-Type', 'image/jpeg')
+        return res.send(buf)
+      }
+
+      // Fallback
+      const error = new Error('Unsupported photo format')
+      error.statusCode = 400
+      return next(error)
+    } catch (error) {
+      next(error)
+    }
+  }
+
   // Update chat support request status
   static async updateRequestStatus(req, res, next) {
     try {
       const { id } = req.params
       const { status, response } = req.body
 
-      const validStatuses = ["pending", "in-progress", "resolved", "closed"]
+  const validStatuses = ["pending", "in-progress", "resolved"]
       if (!validStatuses.includes(status)) {
         await AuditLog.create({
           action: "UNAUTHORIZED_ACCESS_ATTEMPT",
@@ -412,11 +493,12 @@ class ChatSupportController {
 
       // Log response if provided
       if (response) {
+        const requesterName = `${request.firstName || ''} ${request.middleName || ''} ${request.lastName || ''}`.replace(/\s+/g, ' ').trim()
         await AuditLog.create({
           action: "CHAT_SUPPORT_RESPONSE",
           username: req.user?.username || "system",
           userId: req.user?.userId,
-          details: `Response provided for chat support request ${id} from ${request.fullName} (School ID: ${request.schoolId})`,
+          details: `Response provided for chat support request ${id} from ${requesterName} (School ID: ${request.schoolId})`,
           ipAddress: req.ip,
           userAgent: req.get("User-Agent"),
         })
@@ -434,6 +516,85 @@ class ChatSupportController {
         ipAddress: req.ip,
         userAgent: req.get("User-Agent"),
       })
+      next(error)
+    }
+  }
+
+  // Send response email to the requester (admin only)
+  static async sendResponse(req, res, next) {
+    try {
+      const { id } = req.params
+      const { response } = req.body
+
+      if (!response || response.trim().length === 0) {
+        const err = new Error('Response text is required')
+        err.statusCode = 400
+        return next(err)
+      }
+
+      const request = await ChatSupport.findById(id)
+        .populate('departmentId', 'departmentCode degreeProgram college')
+        .populate('voterId', 'firstName middleName lastName email schoolId')
+
+      if (!request) {
+        const error = new Error('Support request not found')
+        error.statusCode = 404
+        return next(error)
+      }
+
+      const to = request.email
+      if (!to) {
+        const error = new Error('Requester email not available')
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Update request record with the response and mark respondedAt/status first
+      const baseText = response.trim()
+      const appended = `\n\nTicket ID: ${request.ticketId || request._id}\nKindly check your email for upcoming response.`
+      const text = `${baseText}${appended}`
+
+      request.response = text
+      request.respondedAt = new Date()
+      // After admin provided the response, mark the request as in-progress
+      request.status = 'in-progress'
+      await request.save()
+
+      // Attempt to send email but do not fail the whole request if mail sending fails
+      let emailSent = false
+      try {
+        const { sendMail } = require('../utils/mailer')
+        const subject = `Response to your support request (${request.ticketId || request._id})`
+        const html = `<div style="font-family: Arial, sans-serif; line-height:1.4;">${baseText.replace(/\n/g, '<br/>')}<br/><br/><strong>Ticket ID:</strong> ${request.ticketId || request._id}<br/><em>Kindly check your email for upcoming response.</em></div>`
+        await sendMail({ to, subject, text, html })
+        emailSent = true
+      } catch (mailErr) {
+        console.error('Warning: response recorded but email send failed:', mailErr)
+        // Log audit action for failed email send but continue
+        await ChatSupportController.logAuditAction(
+          'CHAT_SUPPORT_RESPONSE_EMAIL_FAILED',
+          req.user,
+          `Email send failed for chat support request ${id}: ${mailErr && mailErr.message}`,
+          req
+        )
+      }
+
+      await ChatSupportController.logAuditAction(
+        'CHAT_SUPPORT_RESPONSE',
+        req.user,
+        `Response recorded for request ${id} (emailSent: ${emailSent})`,
+        req
+      )
+
+      // Return clear JSON indicating whether email was delivered
+      res.json({
+        success: true,
+        message: emailSent ? 'Response sent and recorded' : 'Response recorded (email delivery failed)',
+        emailSent,
+        request,
+      })
+    } catch (error) {
+      console.error('Error sending response email:', error)
       next(error)
     }
   }
@@ -594,11 +755,12 @@ class ChatSupportController {
       await ChatSupport.findByIdAndDelete(id)
 
       // Log the deletion
+      const deletedName = `${request.firstName || ''} ${request.middleName || ''} ${request.lastName || ''}`.replace(/\s+/g, ' ').trim()
       await AuditLog.create({
         action: "DATA_DELETION",
         username: req.user?.username || "system",
         userId: req.user?.userId,
-        details: `Chat support request ${id} deleted by ${req.user?.username} - Request from ${request.fullName} (School ID: ${request.schoolId})`,
+        details: `Chat support request ${id} deleted by ${req.user?.username} - Request from ${deletedName} (School ID: ${request.schoolId})`,
         ipAddress: req.ip,
         userAgent: req.get("User-Agent"),
       })
@@ -637,7 +799,7 @@ class ChatSupportController {
         return next(error)
       }
 
-      const validStatuses = ["pending", "in-progress", "resolved", "closed"]
+  const validStatuses = ["pending", "in-progress", "resolved"]
       if (!validStatuses.includes(status)) {
         await AuditLog.create({
           action: "UNAUTHORIZED_ACCESS_ATTEMPT",
@@ -718,21 +880,24 @@ class ChatSupportController {
 
       if (format === 'csv') {
         // Convert to CSV format
-        const csvData = requests.map(request => ({
-          'Request ID': request._id,
-          'School ID': request.schoolId,
-          'Full Name': request.fullName,
-          'Email': request.email,
-          'Department': request.departmentId?.degreeProgram || 'N/A',
-          'Department Code': request.departmentId?.departmentCode || 'N/A',
-          'College': request.departmentId?.college || 'N/A',
-          'Year Level': request.voterId?.yearLevel || 'N/A',
-          'Status': request.status,
-          'Message': request.message,
-          'Response': request.response || '',
-          'Submitted At': request.submittedAt,
-          'Responded At': request.respondedAt || ''
-        }))
+        const csvData = requests.map(request => {
+          const fullName = `${request.firstName || ''} ${request.middleName || ''} ${request.lastName || ''}`.replace(/\s+/g, ' ').trim()
+          return {
+            'Request ID': request._id,
+            'School ID': request.schoolId,
+            'Full Name': fullName,
+            'Email': request.email,
+            'Department': request.departmentId?.degreeProgram || 'N/A',
+            'Department Code': request.departmentId?.departmentCode || 'N/A',
+            'College': request.departmentId?.college || 'N/A',
+            'Year Level': request.voterId?.yearLevel || 'N/A',
+            'Status': request.status,
+            'Message': request.message,
+            'Response': request.response || '',
+            'Submitted At': request.submittedAt,
+            'Responded At': request.respondedAt || ''
+          }
+        })
 
         res.setHeader('Content-Type', 'text/csv')
         res.setHeader('Content-Disposition', 'attachment; filename=chat-support-requests.csv')

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { departmentalElectionsAPI } from "@/lib/api/departmentalElections"
 import { votingAPI } from "@/lib/api/voting"
+import SAODepartmentalLayout from "@/components/SAODepartmentalLayout"
 import Swal from 'sweetalert2'
 import { 
   PieChart, 
@@ -14,6 +15,7 @@ import {
 } from 'recharts'
 import { 
   BarChart3,
+  Users,
   Award,
   AlertCircle,
   Loader2,
@@ -44,10 +46,7 @@ export default function SAODepartmentalStatisticsPage() {
   const deptElectionId = searchParams.get('deptElectionId')
 
   const COLORS = {
-    primary: ['#001f65', '#003399', '#0052cc', '#0066ff', '#3385ff', '#66a3ff', '#99c2ff', '#cce0ff'],
-    success: ['#059669', '#10b981', '#34d399', '#6ee7b7', '#a7f3d0'],
-    warning: ['#d97706', '#f59e0b', '#fbbf24', '#fcd34d', '#fde68a'],
-    info: ['#0ea5e9', '#38bdf8', '#7dd3fc', '#bae6fd', '#e0f2fe']
+    primary: ['#001f65', '#003399', '#0052cc', '#0066ff', '#3385ff', '#66a3ff', '#99c2ff', '#cce0ff']
   }
 
   useEffect(() => {
@@ -78,7 +77,8 @@ export default function SAODepartmentalStatisticsPage() {
     }
   }, [isAuthenticated, deptElectionId])
 
-  const handlePasswordSubmit = () => {
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault()
     setAuthError('')
 
     if (password === 'P@ssword') {
@@ -124,15 +124,23 @@ export default function SAODepartmentalStatisticsPage() {
   const fetchResultsData = async () => {
     try {
       const response = await votingAPI.getDepartmentalElectionLiveResults(deptElectionId)
-      if (response?.success) {
+      
+      if (response?.success && response?.data) {
         setResultsData(response.data)
         setPositions(response.data.positions || [])
         if (response.data.positions && response.data.positions.length > 0) {
           setSelectedPosition(response.data.positions[0])
         }
+      } else if (response?.data?.positions) {
+        setResultsData(response.data)
+        setPositions(response.data.positions || [])
+        if (response.data.positions.length > 0) {
+          setSelectedPosition(response.data.positions[0])
+        }
       }
     } catch (error) {
       console.error("Error fetching results:", error)
+      setPositions([])
     }
   }
 
@@ -239,6 +247,9 @@ export default function SAODepartmentalStatisticsPage() {
             `${candidate.voterId.firstName} ${candidate.voterId.lastName}` : 
             `Candidate #${candidate.candidateNumber}`
           
+          const totalVotes = position.totalVotes || 0
+          const percentage = totalVotes > 0 ? ((candidate.voteCount / totalVotes) * 100).toFixed(1) : '0.0'
+          
           summaryHTML += `
             <div class="flex items-center justify-between py-2 px-3 rounded ${isWinner ? 'bg-yellow-100 border-l-4 border-yellow-500' : ''}">
               <div class="flex items-center gap-2">
@@ -248,7 +259,7 @@ export default function SAODepartmentalStatisticsPage() {
               </div>
               <div class="text-right">
                 <div class="font-bold ${isWinner ? 'text-[#001f65]' : 'text-gray-700'}">${candidate.voteCount?.toLocaleString() || 0}</div>
-                <div class="text-xs text-gray-500">${candidate.percentage ? `${candidate.percentage.toFixed(1)}%` : '0%'}</div>
+                <div class="text-xs text-gray-500">${percentage}%</div>
               </div>
             </div>
           `
@@ -275,15 +286,19 @@ export default function SAODepartmentalStatisticsPage() {
   const getPositionChartData = (position) => {
     if (!position || !position.candidates) return []
     
+    const totalVotes = position.totalVotes || 0
+    
     return position.candidates.map((candidate) => {
       const candidateName = candidate.voterId ? 
         `${candidate.voterId.firstName} ${candidate.voterId.lastName}` : 
         `Candidate #${candidate.candidateNumber}`
       
+      const percentage = totalVotes > 0 ? ((candidate.voteCount || 0) / totalVotes) * 100 : 0
+      
       return {
         name: candidateName,
         votes: candidate.voteCount || 0,
-        percentage: candidate.percentage || 0
+        percentage: percentage
       }
     })
   }
@@ -323,154 +338,168 @@ export default function SAODepartmentalStatisticsPage() {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-8 w-full max-w-md">
-          <div className="text-center mb-6">
-            <Lock className="w-12 h-12 mx-auto text-[#001f65] mb-4" />
-            <h2 className="text-2xl font-bold text-[#001f65] mb-2">Restricted Access</h2>
-            <p className="text-gray-600">Enter password to view statistics</p>
-          </div>
-
-          <div className="space-y-4">
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handlePasswordSubmit()}
-                placeholder="Enter password"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent pr-12"
-              />
-              <button
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
-              >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              </button>
+      <SAODepartmentalLayout
+        deptElectionId={deptElectionId}
+        title="Election Statistics"
+        subtitle="Statistical Analysis & Results"
+        activeItem="statistics"
+      >
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-8 w-full max-w-md">
+            <div className="text-center mb-6">
+              <Lock className="w-12 h-12 mx-auto text-[#001f65] mb-4" />
+              <h2 className="text-2xl font-bold text-[#001f65] mb-2">Restricted Access</h2>
+              <p className="text-gray-600">Enter password to view statistics</p>
             </div>
 
-            {authError && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center">
-                <AlertCircle className="w-5 h-5 text-red-500 mr-2 flex-shrink-0" />
-                <p className="text-red-700 text-sm">{authError}</p>
+            <div className="space-y-4">
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter password"
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handlePasswordSubmit(e)
+                    }
+                  }}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent pr-12"
+                />
+                <button
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
               </div>
-            )}
 
-            <button
-              onClick={handlePasswordSubmit}
-              className="w-full bg-[#001f65] hover:bg-[#003399] text-white font-medium py-3 px-4 rounded-lg transition-colors"
-            >
-              Access Statistics
-            </button>
-          </div>
+              {authError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center">
+                  <AlertCircle className="w-5 h-5 text-red-500 mr-2 flex-shrink-0" />
+                  <p className="text-red-700 text-sm">{authError}</p>
+                </div>
+              )}
 
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => router.push('/sao/departmental')}
-              className="text-sm text-gray-600 hover:text-[#001f65] transition-colors"
-            >
-              ← Back to Departmental Elections
-            </button>
+              <button
+                onClick={handlePasswordSubmit}
+                className="w-full bg-[#001f65] hover:bg-[#003399] text-white font-medium py-3 px-4 rounded-lg transition-colors"
+              >
+                Access Statistics
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      </SAODepartmentalLayout>
     )
   }
 
   if (!deptElectionId) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <div className="text-center bg-white/90 backdrop-blur-md p-8 rounded-2xl border border-white/20">
-          <AlertCircle className="w-12 h-12 mx-auto text-red-400 mb-4" />
-          <h3 className="text-xl font-bold text-gray-900 mb-2">No Election Selected</h3>
-          <p className="text-gray-600 mb-6">Please select an election to view statistics.</p>
-          <button
-            onClick={() => router.push('/sao/departmental')}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-          >
-            Back to Elections
-          </button>
+      <SAODepartmentalLayout
+        deptElectionId={null}
+        title="Election Statistics"
+        subtitle="Statistical Analysis & Results"
+        activeItem="statistics"
+      >
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center bg-white/10 backdrop-blur-md p-8 rounded-2xl border border-white/20">
+            <AlertCircle className="w-12 h-12 mx-auto text-red-400 mb-4" />
+            <h3 className="text-xl font-bold text-white mb-2">No Election Selected</h3>
+            <p className="text-white/80 mb-6">Please select an election to view statistics.</p>
+            <button
+              onClick={() => router.push('/sao/departmental')}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            >
+              Back to Elections
+            </button>
+          </div>
         </div>
-      </div>
+      </SAODepartmentalLayout>
     )
   }
 
   const positionChartData = selectedPosition ? getPositionChartData(selectedPosition) : []
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <SAODepartmentalLayout
+      deptElectionId={deptElectionId}
+      title="Election Statistics"
+      subtitle="Statistical Analysis & Results"
+      activeItem="statistics"
+    >
       <div className="max-w-7xl mx-auto space-y-6 p-4">
-        <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-6">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div>
-              <h1 className="text-3xl font-bold text-[#001f65] mb-2">Departmental Election Statistics</h1>
-              <p className="text-gray-600">
-                {deptElectionData?.title} - {deptElectionData?.electionYear}
-              </p>
-            </div>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-white mb-2"></h2>
+          </div>
 
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={refreshData}
-                disabled={loading}
-                className="flex items-center px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-gray-300"
-              >
-                {loading ? (
-                  <Loader2 className="animate-spin h-4 w-4 mr-2" />
-                ) : (
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                )}
-                Refresh
-              </button>
-              
-              <button
-                onClick={showResultsSummary}
-                className="flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors shadow-lg"
-              >
-                <Trophy className="w-4 h-4 mr-2" />
-                Summary
-              </button>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={refreshData}
+              disabled={loading}
+              className="flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-white/20"
+            >
+              {loading ? (
+                <Loader2 className="animate-spin h-4 w-4 mr-2" />
+              ) : (
+                <RefreshCw className="w-4 h-4 mr-2" />
+              )}
+              Refresh
+            </button>
+            
+            <button
+              onClick={showResultsSummary}
+              className="flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors shadow-lg"
+            >
+              <Trophy className="w-4 h-4 mr-2" />
+              Summary
+            </button>
 
-              <button
-                onClick={handleDownloadStatistics}
-                disabled={downloading}
-                className="flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
-              >
-                {downloading ? (
-                  <Loader2 className="animate-spin h-4 w-4 mr-2" />
-                ) : (
-                  <FileDown className="w-4 h-4 mr-2" />
-                )}
-                Download
-              </button>
+            <button
+              onClick={handleDownloadStatistics}
+              disabled={downloading}
+              className="flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+            >
+              {downloading ? (
+                <Loader2 className="animate-spin h-4 w-4 mr-2" />
+              ) : (
+                <FileDown className="w-4 h-4 mr-2" />
+              )}
+              Download
+            </button>
 
-              <button
-                onClick={() => router.push(`/sao/departmental/results?deptElectionId=${deptElectionId}`)}
-                disabled={deptElectionData?.status !== 'completed'}
-                className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
-              >
-                <BarChart3 className="w-4 h-4 mr-2" />
-                Results
-              </button>
-            </div>
+            <button
+              onClick={() => router.push(`/sao/departmental/results?deptElectionId=${deptElectionId}`)}
+              disabled={deptElectionData?.status !== 'completed'}
+              className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+            >
+              <BarChart3 className="w-4 h-4 mr-2" />
+              Results
+            </button>
           </div>
         </div>
 
         {positions.length > 0 && (
-          <div className="bg-white/90 backdrop-blur-sm rounded-xl p-6 border border-white/20">
-            <label className="block text-gray-700 font-medium mb-2">Select Position to View Statistics</label>
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
+            <label className="block text-white font-medium mb-2">Select Position to View Statistics</label>
             <div className="relative">
               <select
-                value={selectedPosition?._id || ''}
+                value={selectedPosition?.position?._id || selectedPosition?._id || ''}
                 onChange={(e) => {
-                  const position = positions.find(p => p._id === e.target.value)
+                  const position = positions.find(p => 
+                    (p.position?._id === e.target.value) || (p._id === e.target.value)
+                  )
                   setSelectedPosition(position)
                 }}
                 className="w-full px-4 py-3 bg-white rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#001f65] focus:border-transparent appearance-none cursor-pointer"
               >
-                {positions.map((pos) => (
-                  <option key={pos._id} value={pos._id}>
-                    {pos.position.positionName} - {pos.candidates.length} candidates
+                {positions.map((pos, index) => (
+                  <option 
+                    key={pos.position?._id || pos._id || `position-${index}`} 
+                    value={pos.position?._id || pos._id}
+                  >
+                    {pos.position?.positionName || pos.positionName || 'Unknown Position'} - {pos.candidates?.length || 0} candidates
                   </option>
                 ))}
               </select>
@@ -481,26 +510,26 @@ export default function SAODepartmentalStatisticsPage() {
 
         {loading && (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="animate-spin h-8 w-8 text-[#001f65] mr-3" />
-            <span className="text-gray-700">Loading data...</span>
+            <Loader2 className="animate-spin h-8 w-8 text-white mr-3" />
+            <span className="text-white">Loading data...</span>
           </div>
         )}
 
         {!loading && selectedPosition && (
           <div className="space-y-6">
-            <div className="bg-white/90 backdrop-blur-sm rounded-xl p-6 border border-white/20">
-              <h2 className="text-2xl font-bold text-[#001f65] text-center mb-2">
+            <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
+              <h2 className="text-2xl font-bold text-white text-center mb-2">
                 {selectedPosition.position.positionName}
               </h2>
-              <div className="flex flex-wrap justify-center gap-4 text-gray-600 text-sm">
-                <div>
-                  Total Votes: <span className="font-semibold text-[#001f65]">{selectedPosition.totalVotes || 0}</span>
+              <div className="flex flex-wrap justify-center gap-4 text-blue-100 text-sm">
+                <div className="flex items-center gap-1">
+                  <Users className="w-4 h-4" />
+                  <span>Total Votes: <span className="font-semibold">{selectedPosition.totalVotes || 0}</span></span>
                 </div>
-                <div>
-                  Max Votes: <span className="font-semibold text-[#001f65]">{selectedPosition.position.maxVotes || 1}</span>
-                </div>
-                <div>
-                  Participants: <span className="font-semibold text-[#001f65]">{selectedPosition.totalParticipants || 0}</span>
+                
+                <div className="flex items-center gap-1">
+                  <Users className="w-4 h-4" />
+                  <span>Participants: <span className="font-semibold">{selectedPosition.totalParticipants || 0}</span></span>
                 </div>
               </div>
             </div>
@@ -567,11 +596,10 @@ export default function SAODepartmentalStatisticsPage() {
               onClick={() => setError('')}
               className="ml-auto text-red-500 hover:text-red-700"
             >
-              ✕
             </button>
           </div>
         )}
       </div>
-    </div>
+    </SAODepartmentalLayout>
   )
 }

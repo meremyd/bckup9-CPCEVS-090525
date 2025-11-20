@@ -260,6 +260,9 @@ class AuthController {
       voter.otpVerified = true
       voter.otpCode = null
       voter.otpExpires = null
+      // Ensure account is active after successful OTP verification
+      // (some accounts may be created inactive during seeding or pre-registration)
+      voter.isActive = true
       await voter.save()
 
       // Issue JWT token for voter
@@ -311,7 +314,7 @@ class AuthController {
   // Pre-registration Step 1 
   static async preRegisterStep1(req, res, next) {
     try {
-      const { schoolId } = req.body
+      const { schoolId, firstName, middleName, lastName } = req.body
 
       if (!schoolId) {
         const error = new Error("School ID is required")
@@ -342,6 +345,64 @@ class AuthController {
         const error = new Error("Student not found in voter database")
         error.statusCode = 404
         return next(error)
+      }
+
+      // If frontend provided name fields, verify they match the stored voter record
+      const normalize = (s) => (s || "").toString().trim().toLowerCase().replace(/\s+/g, " ")
+      if (firstName || middleName || lastName) {
+        const providedFirst = normalize(firstName)
+        const providedMiddle = normalize(middleName)
+        const providedLast = normalize(lastName)
+
+        const storedFirst = normalize(voter.firstName)
+        const storedMiddle = normalize(voter.middleName)
+        const storedLast = normalize(voter.lastName)
+
+        // Require first and last name to match; if middle provided then it must match as well
+        if (providedFirst && providedFirst !== storedFirst) {
+          await AuditLog.create({
+            action: "VOTER_REGISTRATION",
+            username: voter.schoolId.toString(),
+            voterId: voter._id,
+            schoolId: voter.schoolId,
+            details: `Pre-registration name mismatch - first name provided: ${firstName}`,
+            ipAddress: req.ip,
+            userAgent: req.get("User-Agent"),
+          })
+          const error = new Error("Provided name does not match our records")
+          error.statusCode = 400
+          return next(error)
+        }
+
+        if (providedLast && providedLast !== storedLast) {
+          await AuditLog.create({
+            action: "VOTER_REGISTRATION",
+            username: voter.schoolId.toString(),
+            voterId: voter._id,
+            schoolId: voter.schoolId,
+            details: `Pre-registration name mismatch - last name provided: ${lastName}`,
+            ipAddress: req.ip,
+            userAgent: req.get("User-Agent"),
+          })
+          const error = new Error("Provided name does not match our records")
+          error.statusCode = 400
+          return next(error)
+        }
+
+        if (providedMiddle && storedMiddle && providedMiddle !== storedMiddle) {
+          await AuditLog.create({
+            action: "VOTER_REGISTRATION",
+            username: voter.schoolId.toString(),
+            voterId: voter._id,
+            schoolId: voter.schoolId,
+            details: `Pre-registration name mismatch - middle name provided: ${middleName}`,
+            ipAddress: req.ip,
+            userAgent: req.get("User-Agent"),
+          })
+          const error = new Error("Provided name does not match our records")
+          error.statusCode = 400
+          return next(error)
+        }
       }
 
       // Check if voter already has a password (already registered)
@@ -1045,7 +1106,6 @@ static async refreshToken(req, res, next) {
     next(error)
   }
 }
-
 }
 
 module.exports = AuthController
