@@ -7,19 +7,16 @@ import { ballotAPI } from "@/lib/api/ballots"
 import { electionParticipationAPI } from "@/lib/api/electionParticipation"
 import { positionsAPI } from "@/lib/api/positions"
 import VoterLayout from '@/components/VoterLayout'
+import DepartmentalNavbar from '@/components/DepartmentalNavbar'
 import Swal from 'sweetalert2'
 import {
   Vote,
   Loader2,
-  ArrowLeft,
   Clock,
   Calendar,
   AlertCircle,
-  LogOut,
   CheckCircle,
   X,
-  Trophy,
-  ReceiptText,
   Download
 } from "lucide-react"
 
@@ -43,9 +40,9 @@ export default function VoterDepartmentalElectionInfoPage() {
   const searchParams = useSearchParams()
   const electionId = searchParams.get('id')
 
- useEffect(() => {
-  checkAuthAndLoadData()
-}, [electionId, searchParams]) 
+  useEffect(() => {
+    checkAuthAndLoadData()
+  }, [electionId, searchParams]) 
 
   const checkAuthAndLoadData = async () => {
     try {
@@ -116,102 +113,90 @@ export default function VoterDepartmentalElectionInfoPage() {
     }
   }
 
-const loadAllPositionsWithStatus = async (voterData = voter) => {
-  try {
-    setRefreshing(true)
-    
-    const allPositionsResponse = await positionsAPI.voter.departmental.getByElection(electionId)
-    const allPositions = allPositionsResponse?.data?.positions || []
-    
-    // Filter positions by voter's year level eligibility
-    const eligiblePositionIds = allPositions
-      .filter(pos => {
-        if (!pos.description) return true
-        
-        const yearLevelMatch = pos.description.match(/Year levels?: (.*?)(?:\n|$)/)
-        if (!yearLevelMatch) return true
-        
-        const restrictionText = yearLevelMatch[1]
-        if (restrictionText.includes('All year levels')) return true
-        
-        const allowedLevels = []
-        if (restrictionText.includes('1st')) allowedLevels.push(1)
-        if (restrictionText.includes('2nd')) allowedLevels.push(2)
-        if (restrictionText.includes('3rd')) allowedLevels.push(3)
-        if (restrictionText.includes('4th')) allowedLevels.push(4)
-        
-        return allowedLevels.length === 0 || allowedLevels.includes(voterData.yearLevel)
-      })
-      .map(pos => pos._id.toString())
-    
-    const positionsWithStatus = await Promise.all(
-      allPositions.map(async (pos) => {
-        const isEligible = eligiblePositionIds.includes(pos._id.toString())
-        
-        try {
-          // ✅ FIX: Get ballot status from backend (includes isCurrentlyOpen)
-          const ballotStatus = await ballotAPI.voter.getVoterDepartmentalBallotStatus(electionId, pos._id)
+  const loadAllPositionsWithStatus = async (voterData = voter) => {
+    try {
+      setRefreshing(true)
+      
+      const allPositionsResponse = await positionsAPI.voter.departmental.getByElection(electionId)
+      const allPositions = allPositionsResponse?.data?.positions || []
+      
+      const eligiblePositionIds = allPositions
+        .filter(pos => {
+          if (!pos.description) return true
           
-          // ✅ FIX: Use backend's calculation of isCurrentlyOpen
-          const isCurrentlyOpen = ballotStatus.position?.isCurrentlyOpen || false
+          const yearLevelMatch = pos.description.match(/Year levels?: (.*?)(?:\n|$)/)
+          if (!yearLevelMatch) return true
           
-          console.log(`✅ Ballot Status for ${pos.positionName}:`, {
-            isCurrentlyOpen,
-            ballotOpenTime: ballotStatus.position?.ballotOpenTime,
-            ballotCloseTime: ballotStatus.position?.ballotCloseTime,
-            canVote: ballotStatus.canVote,
-            hasVoted: ballotStatus.hasVoted
-          })
+          const restrictionText = yearLevelMatch[1]
+          if (restrictionText.includes('All year levels')) return true
           
-          let yearLevelRestriction = null
-          if (pos.description) {
-            const yearLevelMatch = pos.description.match(/Year levels?: (.*?)(?:\n|$)/)
-            if (yearLevelMatch && !yearLevelMatch[1].includes('All year levels')) {
-              yearLevelRestriction = yearLevelMatch[1]
+          const allowedLevels = []
+          if (restrictionText.includes('1st')) allowedLevels.push(1)
+          if (restrictionText.includes('2nd')) allowedLevels.push(2)
+          if (restrictionText.includes('3rd')) allowedLevels.push(3)
+          if (restrictionText.includes('4th')) allowedLevels.push(4)
+          
+          return allowedLevels.length === 0 || allowedLevels.includes(voterData.yearLevel)
+        })
+        .map(pos => pos._id.toString())
+      
+      const positionsWithStatus = await Promise.all(
+        allPositions.map(async (pos) => {
+          const isEligible = eligiblePositionIds.includes(pos._id.toString())
+          
+          try {
+            const ballotStatus = await ballotAPI.voter.getVoterDepartmentalBallotStatus(electionId, pos._id)
+            const isCurrentlyOpen = ballotStatus.position?.isCurrentlyOpen || false
+            
+            let yearLevelRestriction = null
+            if (pos.description) {
+              const yearLevelMatch = pos.description.match(/Year levels?: (.*?)(?:\n|$)/)
+              if (yearLevelMatch && !yearLevelMatch[1].includes('All year levels')) {
+                yearLevelRestriction = yearLevelMatch[1]
+              }
+            }
+            
+            return {
+              ...pos,
+              hasVoted: ballotStatus.hasVoted || false,
+              canVote: ballotStatus.canVote || false,
+              isCurrentlyOpen,
+              isEligible,
+              yearLevelRestriction,
+              ballotOpenTime: ballotStatus.position?.ballotOpenTime || pos.ballotOpenTime,
+              ballotCloseTime: ballotStatus.position?.ballotCloseTime || pos.ballotCloseTime
+            }
+          } catch (error) {
+            console.error(`Error getting status for position ${pos._id}:`, error)
+            
+            let yearLevelRestriction = null
+            if (pos.description) {
+              const yearLevelMatch = pos.description.match(/Year levels?: (.*?)(?:\n|$)/)
+              if (yearLevelMatch && !yearLevelMatch[1].includes('All year levels')) {
+                yearLevelRestriction = yearLevelMatch[1]
+              }
+            }
+            
+            return {
+              ...pos,
+              hasVoted: false,
+              canVote: false,
+              isCurrentlyOpen: false,
+              isEligible,
+              yearLevelRestriction
             }
           }
-          
-          return {
-            ...pos,
-            hasVoted: ballotStatus.hasVoted || false,
-            canVote: ballotStatus.canVote || false,
-            isCurrentlyOpen, // ✅ From backend
-            isEligible,
-            yearLevelRestriction,
-            ballotOpenTime: ballotStatus.position?.ballotOpenTime || pos.ballotOpenTime,
-            ballotCloseTime: ballotStatus.position?.ballotCloseTime || pos.ballotCloseTime
-          }
-        } catch (error) {
-          console.error(`Error getting status for position ${pos._id}:`, error)
-          
-          let yearLevelRestriction = null
-          if (pos.description) {
-            const yearLevelMatch = pos.description.match(/Year levels?: (.*?)(?:\n|$)/)
-            if (yearLevelMatch && !yearLevelMatch[1].includes('All year levels')) {
-              yearLevelRestriction = yearLevelMatch[1]
-            }
-          }
-          
-          return {
-            ...pos,
-            hasVoted: false,
-            canVote: false,
-            isCurrentlyOpen: false, // Safe default
-            isEligible,
-            yearLevelRestriction
-          }
-        }
-      })
-    )
-    
-    setPositions(positionsWithStatus)
-  } catch (error) {
-    console.error("Error loading positions:", error)
-    setPositions([])
-  } finally {
-    setRefreshing(false)
+        })
+      )
+      
+      setPositions(positionsWithStatus)
+    } catch (error) {
+      console.error("Error loading positions:", error)
+      setPositions([])
+    } finally {
+      setRefreshing(false)
+    }
   }
-}
 
   const handleConfirmParticipation = async (willParticipate) => {
     if (isProcessing) return
@@ -266,10 +251,6 @@ const loadAllPositionsWithStatus = async (voterData = voter) => {
     router.push(`/voter/departmental/ballot?electionId=${electionId}&positionId=${positionId}`)
   }
 
-  const handleResultsClick = () => {
-    router.push(`/voter/departmental/results?id=${electionId}`)
-  }
-
   const handleOpenReceipt = async () => {
     setLoadingReceipt(true)
     setShowReceiptModal(true)
@@ -293,7 +274,6 @@ const loadAllPositionsWithStatus = async (voterData = voter) => {
 
   const handleDownloadReceipt = async () => {
     try {
-      // ✅ FIX #5: Don't allow download with zero votes
       if (!receiptData || !receiptData.hasVoted || receiptData.votingProgress?.votedPositions === 0) {
         await Swal.fire({
           icon: 'warning',
@@ -312,7 +292,6 @@ const loadAllPositionsWithStatus = async (voterData = voter) => {
         return
       }
 
-      // Check if voting is incomplete (but allow download anyway)
       if (receiptData && !receiptData.hasVotedAll && receiptData.votingProgress?.votedPositions > 0) {
         const result = await Swal.fire({
           icon: 'warning',
@@ -346,7 +325,6 @@ const loadAllPositionsWithStatus = async (voterData = voter) => {
         }
       }
 
-      // Show generating message
       Swal.fire({
         title: 'Generating Receipt...',
         html: 'Please wait while we prepare your voting receipt.',
@@ -357,10 +335,8 @@ const loadAllPositionsWithStatus = async (voterData = voter) => {
         }
       })
 
-      // Download the PDF
       const blob = await electionParticipationAPI.exportDepartmentalVotingReceiptPDF(electionId)
       
-      // Create download link
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
@@ -372,12 +348,10 @@ const loadAllPositionsWithStatus = async (voterData = voter) => {
       link.click()
       document.body.removeChild(link)
       
-      // Clean up the URL
       setTimeout(() => {
         window.URL.revokeObjectURL(url)
       }, 100)
       
-      // Success message
       Swal.fire({
         icon: 'success',
         title: 'Receipt Downloaded',
@@ -422,50 +396,21 @@ const loadAllPositionsWithStatus = async (voterData = voter) => {
     }
   }
 
-  const handleLogout = async () => {
-    const result = await Swal.fire({
-      title: 'Are you sure?',
-      text: 'You will be logged out of your account',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#d33',
-      cancelButtonColor: '#3085d6',
-      confirmButtonText: 'Yes, logout',
-      cancelButtonText: 'Cancel'
-    })
-
-    if (result.isConfirmed) {
-      localStorage.removeItem("voterToken")
-      localStorage.removeItem("voterData")
-      router.push("/voterlogin")
-
-      Swal.fire({
-        title: 'Logged Out',
-        text: 'You have been successfully logged out',
-        icon: 'success',
-        timer: 1500,
-        showConfirmButton: false
+  const formatTime = (dateTime) => {
+    if (!dateTime) return ''
+    try {
+      const date = new Date(dateTime)
+      
+      return date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
       })
+    } catch (error) {
+      console.error('Error formatting time:', error)
+      return 'Invalid time'
     }
   }
-
-const formatTime = (dateTime) => {
-  if (!dateTime) return ''
-  try {
-    // ✅ FIX: Parse the Date object correctly
-    const date = new Date(dateTime)
-    
-    // ✅ Format as 12-hour time with AM/PM in local time
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    })
-  } catch (error) {
-    console.error('Error formatting time:', error)
-    return 'Invalid time'
-  }
-}
 
   const formatDateTime = (dateString) => {
     if (!dateString) return 'N/A'
@@ -484,67 +429,62 @@ const formatTime = (dateTime) => {
     }
   }
 
-const getPositionStatus = (position) => {
-  // Check eligibility first
-  if (!position.isEligible) {
-    return {
-      message: 'Not Eligible',
-      icon: <AlertCircle className="w-4 h-4" />,
-      buttonClass: 'bg-gray-400/40 text-gray-300 border border-gray-400/40 cursor-not-allowed',
-      canClick: false,
-      showTiming: false,
-      isIneligible: true
+  const getPositionStatus = (position) => {
+    if (!position.isEligible) {
+      return {
+        message: 'Not Eligible',
+        icon: <AlertCircle className="w-4 h-4" />,
+        buttonClass: 'bg-gray-400/40 text-gray-300 border border-gray-400/40 cursor-not-allowed',
+        canClick: false,
+        showTiming: false,
+        isIneligible: true
+      }
     }
-  }
-  
-  if (position.hasVoted) {
+    
+    if (position.hasVoted) {
+      return {
+        message: 'Voted',
+        icon: <CheckCircle className="w-4 h-4" />,
+        buttonClass: 'bg-green-600 text-white cursor-default',
+        canClick: false,
+        showTiming: true,
+        isIneligible: false
+      }
+    }
+    
+    if (position.isCurrentlyOpen) {
+      return {
+        message: 'Vote Now',
+        icon: <Vote className="w-4 h-4" />,
+        buttonClass: 'bg-gradient-to-r from-[#001f65] to-[#003399] hover:from-[#003399] hover:to-[#001f65] text-white shadow-lg cursor-pointer',
+        canClick: true,
+        showTiming: true,
+        isIneligible: false
+      }
+    }
+    
+    const now = new Date()
+    if (position.ballotCloseTime && now > new Date(position.ballotCloseTime)) {
+      return {
+        message: 'Ballot Closed',
+        icon: <X className="w-4 h-4" />,
+        buttonClass: 'bg-red-500/20 text-red-300 border border-red-300/20 cursor-default',
+        canClick: false,
+        showTiming: true,
+        isIneligible: false
+      }
+    }
+    
     return {
-      message: 'Voted',
-      icon: <CheckCircle className="w-4 h-4" />,
-      buttonClass: 'bg-green-600 text-white cursor-default',
+      message: 'Ballot Not Open Yet',
+      icon: <Clock className="w-4 h-4" />,
+      buttonClass: 'bg-yellow-500/20 text-yellow-300 border border-yellow-300/20 cursor-default',
       canClick: false,
       showTiming: true,
       isIneligible: false
     }
   }
-  
-  // ✅ This should now work correctly
-  if (position.isCurrentlyOpen) {
-    return {
-      message: 'Vote Now',
-      icon: <Vote className="w-4 h-4" />,
-      buttonClass: 'bg-gradient-to-r from-[#001f65] to-[#003399] hover:from-[#003399] hover:to-[#001f65] text-white shadow-lg cursor-pointer',
-      canClick: true,
-      showTiming: true,
-      isIneligible: false
-    }
-  }
-  
-  // Check if closed
-  const now = new Date()
-  if (position.ballotCloseTime && now > new Date(position.ballotCloseTime)) {
-    return {
-      message: 'Ballot Closed',
-      icon: <X className="w-4 h-4" />,
-      buttonClass: 'bg-red-500/20 text-red-300 border border-red-300/20 cursor-default',
-      canClick: false,
-      showTiming: true,
-      isIneligible: false
-    }
-  }
-  
-  // Default: Not open yet
-  return {
-    message: 'Ballot Not Open Yet',
-    icon: <Clock className="w-4 h-4" />,
-    buttonClass: 'bg-yellow-500/20 text-yellow-300 border border-yellow-300/20 cursor-default',
-    canClick: false,
-    showTiming: true,
-    isIneligible: false
-  }
-}
 
-  // UI Rendering
   if (loading) {
     return (
       <VoterLayout>
@@ -590,7 +530,7 @@ const getPositionStatus = (position) => {
             </p>
             <div className="flex flex-col gap-3">
               <button
-                onClick={handleResultsClick}
+                onClick={() => router.push(`/voter/departmental/results?id=${electionId}`)}
                 className="w-full bg-[#001f65] hover:bg-[#003399] text-white px-6 py-2 rounded-lg transition-colors"
               >
                 View Election Result
@@ -660,57 +600,25 @@ const getPositionStatus = (position) => {
 
   return (
     <VoterLayout>
-      {/* Header */}
-      <div className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/30 px-4 sm:px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center min-w-0">
-            <button
-              onClick={() => router.push('/voter/departmental/elections')}
-              className="mr-2 sm:mr-3 p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
-            >
-              <ArrowLeft className="w-5 h-5 text-[#001f65]" />
-            </button>
-            <div className="min-w-0">
-              <h1 className="text-lg sm:text-xl font-bold text-[#001f65] truncate">{election?.title}</h1>
-              <p className="text-xs text-[#001f65]/70">Election Year {election?.electionYear}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={handleResultsClick}
-              className="p-2 text-[#001f65] hover:bg-blue-50 rounded-lg transition-colors border border-blue-200 bg-white/60 backdrop-blur-sm"
-              title="View Results"
-            >
-              <Trophy className="w-5 h-5" />
-            </button>
-            <button
-              onClick={handleOpenReceipt}
-              className="p-2 text-[#001f65] hover:bg-blue-50 rounded-lg transition-colors border border-blue-200 bg-white/60 backdrop-blur-sm"
-              title="View Voting Receipt"
-            >
-              <ReceiptText className="w-5 h-5" />
-            </button>
-            <button
-              onClick={handleLogout}
-              className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50/80 rounded-lg transition-colors border border-red-200 bg-white/60 backdrop-blur-sm"
-            >
-              <LogOut className="w-4 h-4 mr-0 sm:mr-2" />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* Navbar */}
+      <DepartmentalNavbar
+        currentPage="election"
+        electionId={electionId}
+        pageTitle={election?.title}
+        pageSubtitle={`Election Year ${election?.electionYear}`}
+        onReceiptClick={handleOpenReceipt}
+      />
 
       {/* Main Content */}
       <div className="p-4 lg:p-6">
         <div className="min-h-[calc(100vh-120px)] max-w-6xl mx-auto">
 
           {refreshing && (
-  <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-center gap-3">
-    <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-    <span className="text-blue-800 font-medium">Refreshing status...</span>
-  </div>
-)}
+            <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-center gap-3">
+              <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+              <span className="text-blue-800 font-medium">Refreshing status...</span>
+            </div>
+          )}
 
           {/* Election Info Banner */}
           <div className="rounded-2xl p-4 sm:p-6 mb-6">
@@ -742,7 +650,7 @@ const getPositionStatus = (position) => {
             </div>
           </div>
 
-          {/* ✅ FIX #1: Position Cards with Year Level Restrictions */}
+          {/* Position Cards */}
           <div className="mb-8">
             {positions.length === 0 ? (
               <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 text-center border border-white/20">
@@ -769,7 +677,6 @@ const getPositionStatus = (position) => {
                         {position.positionName}
                       </h3>
                       
-                      {/* ✅ FIX #1: Year Level Restriction Message (Inside Card) */}
                       {status.isIneligible && position.yearLevelRestriction && (
                         <div className="bg-gray-600/40 border border-gray-500/40 rounded-lg p-2 mb-3">
                           <p className="text-xs text-gray-200 text-center font-medium">
@@ -778,7 +685,6 @@ const getPositionStatus = (position) => {
                         </div>
                       )}
                       
-                      {/* ✅ Ballot Timing Info (Only show if eligible and showTiming is true) */}
                       {status.showTiming && position.ballotOpenTime && position.ballotCloseTime && (
                         <div className={`rounded-lg p-2 mb-3 text-xs ${
                           status.isIneligible 
@@ -828,7 +734,7 @@ const getPositionStatus = (position) => {
 
             <div className="text-center mb-6">
               <div className="w-16 h-16 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-full flex items-center justify-center mx-auto mb-4">
-                <ReceiptText className="w-8 h-8 text-white" />
+                <Download className="w-8 h-8 text-white" />
               </div>
               <h2 className="text-2xl font-bold text-[#001f65] mb-2">Voting Receipt</h2>
               <p className="text-sm text-gray-600">Departmental Election</p>
@@ -879,7 +785,7 @@ const getPositionStatus = (position) => {
                   </div>
                 </div>
 
-                {/* ✅ FIX #2: Voting Progress (only eligible positions) */}
+                {/* Voting Progress */}
                 <div className={`rounded-xl p-4 border-2 ${
                   receiptData.hasVotedAll 
                     ? 'bg-green-50 border-green-300' 

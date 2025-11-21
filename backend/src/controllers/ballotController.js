@@ -261,108 +261,145 @@ class BallotController {
     }
   }
 
-  // Submit SSG ballot (Election Committee can also use for testing)
-  static async submitSelectedSSGBallot(req, res, next) {
-    try {
-      const { ballotId } = req.params
-      const { votes } = req.body // Array of { positionId, candidateId }
-      const voterId = req.user.userType === 'voter' ? req.user.voterId : null
+// Submit SSG ballot (Election Committee can also use for testing)
+static async submitSelectedSSGBallot(req, res, next) {
+  try {
+    const { ballotId } = req.params
+    const { votes } = req.body // Array of { positionId, candidateId }
+    const voterId = req.user.userType === 'voter' ? req.user.voterId : null
 
-      const ballot = await Ballot.findById(ballotId)
-        .populate('ssgElectionId', 'title status')
+    const ballot = await Ballot.findById(ballotId)
+      .populate('ssgElectionId', 'title status')
 
-      if (!ballot || !ballot.ssgElectionId) {
-        return res.status(404).json({ message: "SSG Ballot not found" })
-      }
-
-      // Check ownership for voters
-      if (req.user.userType === 'voter' && ballot.voterId.toString() !== voterId) {
-        return res.status(403).json({ message: "Access denied" })
-      }
-
-      if (ballot.isSubmitted) {
-        return res.status(400).json({ message: "Ballot has already been submitted" })
-      }
-
-      // Check if ballot is expired (only for voters)
-      if (req.user.userType === 'voter' && ballot.isExpired) {
-        return res.status(400).json({ message: "Ballot has expired and cannot be submitted" })
-      }
-
-      // Validate votes
-      if (!votes || !Array.isArray(votes) || votes.length === 0) {
-        return res.status(400).json({ message: "No votes provided" })
-      }
-
-      // Process each vote
-      const processedVotes = []
-      for (const vote of votes) {
-        // Validate candidate and position
-        const candidate = await Candidate.findOne({
-          _id: vote.candidateId,
-          positionId: vote.positionId,
-          ssgElectionId: ballot.ssgElectionId,
-          isActive: true
-        })
-
-        if (!candidate) {
-          return res.status(400).json({ 
-            message: `Invalid candidate or position for vote: ${vote.candidateId}` 
-          })
-        }
-
-        // Check if already voted for this position
-        const existingVote = await Vote.findOne({
-          ballotId: ballot._id,
-          positionId: vote.positionId
-        })
-
-        if (existingVote) {
-          return res.status(400).json({ 
-            message: `Already voted for position: ${vote.positionId}` 
-          })
-        }
-
-        // Create vote record
-        const newVote = new Vote({
-          ballotId: ballot._id,
-          candidateId: vote.candidateId,
-          positionId: vote.positionId,
-          ssgElectionId: ballot.ssgElectionId
-        })
-
-        await newVote.save()
-        processedVotes.push(newVote)
-      }
-
-      // Submit ballot
-      ballot.isSubmitted = true
-      ballot.submittedAt = new Date()
-      await ballot.save()
-
-      const actionUser = req.user.userType === 'voter' ? 
-        { _id: voterId, schoolId: req.user.schoolId } : req.user
-
-      await AuditLog.logAction({
-        action: "VOTE_SUBMITTED",
-        username: req.user.username || req.user.schoolId?.toString(),
-        userId: req.user.userId,
-        voterId: req.user.voterId,
-        schoolId: req.user.schoolId,
-        details: `Submitted SSG ballot with ${processedVotes.length} votes for election: ${ballot.ssgElectionId.title}`,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent")
-      })
-
-      res.json({
-        message: "SSG Ballot submitted successfully",
-        submittedAt: ballot.submittedAt,
-        voteCount: processedVotes.length
-      })
-    } catch (error) {
-      next(error)
+    if (!ballot || !ballot.ssgElectionId) {
+      return res.status(404).json({ message: "SSG Ballot not found" })
     }
+
+    // Check ownership for voters
+    if (req.user.userType === 'voter' && ballot.voterId.toString() !== voterId) {
+      return res.status(403).json({ message: "Access denied" })
+    }
+
+    if (ballot.isSubmitted) {
+      return res.status(400).json({ message: "Ballot has already been submitted" })
+    }
+
+    // Check if ballot is expired (only for voters)
+    if (req.user.userType === 'voter' && ballot.isExpired) {
+      return res.status(400).json({ message: "Ballot has expired and cannot be submitted" })
+    }
+
+    // Validate votes
+    if (!votes || !Array.isArray(votes) || votes.length === 0) {
+      return res.status(400).json({ message: "No votes provided" })
+    }
+
+    // CHECK: If votes already exist for this ballot, check if we can just mark as submitted
+    const existingVotes = await Vote.find({ ballotId: ballot._id })
+    
+    if (existingVotes.length > 0) {
+      // Votes already exist - this is a retry after partial failure
+      // Option 1: Just mark ballot as submitted if votes exist
+      // Option 2: Delete existing votes and re-process (chosen for data consistency)
+      
+      console.log(`Found ${existingVotes.length} existing votes for ballot ${ballotId}, clearing for re-submission`)
+      
+      // Delete existing votes to allow clean re-submission
+      await Vote.deleteMany({ ballotId: ballot._id })
+    }
+
+    // Process each vote
+    const processedVotes = []
+    const votedPositions = new Set() // Track positions we've voted for in this submission
+
+    for (const vote of votes) {
+      // Validate candidate and position
+      const candidate = await Candidate.findOne({
+        _id: vote.candidateId,
+        positionId: vote.positionId,
+        ssgElectionId: ballot.ssgElectionId._id || ballot.ssgElectionId,
+        isActive: true
+      })
+
+      if (!candidate) {
+        // Rollback: delete any votes we just created
+        await Vote.deleteMany({ ballotId: ballot._id })
+        return res.status(400).json({ 
+          message: `Invalid candidate or position for vote: ${vote.candidateId}` 
+        })
+      }
+
+      // Get position details
+      const position = await Position.findById(vote.positionId)
+      const maxVotes = position?.maxVotes || 1
+
+      // Count how many times we've voted for this position in THIS submission
+      const votesForPositionInSubmission = processedVotes.filter(
+        v => v.positionId.toString() === vote.positionId.toString()
+      ).length
+
+      // Check if we've exceeded maxVotes for this position
+      if (votesForPositionInSubmission >= maxVotes) {
+        // Rollback
+        await Vote.deleteMany({ ballotId: ballot._id })
+        return res.status(400).json({ 
+          message: `Maximum votes (${maxVotes}) exceeded for position: ${position?.positionName || vote.positionId}` 
+        })
+      }
+
+      // Check if we're trying to vote for the same candidate twice
+      const alreadyVotedForCandidate = processedVotes.some(
+        v => v.candidateId.toString() === vote.candidateId.toString()
+      )
+
+      if (alreadyVotedForCandidate) {
+        // Rollback
+        await Vote.deleteMany({ ballotId: ballot._id })
+        return res.status(400).json({ 
+          message: `Cannot vote for the same candidate twice` 
+        })
+      }
+
+      // Create vote record
+      const newVote = new Vote({
+        ballotId: ballot._id,
+        candidateId: vote.candidateId,
+        positionId: vote.positionId,
+        ssgElectionId: ballot.ssgElectionId._id || ballot.ssgElectionId
+      })
+
+      await newVote.save()
+      processedVotes.push(newVote)
+    }
+
+    // All votes saved successfully - now mark ballot as submitted
+    ballot.isSubmitted = true
+    ballot.submittedAt = new Date()
+    await ballot.save()
+
+    const actionUser = req.user.userType === 'voter' ? 
+      { _id: voterId, schoolId: req.user.schoolId } : req.user
+
+    await AuditLog.logAction({
+      action: "VOTE_SUBMITTED",
+      username: req.user.username || req.user.schoolId?.toString(),
+      userId: req.user.userId,
+      voterId: req.user.voterId,
+      schoolId: req.user.schoolId,
+      details: `Submitted SSG ballot with ${processedVotes.length} votes for election: ${ballot.ssgElectionId.title}`,
+      ipAddress: req.ip,
+      userAgent: req.get("User-Agent")
+    })
+
+    res.json({
+      message: "SSG Ballot submitted successfully",
+      submittedAt: ballot.submittedAt,
+      voteCount: processedVotes.length
+    })
+  } catch (error) {
+    next(error)
   }
+}
 
   // Get voter SSG ballot status for selected election
   static async getVoterSelectedSSGBallotStatus(req, res, next) {

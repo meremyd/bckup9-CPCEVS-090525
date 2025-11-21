@@ -2,8 +2,11 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { HelpCircle, Search, ChevronDown, ChevronUp, ArrowLeft, Loader2, Filter } from "lucide-react"
+import { HelpCircle, Search, ChevronDown, ChevronUp, Loader2, Filter } from "lucide-react"
 import VoterLayout from '@/components/VoterLayout'
+import VoterNavbar from '@/components/VoterNavbar'
+import VoterProfileModal from '@/components/VoterProfileModal'
+import RulesRegulationsModal from '@/components/RulesRegulationsModal'
 import { chatSupportAPI } from '@/lib/api/chatSupport'
 import { getVoterFromToken } from '@/lib/auth'
 import Swal from 'sweetalert2'
@@ -17,6 +20,8 @@ export default function VoterFAQ() {
   const [selectedCategory, setSelectedCategory] = useState("")
   const [expandedIndex, setExpandedIndex] = useState(null)
   const [voter, setVoter] = useState(null)
+  const [showProfileModal, setShowProfileModal] = useState(false)
+  const [showRulesModal, setShowRulesModal] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -50,7 +55,6 @@ export default function VoterFAQ() {
     try {
       setLoading(true)
       
-      // Load FAQs and categories in parallel
       const [faqsResponse, categoriesResponse] = await Promise.all([
         chatSupportAPI.getFAQs({ limit: 50 }),
         chatSupportAPI.getFAQCategories()
@@ -61,7 +65,6 @@ export default function VoterFAQ() {
       }
 
       if (categoriesResponse.success && categoriesResponse.data) {
-        // categories are departments that have resolved requests; keep as-is
         setCategories(categoriesResponse.data.categories || [])
       }
 
@@ -79,7 +82,6 @@ export default function VoterFAQ() {
       setSelectedCategory(categoryId)
       setLoading(true)
       
-      // If empty -> load all FAQs
       const params = { limit: 50 }
       if (categoryId) {
         params.category = categoryId
@@ -163,30 +165,15 @@ export default function VoterFAQ() {
 
   return (
     <VoterLayout>
-      {/* Header */}
-      <div className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/30 px-4 sm:px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            <button
-              onClick={() => router.push("/voter/dashboard")}
-              className="mr-3 p-2 hover:bg-gray-100/80 rounded-lg transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5 text-[#001f65]" />
-            </button>
-            <div className="w-8 h-8 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-lg flex items-center justify-center mr-3 shadow-lg">
-              <HelpCircle className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-[#001f65]">
-                Frequently Asked Questions
-              </h1>
-              <p className="text-xs text-[#001f65]/70">
-                Find answers to common questions
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Navbar */}
+      <VoterNavbar
+        currentPage="faq"
+        pageTitle="Frequently Asked Questions"
+        pageSubtitle="Find answers to common questions"
+        pageIcon={<HelpCircle className="w-5 h-5 text-white" />}
+        onProfileClick={() => setShowProfileModal(true)}
+        onRulesClick={() => setShowRulesModal(true)}
+      />
 
       {/* Main Content */}
       <div className="min-h-[calc(100vh-120px)] p-4 sm:p-6 lg:p-8">
@@ -206,7 +193,7 @@ export default function VoterFAQ() {
                 />
               </div>
 
-              {/* Department Filter (renamed from Categories) */}
+              {/* Department Filter */}
               <div className="flex items-center space-x-2">
                 <Filter className="w-5 h-5 text-gray-500" />
                 <select
@@ -308,6 +295,19 @@ export default function VoterFAQ() {
           </div>
         </div>
       </div>
+
+      {/* Modals */}
+      <VoterProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        onProfileUpdate={() => {}}
+      />
+
+      <RulesRegulationsModal
+        isOpen={showRulesModal}
+        onClose={() => setShowRulesModal(false)}
+        isFirstLogin={false}
+      />
     </VoterLayout>
   )
 }

@@ -6,20 +6,17 @@ import { ssgElectionsAPI } from "@/lib/api/ssgElections"
 import { partylistsAPI } from "@/lib/api/partylists"
 import { electionParticipationAPI } from "@/lib/api/electionParticipation"
 import VoterLayout from '@/components/VoterLayout'
+import SSGNavbar from '@/components/SSGNavbar'
 import Swal from 'sweetalert2'
 import { 
   Vote,
   Loader2,
-  ArrowLeft,
   Users,
   Clock,
   Calendar,
   AlertCircle,
-  ReceiptText,
-  Download,
-  LogOut,
   X,
-  Trophy
+  Download
 } from "lucide-react"
 
 export default function VoterSSGElectionInfoPage() {
@@ -225,43 +222,11 @@ export default function VoterSSGElectionInfoPage() {
     router.push(`/voter/ssg/ballot?id=${electionId}`)
   }
 
-  const handleResultsClick = () => {
-    router.push(`/voter/ssg/result?id=${electionId}`)
-  }
-
-  const handleLogout = async () => {
-    const result = await Swal.fire({
-      title: 'Are you sure?',
-      text: 'You will be logged out of your account',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#d33',
-      cancelButtonColor: '#3085d6',
-      confirmButtonText: 'Yes, logout',
-      cancelButtonText: 'Cancel'
-    })
-
-    if (result.isConfirmed) {
-      localStorage.removeItem("voterToken")
-      localStorage.removeItem("voterData")
-      router.push("/voterlogin")
-      
-      Swal.fire({
-        title: 'Logged Out',
-        text: 'You have been successfully logged out',
-        icon: 'success',
-        timer: 1500,
-        showConfirmButton: false
-      })
-    }
-  }
-
   const handleOpenReceipt = async () => {
     setLoadingReceipt(true)
     setShowReceiptModal(true)
     
     try {
-      // Use the new endpoint that returns full voter details
       const data = await electionParticipationAPI.getSSGVotingReceiptDetails(electionId)
       setReceiptData(data)
     } catch (error) {
@@ -537,46 +502,14 @@ export default function VoterSSGElectionInfoPage() {
 
   return (
     <VoterLayout>
-      {/* Responsive Header with Logout, Receipt, and Results */}
-      <div className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/30 px-4 sm:px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center min-w-0">
-            <button
-              onClick={() => router.push('/voter/ssg/elections')}
-              className="mr-2 sm:mr-3 p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
-            >
-              <ArrowLeft className="w-5 h-5 text-[#001f65]" />
-            </button>
-            <div className="min-w-0">
-              <h1 className="text-lg sm:text-xl font-bold text-[#001f65] truncate">{election?.title}</h1>
-              <p className="text-xs text-[#001f65]/70">Election Year {election?.electionYear}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={handleResultsClick}
-              className="p-2 text-[#001f65] hover:bg-blue-50 rounded-lg transition-colors border border-blue-200 bg-white/60 backdrop-blur-sm"
-              title="View Results"
-            >
-              <Trophy className="w-5 h-5" />
-            </button>
-            <button
-              onClick={handleOpenReceipt}
-              className="p-2 text-[#001f65] hover:bg-blue-50 rounded-lg transition-colors border border-blue-200 bg-white/60 backdrop-blur-sm"
-              title="View Voting Receipt"
-            >
-              <ReceiptText className="w-5 h-5" />
-            </button>
-            <button
-              onClick={handleLogout}
-              className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50/80 rounded-lg transition-colors border border-red-200 bg-white/60 backdrop-blur-sm"
-            >
-              <LogOut className="w-4 h-4 mr-0 sm:mr-2" />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* SSG Navbar */}
+      <SSGNavbar
+        currentPage="election"
+        electionId={electionId}
+        pageTitle={election?.title}
+        pageSubtitle={`Election Year ${election?.electionYear}`}
+        onReceiptClick={handleOpenReceipt}
+      />
 
       {/* Main Content */}
       <div className="p-4 lg:p-6">
@@ -696,7 +629,7 @@ export default function VoterSSGElectionInfoPage() {
         </div>
       </div>
 
-      {/* Receipt Modal - Fixed with proper voter info display */}
+      {/* Receipt Modal */}
       {showReceiptModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 relative max-h-[90vh] overflow-y-auto">
@@ -709,7 +642,7 @@ export default function VoterSSGElectionInfoPage() {
 
             <div className="text-center mb-6">
               <div className="w-16 h-16 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-full flex items-center justify-center mx-auto mb-4">
-                <ReceiptText className="w-8 h-8 text-white" />
+                <Download className="w-8 h-8 text-white" />
               </div>
               <h2 className="text-2xl font-bold text-[#001f65] mb-2">Voting Receipt</h2>
             </div>
@@ -772,10 +705,10 @@ export default function VoterSSGElectionInfoPage() {
                     )}
                     {receiptData.hasVoted && receiptData.ballotToken && (
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Ballot Token:</span>
+                        {/* <span className="text-gray-600">Ballot Token:</span>
                         <span className="font-mono text-xs bg-white px-2 py-1 rounded">
                           {receiptData.ballotToken}
-                        </span>
+                        </span> */}
                       </div>
                     )}
                     <div className="flex justify-between">

@@ -924,11 +924,11 @@ export default function DepartmentalCandidatesPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {/* <label className="block text-sm font-medium text-gray-700 mb-2">
                       Candidate Number
-                    </label>
+                    </label> */}
                     <input
-                      type="number"
+                      type="hidden"
                       value={formData.candidateNumber}
                       onChange={(e) => setFormData(prev => ({ ...prev, candidateNumber: e.target.value }))}
                       placeholder="e.g., 1"

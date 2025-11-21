@@ -2,8 +2,11 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { MessageSquare, Send, HelpCircle, ArrowLeft, Loader2, CheckCircle, AlertCircle } from "lucide-react"
+import { MessageSquare, Send, HelpCircle, Loader2, AlertCircle } from "lucide-react"
 import VoterLayout from '@/components/VoterLayout'
+import VoterNavbar from '@/components/VoterNavbar'
+import VoterProfileModal from '@/components/VoterProfileModal'
+import RulesRegulationsModal from '@/components/RulesRegulationsModal'
 import { chatSupportAPI } from '@/lib/api/chatSupport'
 import { departmentsAPI } from '@/lib/api/departments'
 import { getVoterFromToken, getStoredVoter } from '@/lib/auth'
@@ -24,12 +27,13 @@ export default function VoterMessages() {
   })
   const [photoFile, setPhotoFile] = useState(null)
   const [formErrors, setFormErrors] = useState({})
+  const [showProfileModal, setShowProfileModal] = useState(false)
+  const [showRulesModal, setShowRulesModal] = useState(false)
   const router = useRouter()
 
   const getDepartmentName = (deptId) => {
     if (!deptId) return null
 
-    // If deptId is an object (e.g., full department object), format it
     if (typeof deptId === 'object') {
       const dc = deptId.departmentCode || deptId.department_code || deptId.code || ''
       const dp = deptId.degreeProgram || deptId.degree_program || deptId.name || ''
@@ -39,7 +43,6 @@ export default function VoterMessages() {
 
     if (!departments || departments.length === 0) return deptId
 
-    // deptId may be an _id or a departmentCode or full degreeProgram string
     const found = departments.find(d => String(d._id) === String(deptId) || d.departmentCode === deptId || d.degreeProgram === deptId)
     if (found) return `${found.departmentCode || ''}${found.departmentCode ? ' - ' : ''}${found.degreeProgram || ''}`.trim()
     return deptId
@@ -60,13 +63,11 @@ export default function VoterMessages() {
           return
         }
 
-        // Prefer the stored voter object (from localStorage) when available
         const storedVoter = getStoredVoter()
         const voterData = storedVoter || voterFromToken
 
         setVoter(voterData)
 
-        // Pre-fill form with voter data (include department and email when available)
         const resolvedDeptId = voterData.departmentId
           ? (typeof voterData.departmentId === 'string' ? voterData.departmentId : (voterData.departmentId._id || voterData.departmentId.id || ''))
           : (voterData.department || '')
@@ -79,7 +80,6 @@ export default function VoterMessages() {
           email: voterData.email || ""
         }))
 
-        // Load departments
         await loadDepartments()
       } catch (error) {
         console.error("Auth check error:", error)
@@ -96,11 +96,6 @@ export default function VoterMessages() {
       setLoading(true)
       const response = await departmentsAPI.getAll()
 
-      // departmentsAPI.getAll may return different shapes depending on backend wrapper:
-      // - an array of departments
-      // - { success: true, data: { departments: [...] } }
-      // - { data: { departments: [...] } }
-      // - { departments: [...] }
       let departmentsArray = []
       if (response) {
         if (Array.isArray(response)) {
@@ -117,14 +112,11 @@ export default function VoterMessages() {
         }
       }
 
-      // Debug: log the parsed departments shape when running in dev
       if (process?.env?.NODE_ENV !== 'production') {
-        // eslint-disable-next-line no-console
         console.debug('Loaded departments for messages form:', { raw: response, parsed: departmentsArray })
       }
 
       setDepartments(departmentsArray)
-      
       setError("")
     } catch (error) {
       console.error("Error loading departments:", error)
@@ -141,7 +133,6 @@ export default function VoterMessages() {
       [name]: value
     }))
     
-    // Clear error for this field when user starts typing
     if (formErrors[name]) {
       setFormErrors(prev => ({
         ...prev,
@@ -169,8 +160,6 @@ export default function VoterMessages() {
     if (!formData.departmentId) {
       errors.departmentId = "Department is required"
     }
-    
-    // Birthday no longer required or collected
     
     if (!formData.email || formData.email.trim() === "") {
       errors.email = "Email is required"
@@ -206,7 +195,6 @@ export default function VoterMessages() {
     try {
       setSubmitting(true)
       
-      // derive first/middle/last name to satisfy chatSupportAPI validation
       const nameParts = (formData.fullName || '').trim().split(/\s+/).filter(Boolean)
       const parsedFirst = nameParts.length > 0 ? nameParts[0] : ''
       const parsedLast = nameParts.length > 1 ? nameParts[nameParts.length - 1] : ''
@@ -217,14 +205,12 @@ export default function VoterMessages() {
         firstName: (voter?.firstName) || parsedFirst,
         middleName: (voter?.middleName) || parsedMiddle,
         lastName: (voter?.lastName) || parsedLast,
-        // Normalize departmentId to a string identifier backend recognizes
         departmentId: (() => {
           const d = formData.departmentId
           if (!d) return ''
           if (typeof d === 'object') {
             return d._id || d.id || d.departmentCode || d.degreeProgram || ''
           }
-          // if it's a string, try to map it to a known department _id first
           const found = departments.find(dep => String(dep._id) === String(d) || dep.departmentCode === d || dep.degreeProgram === d)
           if (found) return found._id || found.departmentCode || found.degreeProgram || d
           return d
@@ -232,7 +218,6 @@ export default function VoterMessages() {
         email: formData.email.trim().toLowerCase(),
         message: formData.message.trim()
       }
-      // include uploaded file if present
       if (photoFile) payload.photoFile = photoFile
 
       const response = await chatSupportAPI.submit(payload)
@@ -252,7 +237,6 @@ export default function VoterMessages() {
           confirmButtonColor: '#001f65'
         })
 
-        // Reset only the message (preserve schoolId/fullName/department/email)
         setFormData(prev => ({ ...prev, message: "" }))
         setPhotoFile(null)
         setFormErrors({})
@@ -323,47 +307,20 @@ export default function VoterMessages() {
 
   return (
     <VoterLayout>
-      {/* Header */}
-      <div className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/30 px-4 sm:px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            <button
-              onClick={() => router.push("/voter/dashboard")}
-              className="mr-3 p-2 hover:bg-gray-100/80 rounded-lg transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5 text-[#001f65]" />
-            </button>
-            <div className="w-8 h-8 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-lg flex items-center justify-center mr-3 shadow-lg">
-              <MessageSquare className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-[#001f65]">
-                Support & Messages
-              </h1>
-              <p className="text-xs text-[#001f65]/70">
-                Submit a support request or view FAQs
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Navbar */}
+      <VoterNavbar
+        currentPage="messages"
+        pageTitle="Support & Messages"
+        pageSubtitle="Submit a support request or view FAQs"
+        pageIcon={<MessageSquare className="w-5 h-5 text-white" />}
+        onProfileClick={() => setShowProfileModal(true)}
+        onRulesClick={() => setShowRulesModal(true)}
+      />
 
       {/* Main Content */}
       <div className="min-h-[calc(100vh-120px)] p-4 sm:p-6 lg:p-8">
         <div className="max-w-4xl mx-auto">
-          {/* Quick Actions */}
-          <div className="mb-6 bg-gradient-to-r from-blue-50/80 to-purple-50/80 backdrop-blur-sm rounded-xl shadow-lg p-4 border border-white/30">
-            <h2 className="text-lg font-semibold text-[#001f65] mb-3">Quick Actions</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button
-                onClick={() => router.push("/voter/faq")}
-                className="flex items-center justify-center px-4 py-3 bg-white/90 hover:bg-white rounded-lg shadow-md transition-all hover:shadow-lg border border-gray-200"
-              >
-                <HelpCircle className="w-5 h-5 text-[#001f65] mr-2" />
-                <span className="font-medium text-[#001f65]">View FAQs</span>
-              </button>
-            </div>
-          </div>
+
 
           {/* Support Request Form */}
           <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg p-6 border border-white/30">
@@ -425,8 +382,6 @@ export default function VoterMessages() {
                 )}
               </div>
 
-              {/* Birthday removed: not collected from users anymore */}
-
               {/* Email */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -473,7 +428,7 @@ export default function VoterMessages() {
                 </div>
               </div>
 
-              {/* File Upload (optional) */}
+              {/* File Upload */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Attach Photo (optional)</label>
                 <input
@@ -535,6 +490,19 @@ export default function VoterMessages() {
           </div>
         </div>
       </div>
+
+      {/* Modals */}
+      <VoterProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        onProfileUpdate={() => {}}
+      />
+
+      <RulesRegulationsModal
+        isOpen={showRulesModal}
+        onClose={() => setShowRulesModal(false)}
+        isFirstLogin={false}
+      />
     </VoterLayout>
   )
 }

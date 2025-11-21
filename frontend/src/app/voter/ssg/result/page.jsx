@@ -6,15 +6,13 @@ import { votingAPI } from "@/lib/api/voting"
 import { ssgElectionsAPI } from "@/lib/api/ssgElections"
 import { departmentsAPI } from "@/lib/api/departments"
 import VoterLayout from '@/components/VoterLayout'
+import SSGNavbar from '@/components/SSGNavbar'
 import Swal from 'sweetalert2'
 import { 
   Trophy,
   Loader2,
-  ArrowLeft,
-  LogOut,
   Users,
   Award,
-  TrendingUp,
   Building2,
   ChevronRight
 } from "lucide-react"
@@ -127,33 +125,6 @@ export default function VoterSSGResultsPage() {
         text: 'Failed to load department results'
       })
       setLoadingDepartment(false)
-    }
-  }
-
-  const handleLogout = async () => {
-    const result = await Swal.fire({
-      title: 'Are you sure?',
-      text: 'You will be logged out of your account',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#d33',
-      cancelButtonColor: '#3085d6',
-      confirmButtonText: 'Yes, logout',
-      cancelButtonText: 'Cancel'
-    })
-
-    if (result.isConfirmed) {
-      localStorage.removeItem("voterToken")
-      localStorage.removeItem("voterData")
-      router.push("/voterlogin")
-      
-      Swal.fire({
-        title: 'Logged Out',
-        text: 'You have been successfully logged out',
-        icon: 'success',
-        timer: 1500,
-        showConfirmButton: false
-      })
     }
   }
 
@@ -324,7 +295,7 @@ export default function VoterSSGResultsPage() {
             <h2 className="text-2xl font-bold text-gray-800 mb-2 text-center">Access Restricted</h2>
             <p className="text-gray-600 mb-4 text-center">{error}</p>
             <button
-              onClick={() => router.push('/voter/ssg/elections')}
+              onClick={() => router.push(`/voter/ssg/info?id=${electionId}`)}
               className="w-full bg-[#001f65] hover:bg-[#003399] text-white px-6 py-2 rounded-lg transition-colors"
             >
               Back to Elections
@@ -340,30 +311,13 @@ export default function VoterSSGResultsPage() {
 
   return (
     <VoterLayout>
-      {/* Navbar */}
-      <div className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/30 px-4 sm:px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center min-w-0">
-            <button
-              onClick={() => router.push(`/voter/ssg/info?id=${electionId}`)}
-              className="mr-2 sm:mr-3 p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
-            >
-              <ArrowLeft className="w-5 h-5 text-[#001f65]" />
-            </button>
-            <div className="min-w-0">
-              <h1 className="text-lg sm:text-xl font-bold text-[#001f65] truncate">{election?.title}</h1>
-              <p className="text-xs text-[#001f65]/70">Election Results</p>
-            </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-red-50/80 rounded-lg transition-colors border border-red-200 bg-white/60 backdrop-blur-sm flex-shrink-0"
-          >
-            <LogOut className="w-4 h-4 mr-0 sm:mr-2" />
-            <span className="hidden sm:inline">Logout</span>
-          </button>
-        </div>
-      </div>
+      {/* SSG Navbar */}
+      <SSGNavbar
+        currentPage="results"
+        electionId={electionId}
+        pageTitle={election?.title}
+        pageSubtitle="Live Results"
+      />
 
       {/* Main Content */}
       <div className="p-4 lg:p-6">
@@ -386,7 +340,6 @@ export default function VoterSSGResultsPage() {
 
           {/* Department Cards */}
           <div className="mb-8">
-            
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {departments.map((dept) => (
                 <button

@@ -5,19 +5,15 @@ import { useRouter } from "next/navigation"
 import { departmentalElectionsAPI } from "@/lib/api/departmentalElections"
 import { electionParticipationAPI } from "@/lib/api/electionParticipation"
 import VoterLayout from '@/components/VoterLayout'
+import VoterNavbar from '@/components/VoterNavbar'
+import VoterProfileModal from '@/components/VoterProfileModal'
+import RulesRegulationsModal from '@/components/RulesRegulationsModal'
 import Swal from 'sweetalert2'
 import { 
   GraduationCap,
   Loader2,
-  ChevronRight,
-  Calendar,
   Building2,
-  Info,
   Eye,
-  BarChart3,
-  Trophy,
-  Users,
-  Home,
   AlertCircle,
   UserCheck,
   Fingerprint
@@ -30,6 +26,8 @@ export default function VoterDepartmentalElectionsPage() {
   const [voter, setVoter] = useState(null)
   const [voterDepartment, setVoterDepartment] = useState(null)
   const [votingStatus, setVotingStatus] = useState({})
+  const [showProfileModal, setShowProfileModal] = useState(false)
+  const [showRulesModal, setShowRulesModal] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -41,7 +39,6 @@ export default function VoterDepartmentalElectionsPage() {
           return
         }
 
-        // Get voter info from token or API
         const voterData = JSON.parse(localStorage.getItem("voterData") || "{}")
         setVoter(voterData)
 
@@ -71,7 +68,6 @@ export default function VoterDepartmentalElectionsPage() {
         electionsData = []
       }
 
-      // Check voting status for each election
       await loadVotingStatus(electionsData)
       
     } catch (error) {
@@ -88,50 +84,46 @@ export default function VoterDepartmentalElectionsPage() {
   }
 
   const loadVotingStatus = async (electionsData) => {
-  try {
-    const statusPromises = electionsData.map(async (election) => {
-      try {
-        // Use election participation API to check voting status
-        const statusResponse = await electionParticipationAPI.getDepartmentalVotingStatus(election._id)
-        return {
-          electionId: election._id,
-          hasVoted: statusResponse?.hasVoted || false,
-          votingStatus: statusResponse?.votingStatus || 'not_voted'
+    try {
+      const statusPromises = electionsData.map(async (election) => {
+        try {
+          const statusResponse = await electionParticipationAPI.getDepartmentalVotingStatus(election._id)
+          return {
+            electionId: election._id,
+            hasVoted: statusResponse?.hasVoted || false,
+            votingStatus: statusResponse?.votingStatus || 'not_voted'
+          }
+        } catch (error) {
+          console.error(`Error checking voting status for election ${election._id}:`, error)
+          return {
+            electionId: election._id,
+            hasVoted: false,
+            votingStatus: 'not_voted'
+          }
         }
-      } catch (error) {
-        console.error(`Error checking voting status for election ${election._id}:`, error)
-        return {
-          electionId: election._id,
-          hasVoted: false,
-          votingStatus: 'not_voted'
-        }
-      }
-    })
+      })
 
-    const statusResults = await Promise.all(statusPromises)
-    
-    // Create status map
-    const statusMap = {}
-    statusResults.forEach(result => {
-      statusMap[result.electionId] = result.hasVoted
-    })
-    
-    setVotingStatus(statusMap)
+      const statusResults = await Promise.all(statusPromises)
+      
+      const statusMap = {}
+      statusResults.forEach(result => {
+        statusMap[result.electionId] = result.hasVoted
+      })
+      
+      setVotingStatus(statusMap)
 
-    // Add hasVoted property to elections
-    const electionsWithStatus = electionsData.map(election => ({
-      ...election,
-      hasVoted: statusMap[election._id] || false
-    }))
-    
-    setElections(electionsWithStatus)
-    
-  } catch (error) {
-    console.error("Error loading voting status:", error)
-    // Set elections without voting status if there's an error
-    setElections(electionsData)
+      const electionsWithStatus = electionsData.map(election => ({
+        ...election,
+        hasVoted: statusMap[election._id] || false
+      }))
+      
+      setElections(electionsWithStatus)
+      
+    } catch (error) {
+      console.error("Error loading voting status:", error)
+      setElections(electionsData)
+    }
   }
-}
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -146,33 +138,13 @@ export default function VoterDepartmentalElectionsPage() {
     }
   }
 
-  const formatDate = (date) => {
-    if (!date) return 'TBD'
-    return new Date(date).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    })
-  }
-
-  const formatDepartment = (department) => {
-    if (!department) return 'Unknown Department'
-    if (typeof department === 'string') return department
-    return `${department.departmentCode} - ${department.degreeProgram}`
-  }
-
   const getFingerprintColor = (hasVoted) => {
     return hasVoted ? 'text-blue-600' : 'text-gray-400'
   }
 
   const handleElectionClick = (election) => {
-    // Store election data for use in other pages
     localStorage.setItem('selectedDeptElectionForVoter', JSON.stringify(election))
     router.push(`/voter/departmental/info?id=${election._id}`)
-  }
-
-  const handleBackToDashboard = () => {
-    router.push('/voter/dashboard')
   }
 
   if (loading) {
@@ -204,7 +176,7 @@ export default function VoterDepartmentalElectionsPage() {
                 Try Again
               </button>
               <button
-                onClick={handleBackToDashboard}
+                onClick={() => router.push('/voter/dashboard')}
                 className="w-full bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition-colors"
               >
                 Back to Dashboard
@@ -218,33 +190,18 @@ export default function VoterDepartmentalElectionsPage() {
 
   return (
     <VoterLayout>
-      {/* Header */}
-      <div className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/30 px-4 sm:px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            <div className="w-8 h-8 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-lg flex items-center justify-center mr-3 shadow-lg">
-              <GraduationCap className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-[#001f65]">Departmental Elections</h1>
-              <p className="text-xs text-[#001f65]/70">
-                {voterDepartment ? 
-                  `${voterDepartment.departmentCode} - ${voterDepartment.degreeProgram}` : 
-                  'Class Officer Elections'
-                }
-              </p>
-            </div>
-          </div>
-          
-          <button
-            onClick={handleBackToDashboard}
-            className="flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm text-[#001f65] hover:bg-[#b0c8fe]/30 rounded-lg transition-colors border border-[#001f65]/20 bg-white/60 backdrop-blur-sm"
-          >
-            <Home className="w-4 h-4 mr-1 sm:mr-2" />
-            Dashboard
-          </button>
-        </div>
-      </div>
+      {/* Navbar */}
+      <VoterNavbar
+        currentPage="departmental"
+        pageTitle="Departmental Elections"
+        pageSubtitle={voterDepartment ? 
+          `${voterDepartment.departmentCode} - ${voterDepartment.degreeProgram}` : 
+          'Class Officer Elections'
+        }
+        pageIcon={<GraduationCap className="w-5 h-5 text-white" />}
+        onProfileClick={() => setShowProfileModal(true)}
+        onRulesClick={() => setShowRulesModal(true)}
+      />
 
       {/* Main Content */}
       <div className="p-4 lg:p-6">
@@ -261,17 +218,6 @@ export default function VoterDepartmentalElectionsPage() {
                 </span>
               </div>
             )}
-            {/* {voter && (
-              <p className="text-white/60 text-sm mt-2">
-                Logged in as: {voter.firstName} {voter.lastName} ({voter.schoolId})
-                {voter.isClassOfficer && (
-                  <span className="ml-2 inline-flex items-center bg-blue-500/20 text-blue-200 px-2 py-1 rounded text-xs">
-                    <UserCheck className="w-3 h-3 mr-1" />
-                    Class Officer
-                  </span>
-                )}
-              </p>
-            )} */}
           </div>
 
           {/* Elections Grid */}
@@ -307,7 +253,6 @@ export default function VoterDepartmentalElectionsPage() {
                       onClick={() => handleElectionClick(election)}
                       className="w-full max-w-xs bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg p-6 hover:bg-white/30 transition-all duration-200 cursor-pointer group relative overflow-hidden aspect-[3/4] flex flex-col"
                     >
-                      {/* Fingerprint icon indicator */}
                       <div className="absolute top-4 right-4">
                         <Fingerprint className={`w-6 h-6 ${getFingerprintColor(election.hasVoted)} transition-colors duration-300`} />
                       </div>
@@ -315,12 +260,10 @@ export default function VoterDepartmentalElectionsPage() {
                       <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
                       
                       <div className="relative z-10 flex-1 flex flex-col">
-                        {/* Status Badge */}
                         <div className="flex justify-between items-start mb-4">
                           <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(election.status)}`}>
                             {election.status?.toUpperCase() || 'ACTIVE'}
                           </span>
-                          {/* Voting Status Badge */}
                           {election.hasVoted && (
                             <div className="bg-green-500/20 text-green-100 rounded-full px-2 py-1">
                               <span className="text-xs font-medium">✓ Voted</span>
@@ -328,7 +271,6 @@ export default function VoterDepartmentalElectionsPage() {
                           )}
                         </div>
 
-                        {/* Election Info */}
                         <div className="flex-1 flex flex-col justify-center text-center mb-6">
                           <h3 className="text-xl font-bold text-white mb-2 leading-tight">
                             {election.title || `Departmental Election ${election.electionYear}`}
@@ -349,7 +291,6 @@ export default function VoterDepartmentalElectionsPage() {
                           </p>
                         </div>
 
-                        {/* Voting Eligibility Info */}
                         {voter && (
                           <div className="mb-4 p-2 bg-white/5 rounded-lg border border-white/10">
                             {voter.isClassOfficer ? (
@@ -366,7 +307,6 @@ export default function VoterDepartmentalElectionsPage() {
                           </div>
                         )}
 
-                        {/* View Indicator */}
                         <div className="flex justify-center mt-auto">
                           <div className="flex items-center text-green-100 text-sm">
                             <Fingerprint className={`w-4 h-4 mr-1 ${getFingerprintColor(election.hasVoted)}`} />
@@ -382,6 +322,19 @@ export default function VoterDepartmentalElectionsPage() {
           </div>
         </div>
       </div>
+
+      {/* Modals */}
+      <VoterProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        onProfileUpdate={() => {}}
+      />
+
+      <RulesRegulationsModal
+        isOpen={showRulesModal}
+        onClose={() => setShowRulesModal(false)}
+        isFirstLogin={false}
+      />
     </VoterLayout>
   )
 }
