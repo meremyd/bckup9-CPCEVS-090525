@@ -11,6 +11,44 @@ const Department = require("../models/Department")
 const ElectionParticipation = require("../models/ElectionParticipation")
 
 class SSGElectionController {
+  // Helper: compute automatic status for a document or plain object (no DB write)
+  static computeAutomaticStatusFor(election) {
+    // If it's a mongoose document with method, use it
+    try {
+      if (election && typeof election.calculateAutomaticStatus === "function") {
+        return election.calculateAutomaticStatus()
+      }
+    } catch (err) {
+      // ignore and fallback to object-based calculation
+    }
+
+    // Fallback: object-based calculation using same rules as model
+    if (!election || !election.electionDate) return 'upcoming'
+
+    if (election.status === 'cancelled') return 'cancelled'
+
+    const now = new Date()
+    const electionDate = new Date(election.electionDate)
+
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const elecDateStart = new Date(electionDate.getFullYear(), electionDate.getMonth(), electionDate.getDate())
+
+    if (todayStart < elecDateStart) return 'upcoming'
+
+    if (todayStart.getTime() === elecDateStart.getTime()) {
+      // if ballotCloseTime is set, consider it
+      if (election.ballotCloseTime) {
+        const [closeHours, closeMinutes] = String(election.ballotCloseTime).split(':').map(Number)
+        const closeDateTime = new Date(electionDate)
+        closeDateTime.setHours(closeHours, closeMinutes, 0, 0)
+        if (now > closeDateTime) return 'completed'
+      }
+      return 'active'
+    }
+
+    return 'completed'
+  }
+
   // Get all SSG elections with enhanced filtering and pagination
   static async getAllSSGElections(req, res, next) {
     try {
@@ -36,6 +74,15 @@ class SSGElectionController {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limitNum)
+
+      // compute live status for each returned election (do not persist)
+      const electionsWithLiveStatus = elections.map(e => {
+        const liveStatus = SSGElectionController.computeAutomaticStatusFor(e)
+        // return a plain object with overridden status for response
+        const obj = e.toObject ? e.toObject() : { ...e }
+        obj.status = liveStatus
+        return obj
+      })
 
       const total = await SSGElection.countDocuments(filter)
       const totalPages = Math.ceil(total / limitNum)
@@ -85,7 +132,7 @@ class SSGElectionController {
 
       res.json({
         success: true,
-        data: elections,
+        data: electionsWithLiveStatus,
         ssgStats: ssgStats[0] || {
           totalElections: 0,
           activeElections: 0,
@@ -143,6 +190,11 @@ class SSGElectionController {
         return next(error)
       }
 
+      // compute live status (do not save)
+      const liveStatus = SSGElectionController.computeAutomaticStatusFor(election)
+      const electionObj = election.toObject ? election.toObject() : { ...election }
+      electionObj.status = liveStatus
+
       // Get positions for this election
       const positions = await Position.find({ ssgElectionId: id, isActive: true })
         .sort({ positionOrder: 1 })
@@ -172,14 +224,14 @@ class SSGElectionController {
       await AuditLog.logUserAction(
         "SYSTEM_ACCESS",
         req.user,
-        `Accessed SSG election details - ${election.title} (${election.ssgElectionId}) - ${positions.length} positions, ${candidates.length} candidates`,
+        `Accessed SSG election details - ${electionObj.title} (${electionObj.ssgElectionId}) - ${positions.length} positions, ${candidates.length} candidates`,
         req
       )
 
       res.json({
         success: true,
         data: {
-          election,
+          election: electionObj,
           positions,
           partylists,
           candidates,
@@ -1165,45 +1217,7 @@ static async getSSGElectionResults(req, res, next) {
         $addFields: {
           totalVotesForPosition: { 
             $sum: "$candidates.voteCount"
-          }
-        }
-      },
-      {
-        $addFields: {
-          candidates: {
-            $map: {
-              input: "$candidates",
-              as: "candidate",
-              in: {
-                $mergeObjects: [
-                  "$$candidate",
-                  {
-                    votePercentage: {
-                      $cond: [
-                        { $gt: ["$totalVotesForPosition", 0] },
-                        {
-                          $round: [
-                            {
-                              $multiply: [
-                                { $divide: ["$$candidate.voteCount", "$totalVotesForPosition"] },
-                                100
-                              ]
-                            },
-                            2
-                          ]
-                        },
-                        0
-                      ]
-                    }
-                  }
-                ]
-              }
-            }
-          }
-        }
-      },
-      {
-        $addFields: {
+          },
           winner: { $arrayElemAt: ["$candidates", 0] }
         }
       }
@@ -2439,47 +2453,56 @@ static async getSSGElectionOverview(req, res, next) {
 }
 
 static async getAllSSGElectionsForVoters(req, res, next) {
-  try {
-    const { status, page = 1, limit = 50 } = req.query
-    const filter = {}
-    if (status && status !== '') {
-      filter.status = status
-    }
-    
-    const skip = (page - 1) * limit
-    const limitNum = Math.min(Number.parseInt(limit), 100)
-
-    const elections = await SSGElection.find(filter)
-      .sort({ electionDate: -1 })
-      .skip(skip)
-      .limit(limitNum)
-      .select('title ssgElectionId status electionDate electionYear ballotOpenTime ballotCloseTime')
-
-    const total = await SSGElection.countDocuments(filter)
-
-    await AuditLog.logVoterAction(
-      "SYSTEM_ACCESS",
-      { _id: req.user.voterId, schoolId: req.user.schoolId },
-      `SSG elections accessed for voters - ${elections.length} elections returned`,
-      req
-    )
-
-    res.json({
-      success: true,
-      data: {
-        elections,
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages: Math.ceil(total / limitNum),
-          totalItems: total,
-          itemsPerPage: limitNum
-        }
+    try {
+      const { status, page = 1, limit = 50 } = req.query
+      const filter = {}
+      if (status && status !== '') {
+        filter.status = status
       }
-    })
-  } catch (error) {
-    next(error)
+      
+      const skip = (page - 1) * limit
+      const limitNum = Math.min(Number.parseInt(limit), 100)
+
+      const elections = await SSGElection.find(filter)
+        .sort({ electionDate: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .select('title ssgElectionId status electionDate electionYear ballotOpenTime ballotCloseTime')
+
+      // --- NEW: compute live status per election (do not persist) ---
+      const electionsWithLiveStatus = elections.map(e => {
+        const liveStatus = SSGElectionController.computeAutomaticStatusFor(e)
+        const obj = e.toObject ? e.toObject() : { ...e }
+        obj.status = liveStatus
+        return obj
+      })
+      // --- end patch ---
+
+      const total = await SSGElection.countDocuments(filter)
+
+      await AuditLog.logVoterAction(
+        "SYSTEM_ACCESS",
+        { _id: req.user.voterId, schoolId: req.user.schoolId },
+        `SSG elections accessed for voters - ${elections.length} elections returned`,
+        req
+      )
+
+      res.json({
+        success: true,
+        data: {
+          elections: electionsWithLiveStatus,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(total / limitNum),
+            totalItems: total,
+            itemsPerPage: limitNum
+          }
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
   }
-}
 
 // Get single SSG election for voters
 static async getSSGElectionForVoters(req, res, next) {
@@ -2501,6 +2524,10 @@ static async getSSGElectionForVoters(req, res, next) {
       return next(error)
     }
 
+    const liveStatus = SSGElectionController.computeAutomaticStatusFor(election)
+    const electionObj = election.toObject ? election.toObject() : { ...election }
+    electionObj.status = liveStatus
+
     // Get positions and candidates count
     const totalPositions = await Position.countDocuments({ ssgElectionId: id, isActive: true })
     const totalCandidates = await Candidate.countDocuments({ ssgElectionId: id, isActive: true })
@@ -2508,14 +2535,14 @@ static async getSSGElectionForVoters(req, res, next) {
     await AuditLog.logVoterAction(
       "SYSTEM_ACCESS",
       { _id: req.user.voterId, schoolId: req.user.schoolId },
-      `SSG election accessed - ${election.title}`,
+      `SSG election accessed - ${electionObj.title}`,
       req
     )
 
     res.json({
       success: true,
       data: {
-        election,
+        election: electionObj,
         summary: {
           totalPositions,
           totalCandidates
@@ -2754,7 +2781,15 @@ static async getSSGElectionResultsForVoters(req, res, next) {
                 department: { $arrayElemAt: ["$voter.department", 0] }
               }
             },
-            { $sort: { actualVoteCount: -1, candidateNumber: 1 } }
+            // Remove the votes array to reduce size
+            {
+              $project: {
+                votes: 0,
+                voter: 0,
+                partylist: 0
+              }
+            },
+            { $sort: { voteCount: -1, candidateNumber: 1 } }
           ],
           as: "candidates"
         }
@@ -2762,17 +2797,21 @@ static async getSSGElectionResultsForVoters(req, res, next) {
       {
         $addFields: {
           totalVotesForPosition: { 
-            $sum: "$candidates.actualVoteCount"
+            $sum: "$candidates.voteCount"
           },
           winner: { $arrayElemAt: ["$candidates", 0] }
         }
       }
     ])
 
+    const liveStatus = SSGElectionController.computeAutomaticStatusFor(election)
+    const electionObj = election.toObject ? election.toObject() : { ...election }
+    electionObj.status = liveStatus
+
     await AuditLog.logVoterAction(
       "SYSTEM_ACCESS",
       voter,
-      `Viewed SSG election results: ${election.title}`,
+      `Viewed SSG election results: ${electionObj.title}`,
       req
     )
 
@@ -2780,11 +2819,11 @@ static async getSSGElectionResultsForVoters(req, res, next) {
       success: true,
       data: {
         election: {
-          id: election._id,
-          title: election.title,
-          ssgElectionId: election.ssgElectionId,
-          status: election.status,
-          electionDate: election.electionDate,
+          id: electionObj._id,
+          title: electionObj.title,
+          ssgElectionId: electionObj.ssgElectionId,
+          status: electionObj.status,
+          electionDate: electionObj.electionDate,
           type: 'SSG'
         },
         results,
