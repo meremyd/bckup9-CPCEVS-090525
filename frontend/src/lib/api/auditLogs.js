@@ -18,6 +18,18 @@ export const auditLogsAPI = {
     const response = await api.get('/audit-logs/stats/summary')
     return response.data
   }, 
+  // Get total visits
+  getTotalVisits: async () => {
+    const response = await api.get('/audit-logs/stats/total-visits')
+    return response.data
+  },
+  
+  // Get active users
+  getActiveUsers: async () => {
+    const response = await api.get('/audit-logs/stats/active-users')
+    return response.data
+  },
+  
   getUserAuditLogs: async (params = {}) => {
     const response = await api.get('/audit-logs/user', { params })
     return response.data

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { RotateCcw, Search, FileText, Loader2 } from "lucide-react"
+import { RotateCcw, Search, FileText, Loader2, Users, Activity } from "lucide-react"
 import Swal from 'sweetalert2'
 import { auditLogsAPI } from '@/lib/api/auditLogs'
 
@@ -12,7 +12,9 @@ export default function AuditLogsPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedAction, setSelectedAction] = useState("")
   const [dateFilter, setDateFilter] = useState("")
-  const [statistics, setStatistics] = useState(null)
+  const [totalVisits, setTotalVisits] = useState(0)
+  const [activeUsers, setActiveUsers] = useState(0)
+  const [loadingStats, setLoadingStats] = useState(true)
   const debounceTimeout = useRef(null)
 
   // All possible actions from AuditLog.js enum
@@ -21,14 +23,18 @@ export default function AuditLogsPage() {
     "UNAUTHORIZED_ACCESS_ATTEMPT", "DATA_EXPORT", "DATA_IMPORT", "UPDATE_PASSWORD", "FORCE_LOGOUT",
     "CREATE_USER", "UPDATE_USER", "DELETE_USER", "ACTIVATE_USER", "DEACTIVATE_USER",
     "CREATE_VOTER", "UPDATE_VOTER", "DELETE_VOTER", "ACTIVATE_VOTER", "DEACTIVATE_VOTER", "VOTER_REGISTRATION",
-    "CREATE_DEGREE", "UPDATE_DEGREE", "DELETE_DEGREE",
-    "SYSTEM_ACCESS", "CREATE_ELECTION", "UPDATE_SSG_ELECTION", "DELETE_ELECTION", "START_ELECTION", "END_ELECTION", "CANCEL_ELECTION",
+    "CREATE_DEPARTMENT", "UPDATE_DEPARTMENT", "DELETE_DEPARTMENT",
+    "SYSTEM_ACCESS", "CREATE_SSG_ELECTION", "UPDATE_SSG_ELECTION", "DELETE_SSG_ELECTION",
+    "CREATE_DEPARTMENTAL_ELECTION", "UPDATE_DEPARTMENTAL_ELECTION", "DELETE_DEPARTMENTAL_ELECTION",
+    "START_ELECTION", "END_ELECTION", "CANCEL_ELECTION",
     "CREATE_CANDIDATE", "UPDATE_CANDIDATE", "DELETE_CANDIDATE",
     "CREATE_POSITION", "UPDATE_POSITION", "DELETE_POSITION",
     "CREATE_PARTYLIST", "UPDATE_PARTYLIST", "DELETE_PARTYLIST",
-    "VOTED", "VOTE_SUBMITTED", "BALLOT_ACCESSED", "BALLOT_STARTED", "BALLOT_ABANDONED",
+    "VOTED", "VOTE_SUBMITTED", "BALLOT_ACCESSED", "BALLOT_STARTED", "BALLOT_ABANDONED", "BALLOT_EXPIRED_DELETED",
     "CHAT_SUPPORT_REQUEST", "CHAT_SUPPORT_RESPONSE", "CHAT_SUPPORT_STATUS_UPDATE",
-    "FILE_UPLOAD", "FILE_DELETE", "PROFILE_PICTURE_UPDATE", "CAMPAIGN_PICTURE_UPDATE"
+    "FILE_UPLOAD", "FILE_DELETE", "PROFILE_ACCESS", "PROFILE_UPDATE",
+    "PROFILE_PICTURE_UPDATE", "CAMPAIGN_PICTURE_UPDATE",
+    "VOTER_PARTICIPATED_IN_SSG_ELECTION", "VOTER_PARTICIPATED_IN_DEPARTMENTAL_ELECTION"
   ]
 
   const showAlert = (type, title, text) => {
@@ -63,9 +69,9 @@ export default function AuditLogsPage() {
       setLoading(true)
       setError("")
       const params = {}
-      if (searchTerm.trim()) params.search = searchTerm.trim()
+      if (searchTerm.trim()) params.username = searchTerm.trim()
       if (selectedAction) params.action = selectedAction
-      if (dateFilter) params.date = dateFilter
+      if (dateFilter) params.startDate = dateFilter
       const response = await auditLogsAPI.getAll(params)
       if (response.success && Array.isArray(response.data)) {
         setLogs(response.data)
@@ -88,15 +94,24 @@ export default function AuditLogsPage() {
 
   const fetchStatistics = async () => {
     try {
-      const response = await auditLogsAPI.getStatistics()
-      if (response.success) {
-        setStatistics(response.data)
-      } else if (response.data) {
-        setStatistics(response.data)
-      } else {
-        setStatistics(response)
+      setLoadingStats(true)
+      
+      // Fetch total visits
+      const visitsResponse = await auditLogsAPI.getTotalVisits()
+      if (visitsResponse.success) {
+        setTotalVisits(visitsResponse.data.totalVisits)
       }
-    } catch (error) { /* silent fail */ }
+
+      // Fetch active users
+      const activeResponse = await auditLogsAPI.getActiveUsers()
+      if (activeResponse.success) {
+        setActiveUsers(activeResponse.data.activeUsers)
+      }
+    } catch (error) {
+      console.error("Error fetching statistics:", error)
+    } finally {
+      setLoadingStats(false)
+    }
   }
 
   const filteredLogs = Array.isArray(logs) ? logs : []
@@ -164,7 +179,7 @@ export default function AuditLogsPage() {
     fetchStatistics()
   }
 
-  if (loading) {
+  if (loading && loadingStats) {
     return (
       <div className="min-h-screen bg-transparent p-4 sm:p-6">
         <div className="max-w-7xl mx-auto">
@@ -181,26 +196,45 @@ export default function AuditLogsPage() {
     <div className="min-h-screen bg-transparent p-4 sm:p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Statistics Cards */}
-        {statistics && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-              <div className="text-sm font-medium text-[#001f65]/60">Total Logs</div>
-              <div className="text-2xl font-bold text-[#001f65]">{statistics.totalLogs || 0}</div>
-            </div>
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-              <div className="text-sm font-medium text-[#001f65]/60">Today's Activity</div>
-              <div className="text-2xl font-bold text-blue-600">{statistics.todayActivity || 0}</div>
-            </div>
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-              <div className="text-sm font-medium text-[#001f65]/60">Failed Attempts</div>
-              <div className="text-2xl font-bold text-red-600">{statistics.failedAttempts || 0}</div>
-            </div>
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-              <div className="text-sm font-medium text-[#001f65]/60">Active Users</div>
-              <div className="text-2xl font-bold text-green-600">{statistics.activeUsers || 0}</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium text-[#001f65]/60">Total Visits</div>
+                <div className="text-3xl font-bold text-[#001f65] mt-2">
+                  {loadingStats ? (
+                    <Loader2 className="h-8 w-8 animate-spin" />
+                  ) : (
+                    totalVisits.toLocaleString()
+                  )}
+                </div>
+                <div className="text-xs text-[#001f65]/50 mt-1">All-time login count</div>
+              </div>
+              <div className="bg-blue-100 p-3 rounded-full">
+                <Users className="h-8 w-8 text-blue-600" />
+              </div>
             </div>
           </div>
-        )}
+
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium text-[#001f65]/60">Active Users</div>
+                <div className="text-3xl font-bold text-green-600 mt-2">
+                  {loadingStats ? (
+                    <Loader2 className="h-8 w-8 animate-spin" />
+                  ) : (
+                    activeUsers.toLocaleString()
+                  )}
+                </div>
+                <div className="text-xs text-[#001f65]/50 mt-1">Active in last 15 minutes</div>
+              </div>
+              <div className="bg-green-100 p-3 rounded-full">
+                <Activity className="h-8 w-8 text-green-600" />
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* Main Card */}
         <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 overflow-hidden">
@@ -226,7 +260,7 @@ export default function AuditLogsPage() {
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Search by user, action, details, or IP..."
+                    placeholder="Search by username..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"

@@ -76,9 +76,13 @@ class VoterController {
       }
       
       // Add activeOnly filter
-      if (activeOnly === "true") {
-        filter.isActive = true
-      }
+      if (activeOnly !== undefined) {
+  if (activeOnly === "true") {
+    filter.isActive = true  // Only active voters
+  } else if (activeOnly === "false") {
+    filter.isActive = false  // Only inactive voters
+  }
+}
       
       if (search) {
         const searchNumber = Number(search)
@@ -775,6 +779,58 @@ class VoterController {
     }
   }
 
+static async activateVoter(req, res, next) {
+  try {
+    const { id } = req.params
+
+    const voter = await Voter.findById(id).populate("departmentId")
+    if (!voter) {
+      await AuditLog.logUserAction(
+        "ACTIVATE_VOTER",
+        { username: req.user?.username },
+        `Failed to activate voter - Voter ID ${id} not found`,
+        req
+      )
+      
+      const error = new Error("Voter not found")
+      error.statusCode = 404
+      return next(error)
+    }
+
+    // Check if voter is already active
+    if (voter.isActive) {
+      const error = new Error("Voter is already active")
+      error.statusCode = 400
+      return next(error)
+    }
+
+    const voterInfo = `${voter.firstName} ${voter.lastName} (${voter.schoolId})`
+
+    // Activate the voter
+    voter.isActive = true
+    await voter.save()
+
+    await AuditLog.logVoterAction(
+      "ACTIVATE_VOTER",
+      voter,
+      `Voter activated - ${voterInfo} by ${req.user.username}`,
+      req
+    )
+
+    const updatedVoter = await Voter.findById(id)
+      .populate("departmentId")
+      .select("-password -faceEncoding -profilePicture")
+
+    res.json({
+      success: true,
+      message: "Voter activated successfully",
+      data: updatedVoter
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
   // Deactivate voter
    static async deactivateVoter(req, res, next) {
     try {
@@ -815,6 +871,72 @@ class VoterController {
           lastName: voter.lastName,
           isActive: voter.isActive,
           isPasswordActive: voter.isPasswordActive,
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+   static async unregisterVoter(req, res, next) {
+    try {
+      const { id } = req.params
+
+      const voter = await Voter.findById(id).populate("departmentId")
+      if (!voter) {
+        await AuditLog.logUserAction(
+          "UNREGISTER_VOTER",
+          { username: req.user?.username },
+          `Failed to unregister voter - Voter ID ${id} not found`,
+          req
+        )
+        
+        const error = new Error("Voter not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
+      // Check if voter is actually registered
+      if (!voter.isRegistered) {
+        const error = new Error("Voter is not registered")
+        error.statusCode = 400
+        return next(error)
+      }
+
+      // Store voter info for logging
+      const voterInfo = `${voter.firstName} ${voter.lastName} (${voter.schoolId})`
+
+      // Clear registration data
+      voter.email = null
+      voter.password = null
+      voter.isRegistered = false
+      voter.isPasswordActive = false
+      voter.passwordCreatedAt = null
+      voter.passwordExpiresAt = null
+      voter.otpCode = null
+      voter.otpExpires = null
+      voter.otpVerified = false
+      
+      await voter.save()
+
+      await AuditLog.logVoterAction(
+        "UNREGISTER_VOTER",
+        voter,
+        `Voter unregistered - ${voterInfo} - Registration data cleared`,
+        req
+      )
+
+      res.json({
+        success: true,
+        message: "Voter unregistered successfully",
+        data: {
+          id: voter._id,
+          schoolId: voter.schoolId,
+          firstName: voter.firstName,
+          lastName: voter.lastName,
+          isRegistered: voter.isRegistered,
+          isActive: voter.isActive,
+          email: voter.email
         }
       })
     } catch (error) {

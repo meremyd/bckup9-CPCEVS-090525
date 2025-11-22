@@ -214,6 +214,16 @@ export const votersAPI = {
       throw error
     }
   },
+
+  activate: async (id) => {
+  try {
+    const response = await api.put(`/voters/${id}/activate`)
+    return response.data
+  } catch (error) {
+    console.error(`Error activating voter ${id}:`, error)
+    throw error
+  }
+},
   
   // Deactivate voter
   deactivate: async (id) => {
@@ -222,6 +232,16 @@ export const votersAPI = {
       return response.data
     } catch (error) {
       console.error(`Error deactivating voter ${id}:`, error)
+      throw error
+    }
+  },
+
+  unregister: async (id) => {
+    try {
+      const response = await api.put(`/voters/${id}/unregister`)
+      return response.data
+    } catch (error) {
+      console.error(`Error unregistering voter ${id}:`, error)
       throw error
     }
   },

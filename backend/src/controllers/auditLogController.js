@@ -386,6 +386,99 @@ class AuditLogController {
     }
   }
 
+  // Get total visits (total LOGIN actions)
+  static async getTotalVisits(req, res, next) {
+    try {
+      const totalVisits = await AuditLog.countDocuments({ action: "LOGIN" })
+
+      // Log the access
+      await AuditLog.create({
+        action: "SYSTEM_ACCESS",
+        username: req.user?.username || "system",
+        userId: req.user?.userId || null,
+        details: "Total visits statistics accessed",
+        ipAddress: req.ip,
+        userAgent: req.get("User-Agent"),
+      })
+
+      res.json({
+        success: true,
+        data: {
+          totalVisits
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Get active users (users who logged in recently without logout)
+  static async getActiveUsers(req, res, next) {
+    try {
+      // Define "active" as logged in within last 15 minutes without logout
+      const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000)
+
+      // Get all recent logins
+      const recentLogins = await AuditLog.find({
+        action: "LOGIN",
+        timestamp: { $gte: fifteenMinutesAgo }
+      }).select('username userId voterId timestamp')
+
+      // For each login, check if there's a logout after it
+      const activeUsers = []
+      const processedUsers = new Set()
+
+      for (const login of recentLogins) {
+        const userKey = login.userId?.toString() || login.voterId?.toString() || login.username
+        
+        if (processedUsers.has(userKey)) continue
+        processedUsers.add(userKey)
+
+        // Check if there's a logout after this login
+        const logoutAfterLogin = await AuditLog.findOne({
+          action: "LOGOUT",
+          $or: [
+            { userId: login.userId },
+            { voterId: login.voterId },
+            { username: login.username }
+          ],
+          timestamp: { $gt: login.timestamp }
+        })
+
+        // If no logout found, user is still active
+        if (!logoutAfterLogin) {
+          activeUsers.push({
+            username: login.username,
+            userId: login.userId,
+            voterId: login.voterId,
+            lastLogin: login.timestamp
+          })
+        }
+      }
+
+      // Log the access
+      await AuditLog.create({
+        action: "SYSTEM_ACCESS",
+        username: req.user?.username || "system",
+        userId: req.user?.userId || null,
+        details: `Active users statistics accessed - ${activeUsers.length} active users`,
+        ipAddress: req.ip,
+        userAgent: req.get("User-Agent"),
+      })
+
+      res.json({
+        success: true,
+        data: {
+          activeUsers: activeUsers.length,
+          users: activeUsers,
+          timeWindow: "15 minutes"
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
   // Export audit logs (for compliance/backup purposes)
   static async exportAuditLogs(req, res, next) {
     try {

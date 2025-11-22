@@ -5,6 +5,8 @@ const router = express.Router()
 
 router.use(authMiddleware)
 
+router.get("/stats/total-visits", authorizeRoles("admin"), AuditLogController.getTotalVisits)
+router.get("/stats/active-users", authorizeRoles("admin"), AuditLogController.getActiveUsers)
 router.get("/stats/summary", authorizeRoles("admin"), AuditLogController.getStatistics)
 router.get("/export", authorizeRoles("admin"), AuditLogController.exportAuditLogs)
 router.get("/user", authorizeRoles("admin"), AuditLogController.getUserAuditLogs)
