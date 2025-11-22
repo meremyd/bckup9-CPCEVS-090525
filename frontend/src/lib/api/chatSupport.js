@@ -122,7 +122,7 @@ export const chatSupportAPI = {
       }
 
       // If status is provided, validate it
-      const validStatuses = ["pending", "in-progress", "resolved", "closed"]
+      const validStatuses = ["pending", "in-progress", "resolved", "archived", "closed"]
       if (updateData.status && !validStatuses.includes(updateData.status)) {
         throw new Error('Invalid status. Must be one of: ' + validStatuses.join(', '))
       }
@@ -199,7 +199,7 @@ export const chatSupportAPI = {
         throw new Error('Status is required')
       }
 
-      const validStatuses = ["pending", "in-progress", "resolved", "closed"]
+      const validStatuses = ["pending", "in-progress", "resolved", "archived", "closed"]
       if (!validStatuses.includes(data.status)) {
         throw new Error('Invalid status. Must be one of: ' + validStatuses.join(', '))
       }
