@@ -568,6 +568,15 @@ class DepartmentalElectionController {
         return next(error)
       }
 
+      // Fetch existing election early so we can compare values and only validate
+      // electionDate when it is actually being changed.
+      const existingElection = await DepartmentalElection.findById(id).populate("departmentId")
+      if (!existingElection) {
+        const error = new Error("Departmental election not found")
+        error.statusCode = 404
+        return next(error)
+      }
+
       // Don't allow changing certain fields
       delete updateData.deptElectionId
       delete updateData.createdBy
@@ -600,26 +609,36 @@ class DepartmentalElectionController {
         }
       }
 
-      // Validate election date if provided
+      // Validate election date if provided and it is actually different from stored value
       if (updateData.electionDate) {
-        const electionDateObj = new Date(updateData.electionDate)
-        if (electionDateObj < new Date() && updateData.status !== 'completed') {
-          const error = new Error("Election date cannot be in the past unless status is 'completed'")
-          error.statusCode = 400
-          return next(error)
+        const newDate = new Date(updateData.electionDate)
+        const oldDate = existingElection.electionDate ? new Date(existingElection.electionDate) : null
+
+        const isDifferentDate = !oldDate || newDate.getTime() !== oldDate.getTime()
+
+        // Only enforce "not in the past" when user attempts to change the election date.
+        if (isDifferentDate) {
+          if (newDate.toString() === 'Invalid Date') {
+            const error = new Error("Invalid election date format")
+            error.statusCode = 400
+            return next(error)
+          }
+
+          // If new date is in the past and the requested status is not 'completed', forbid it
+          if (newDate < new Date() && (updateData.status !== 'completed' && existingElection.status !== 'completed')) {
+            const error = new Error("Election date cannot be in the past unless status is 'completed'")
+            error.statusCode = 400
+            return next(error)
+          }
+
+          updateData.electionDate = newDate
+        } else {
+          // If not actually changing the date, remove it so later checks (e.g. submittedBallots check) won't treat it as a change
+          delete updateData.electionDate
         }
-        updateData.electionDate = electionDateObj
       }
 
-      // Check if election exists
-      const existingElection = await DepartmentalElection.findById(id).populate("departmentId")
-      if (!existingElection) {
-        const error = new Error("Departmental election not found")
-        error.statusCode = 404
-        return next(error)
-      }
-
-      // Prevent updates to active elections with submitted ballots
+      // Prevent updates to active elections with submitted ballots (still applies if electionDate is being changed)
       const submittedBallots = await Ballot.countDocuments({ deptElectionId: id, isSubmitted: true })
       if (submittedBallots > 0 && updateData.electionDate) {
         const error = new Error("Cannot modify election date after votes have been submitted")
@@ -1277,7 +1296,7 @@ class DepartmentalElectionController {
         isActive: true 
       }),
       registeredClassOfficersInDepartment: await Voter.countDocuments({ 
-        departmentId: election.departmentId._id, 
+        departmentId: election.departmentId._id,
         isActive: true, 
         isRegistered: true,
         isClassOfficer: true 

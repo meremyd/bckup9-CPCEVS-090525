@@ -1196,8 +1196,7 @@ static async getSSGElectionResults(req, res, next) {
                   ]
                 },
                 partylistName: { $arrayElemAt: ["$partylist.partylistName", 0] },
-                department: { $arrayElemAt: ["$voter.department", 0] },
-                votePercentage: 0 // Will be calculated after
+                department: { $arrayElemAt: ["$voter.department", 0] }
               }
             },
             // Remove the votes array to reduce size
@@ -1223,6 +1222,23 @@ static async getSSGElectionResults(req, res, next) {
       }
     ])
 
+    // FIX: Calculate votePercentage for each candidate AFTER aggregation
+    const positionResults = results.map(position => {
+      const totalVotes = position.totalVotesForPosition || 0
+      
+      const candidatesWithPercentage = position.candidates.map(candidate => ({
+        ...candidate,
+        votePercentage: totalVotes > 0 
+          ? Math.round((candidate.voteCount / totalVotes) * 1000) / 10  // Round to 1 decimal
+          : 0
+      }))
+
+      return {
+        ...position,
+        candidates: candidatesWithPercentage
+      }
+    })
+
     await AuditLog.logUserAction(
       "SYSTEM_ACCESS",
       req.user,
@@ -1241,7 +1257,7 @@ static async getSSGElectionResults(req, res, next) {
           electionDate: election.electionDate,
           electionType: "ssg"
         },
-        positionResults: results
+        positionResults  // Changed from 'results' to use the processed version
       }
     })
   } catch (error) {

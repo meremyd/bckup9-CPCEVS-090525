@@ -88,8 +88,14 @@ chatSupportSchema.index({ schoolId: 1 })
 chatSupportSchema.index({ departmentId: 1 })
 
 // Pre-save hook to auto-populate voterId if not provided
+// Only auto-populate voterId when the controller explicitly allows it by setting
+// a non-persistent flag `._autoLink` on the document. This prevents public
+// submissions (e.g. from the voterlogin page) from being silently linked to
+// existing voter accounts based solely on schoolId.
 chatSupportSchema.pre('save', async function(next) {
-  if (!this.voterId && this.schoolId) {
+  // If controller explicitly set _autoLink to true and no voterId is present,
+  // attempt to populate voterId from the Voter collection. Otherwise skip.
+  if (this._autoLink === true && !this.voterId && this.schoolId) {
     try {
       const Voter = mongoose.model('Voter')
       const voter = await Voter.findOne({ schoolId: this.schoolId })

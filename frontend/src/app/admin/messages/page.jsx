@@ -101,8 +101,8 @@ export default function MessagesPage() {
   const fetchMessages = async () => {
     try {
       setLoading(true)
-      // Map client-side 'archived' view to backend 'resolved' status
-      const effectiveStatusParam = selectedStatus === 'archived' ? 'resolved' : (selectedStatus || undefined)
+      // Map client-side 'archived' view to backend 'archived' status
+      const effectiveStatusParam = selectedStatus === 'archived' ? 'archived' : (selectedStatus || undefined)
       const params = {
         page: currentPage,
         limit: pageSize,
@@ -116,10 +116,10 @@ export default function MessagesPage() {
         // Client-side filtering so that "All" does NOT include archived (resolved) items.
         let items = itemsFull
         if (selectedStatus === 'archived') {
-          items = itemsFull.filter(m => m.status === 'resolved')
+          items = itemsFull.filter(m => m.status === 'archived')
         } else if (!selectedStatus) {
-          // 'All' view - exclude archived/resolved items
-          items = itemsFull.filter(m => m.status !== 'resolved')
+          // 'All' view - exclude archived items
+          items = itemsFull.filter(m => m.status !== 'archived')
         }
         setMessages(items)
         // fetch photo blobs for items that have a photo
@@ -135,9 +135,9 @@ export default function MessagesPage() {
         let itemsFull = response.requests
         let items = itemsFull
         if (selectedStatus === 'archived') {
-          items = itemsFull.filter(m => m.status === 'resolved')
+          items = itemsFull.filter(m => m.status === 'archived')
         } else if (!selectedStatus) {
-          items = itemsFull.filter(m => m.status !== 'resolved')
+          items = itemsFull.filter(m => m.status !== 'archived')
         }
         setMessages(items)
         setPagination(response.pagination || {
@@ -150,9 +150,9 @@ export default function MessagesPage() {
         let itemsFull = response
         let items = itemsFull
         if (selectedStatus === 'archived') {
-          items = itemsFull.filter(m => m.status === 'resolved')
+          items = itemsFull.filter(m => m.status === 'archived')
         } else if (!selectedStatus) {
-          items = itemsFull.filter(m => m.status !== 'resolved')
+          items = itemsFull.filter(m => m.status !== 'archived')
         }
         setMessages(items)
         setPagination({
@@ -219,11 +219,6 @@ export default function MessagesPage() {
       let resp = null
       if (selectedMessage.schoolId) {
         resp = await adminAPI.lookupAccount({ studentId: selectedMessage.schoolId })
-      }
-
-      // If not found by studentId and email exists, try email lookup
-      if ((!resp || resp.found === false || !Array.isArray(resp.accounts) || resp.accounts.length === 0) && selectedMessage.email) {
-        resp = await adminAPI.lookupAccount({ email: selectedMessage.email })
       }
 
       // Normalize: treat only explicit accounts array with length > 0 as found
@@ -414,6 +409,37 @@ export default function MessagesPage() {
       }
     } catch (error) {
       showAlert("error", "Error!", error.message || error || "Failed to update message")
+    }
+  }
+
+  const handleDeleteMessage = async (id) => {
+    try {
+      if (!id) return
+      const confirmed = await Swal.fire({
+        title: 'Delete message?',
+        text: 'This will permanently delete the archived message. This action cannot be undone.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, delete',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#b91c1c'
+      })
+      if (!confirmed.isConfirmed) return
+      const res = await chatSupportAPI.delete(id)
+      if (res && (res.success || res.message)) {
+        showAlert('success', 'Deleted', 'Message deleted successfully')
+        fetchMessages()
+        // if modal is open on the deleted message, close it
+        if (selectedMessage && (selectedMessage._id === id || selectedMessage.id === id)) {
+          setShowMessageModal(false)
+          setSelectedMessage(null)
+        }
+      } else {
+        throw new Error(res.message || 'Failed to delete message')
+      }
+    } catch (err) {
+      console.error('Delete message error', err)
+      showAlert('error', 'Error', err.message || 'Failed to delete message')
     }
   }
 
@@ -784,34 +810,49 @@ export default function MessagesPage() {
                       {formatDate(message.submittedAt || message.createdAt)}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm font-medium flex items-center gap-2">
-                      {message.status === 'resolved' ? (
+                      {message.status === 'archived' ? (
                         // Archived row: only allow Unarchive action
-                        <button
-                          onClick={async () => {
-                            try {
-                              const name = message.ticketId || message.schoolId || 'this message'
-                              const confirmed = await Swal.fire({
-                                title: 'Unarchive message?',
-                                text: `Are you sure you want to unarchive ${name}? This will set its status to In Progress.`,
-                                icon: 'question',
-                                showCancelButton: true,
-                                confirmButtonText: 'Yes, unarchive',
-                                cancelButtonText: 'Cancel',
-                                confirmButtonColor: '#001f65'
-                              })
-                              if (!confirmed.isConfirmed) return
-                              await chatSupportAPI.updateStatus(message._id, { status: 'in-progress' })
-                              fetchMessages()
-                              showAlert('success', 'Unarchived', 'Message restored for action')
-                            } catch (err) {
-                              console.error('Unarchive error (row)', err)
-                              showAlert('error', 'Error', err.message || 'Failed to unarchive')
-                            }
-                          }}
-                          className="px-3 py-1 bg-blue-600 text-white rounded text-sm"
-                        >
-                          Unarchive
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={async () => {
+                              try {
+                                const name = message.ticketId || message.schoolId || 'this message'
+                                const confirmed = await Swal.fire({
+                                  title: 'Unarchive message?',
+                                  text: `Are you sure you want to unarchive ${name}? This will set its status to In Progress.`,
+                                  icon: 'question',
+                                  showCancelButton: true,
+                                  confirmButtonText: 'Yes, unarchive',
+                                  cancelButtonText: 'Cancel',
+                                  confirmButtonColor: '#001f65'
+                                })
+                                if (!confirmed.isConfirmed) return
+                                await chatSupportAPI.updateStatus(message._id, { status: 'in-progress' })
+                                fetchMessages()
+                                showAlert('success', 'Unarchived', 'Message restored for action')
+                              } catch (err) {
+                                console.error('Unarchive error (row)', err)
+                                showAlert('error', 'Error', err.message || 'Failed to unarchive')
+                              }
+                            }}
+                            className="px-3 py-1 bg-blue-600 text-white rounded text-sm"
+                          >
+                            Unarchive
+                          </button>
+
+                          <button
+                            onClick={async () => {
+                              try {
+                                await handleDeleteMessage(message._id)
+                              } catch (err) {
+                                // errors already handled in handler
+                              }
+                            }}
+                            className="px-3 py-1 bg-red-600 text-white rounded text-sm"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       ) : (
                         // Non-archived row: normal actions
                         <>
@@ -972,7 +1013,7 @@ export default function MessagesPage() {
                 </div>
 
                 {/* Archived - read only */}
-                {selectedMessage.status === 'resolved' && (
+                {selectedMessage.status === 'archived' && (
                   <div className="mt-4 p-4 bg-gray-50 border rounded-lg">
                     <div className="flex items-center justify-between">
                       <div>
@@ -980,36 +1021,51 @@ export default function MessagesPage() {
                         <p className="text-xs text-[#475569]">This message is archived and read-only. Use "Unarchive" to restore it for further action.</p>
                       </div>
                       <div>
-                        <button
-                          onClick={async () => {
-                            try {
-                              const name = selectedMessage.ticketId || selectedMessage.schoolId || 'this message'
-                              const confirmed = await Swal.fire({
-                                title: 'Unarchive message?',
-                                text: `Are you sure you want to unarchive ${name}? This will set its status to In Progress.`,
-                                icon: 'question',
-                                showCancelButton: true,
-                                confirmButtonText: 'Yes, unarchive',
-                                cancelButtonText: 'Cancel',
-                                confirmButtonColor: '#001f65'
-                              })
-                              if (!confirmed.isConfirmed) return
-                              await handleUpdateStatus('in-progress')
-                            } catch (err) {
-                              showAlert('error', 'Error', err.message || 'Failed to unarchive message')
-                            }
-                          }}
-                          className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm"
-                        >
-                          Unarchive
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={async () => {
+                              try {
+                                const name = selectedMessage.ticketId || selectedMessage.schoolId || 'this message'
+                                const confirmed = await Swal.fire({
+                                  title: 'Unarchive message?',
+                                  text: `Are you sure you want to unarchive ${name}? This will set its status to In Progress.`,
+                                  icon: 'question',
+                                  showCancelButton: true,
+                                  confirmButtonText: 'Yes, unarchive',
+                                  cancelButtonText: 'Cancel',
+                                  confirmButtonColor: '#001f65'
+                                })
+                                if (!confirmed.isConfirmed) return
+                                await handleUpdateStatus('in-progress')
+                              } catch (err) {
+                                showAlert('error', 'Error', err.message || 'Failed to unarchive message')
+                              }
+                            }}
+                            className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm"
+                          >
+                            Unarchive
+                          </button>
+
+                          <button
+                            onClick={async () => {
+                              try {
+                                await handleDeleteMessage(selectedMessage._id)
+                              } catch (err) {
+                                // handled in function
+                              }
+                            }}
+                            className="px-3 py-1 bg-red-600 text-white rounded-md text-sm"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
                 )}
 
                 {/* Non-archived controls */}
-                {selectedMessage.status !== 'resolved' && (
+                {selectedMessage.status !== 'archived' && (
                   <>
                     {(selectedMessage._photoSrc || selectedMessage.photo) && (
                       <div>
@@ -1022,22 +1078,102 @@ export default function MessagesPage() {
 
                     <div>
                       <label className="block text-sm font-medium text-[#001f65]">Account</label>
-                      <div className="mt-2 flex items-center gap-3">
+                      <div className="mt-2">
                         {accountLoading ? (
                           <div className="text-sm text-[#001f65]">Checking account...</div>
                         ) : (
                           <>
                             {!selectedMessage?.voterId && !accountLookupStatus && (
-                              <button onClick={handleIdentifyAccount} className="px-3 py-1 rounded-md text-sm bg-[#001f65] text-white">Identify Account</button>
+                              <div className="flex items-center gap-3">
+                                <button onClick={handleIdentifyAccount} className="px-3 py-1 rounded-md text-sm bg-[#001f65] text-white">Identify Account</button>
+                              </div>
                             )}
 
                             {selectedMessage?.voterId && (
-                              <button onClick={handleAddToFAQ} disabled={!(selectedMessage.response || selectedMessage.respondedAt)} className={`px-3 py-1 rounded-md text-sm ${selectedMessage.response || selectedMessage.respondedAt ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600 cursor-not-allowed'}`}>Add to FAQ</button>
+                              <div className="flex items-center gap-3">
+                                <button onClick={handleAddToFAQ} disabled={!(selectedMessage.response || selectedMessage.respondedAt)} className={`px-3 py-1 rounded-md text-sm ${selectedMessage.response || selectedMessage.respondedAt ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600 cursor-not-allowed'}`}>Add to FAQ</button>
+                              </div>
+                            )}
+
+                            {/* If lookup returned no account, allow creating one prefilled from the message */}
+                            {!selectedMessage?.voterId && accountLookupStatus === 'not-found' && (
+                              <div className="mt-3 flex items-center gap-3">
+                                <div className="text-sm text-gray-700">No matching account was found for this requester.</div>
+                                <button onClick={openCreateForm} className="px-3 py-1 bg-green-600 text-white rounded-md text-sm">Add Account</button>
+                              </div>
+                            )}
+
+                            {/* If lookup returned an account, show brief details and allow editing */}
+                            {!selectedMessage?.voterId && (accountLookupStatus === 'found-activated' || accountLookupStatus === 'found-inactivated') && accountResult && (
+                              <div className="mt-3 p-3 bg-white border rounded-lg">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <div className="text-sm font-semibold text-[#001f65]">{(accountResult.firstName || accountResult.name) ? `${accountResult.firstName || ''} ${accountResult.middleName || ''} ${accountResult.lastName || ''}`.trim() : (accountResult.name || 'Unknown')}</div>
+                                    <div className="text-xs text-gray-500">School ID: {accountResult.schoolId || accountResult.studentId || 'N/A'}</div>
+                                    <div className="text-xs text-gray-500">Email: {accountResult.email || 'N/A'}</div>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-2">
+                                    <div className={accountLookupStatus === 'found-activated' ? 'text-xs px-2 py-1 bg-green-100 text-green-800 rounded' : 'text-xs px-2 py-1 bg-yellow-100 text-yellow-800 rounded'}>{accountLookupStatus === 'found-activated' ? 'Active' : 'Inactive'}</div>
+                                    <div className="flex gap-2">
+                                      <button onClick={openEditForm} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">Edit Account</button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
                             )}
                           </>
                         )}
                       </div>
                     </div>
+
+                    {/* Account create / edit form */}
+                    {showAccountForm && (
+                      <form onSubmit={handleAccountFormSubmit} className="mt-3 p-4 bg-white border rounded-lg">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-[#001f65]">First Name</label>
+                            <input value={accountFormData.firstName} onChange={(e) => setAccountFormData(prev => ({ ...prev, firstName: e.target.value }))} className="w-full px-3 py-2 border rounded" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-[#001f65]">Middle Name</label>
+                            <input value={accountFormData.middleName} onChange={(e) => setAccountFormData(prev => ({ ...prev, middleName: e.target.value }))} className="w-full px-3 py-2 border rounded" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-[#001f65]">Last Name</label>
+                            <input value={accountFormData.lastName} onChange={(e) => setAccountFormData(prev => ({ ...prev, lastName: e.target.value }))} className="w-full px-3 py-2 border rounded" />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+                          <div>
+                            <label className="block text-xs font-medium text-[#001f65]">School ID</label>
+                            <input value={accountFormData.schoolId} onChange={(e) => setAccountFormData(prev => ({ ...prev, schoolId: e.target.value }))} className="w-full px-3 py-2 border rounded" disabled={accountFormMode === 'edit'} />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-[#001f65]">Email</label>
+                            <input value={accountFormData.email} onChange={(e) => setAccountFormData(prev => ({ ...prev, email: e.target.value }))} className="w-full px-3 py-2 border rounded" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-[#001f65]">Department</label>
+                            {departmentsLoading ? (
+                              <input value={accountFormData.department} onChange={(e) => setAccountFormData(prev => ({ ...prev, department: e.target.value }))} className="w-full px-3 py-2 border rounded" />
+                            ) : (
+                              <select value={accountFormData.department} onChange={(e) => setAccountFormData(prev => ({ ...prev, department: e.target.value }))} className="w-full px-3 py-2 border rounded">
+                                <option value="">Select department</option>
+                                {departments.map((d) => (
+                                  <option key={d._id || d.departmentCode || d.degreeProgram} value={d.departmentCode || d.degreeProgram || d._id}>{d.departmentCode || d.degreeProgram || d._id}</option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 mt-4">
+                          <button type="submit" className="px-4 py-2 bg-[#001f65] text-white rounded">{accountFormMode === 'create' ? 'Create Account' : 'Save Changes'}</button>
+                          <button type="button" onClick={() => setShowAccountForm(false)} className="px-4 py-2 bg-gray-200 rounded">Cancel</button>
+                        </div>
+                      </form>
+                    )}
 
                     <div className="mt-3">
                       <label className="block text-sm font-medium text-[#001f65]">Current Status</label>
@@ -1049,9 +1185,9 @@ export default function MessagesPage() {
                       <button onClick={() => handleUpdateStatus('resolved')} disabled={selectedMessage.status === 'resolved'} className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md">Mark Resolved</button>
                       <button onClick={async () => {
                         try {
-                          const confirmed = await Swal.fire({ title: 'Archive message?', text: 'Archive this message (mark as resolved)?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Yes, archive', cancelButtonText: 'Cancel', confirmButtonColor: '#b91c1c' })
+                          const confirmed = await Swal.fire({ title: 'Archive message?', text: 'Archive this message?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Yes, archive', cancelButtonText: 'Cancel', confirmButtonColor: '#b91c1c' })
                           if (!confirmed.isConfirmed) return
-                          await handleUpdateStatus('resolved')
+                          await handleUpdateStatus('archived')
                         } catch (err) {
                           showAlert('error', 'Error', err.message || 'Failed to archive message')
                         }

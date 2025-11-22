@@ -7,6 +7,7 @@ const Vote = require("../models/Vote")
 const Candidate = require("../models/Candidate")
 const Position = require("../models/Position")
 const AuditLog = require("../models/AuditLog")
+const SSGElectionController = require("./ssgElectionController")
 const crypto = require("crypto")
 
 class BallotController {
@@ -403,64 +404,68 @@ static async submitSelectedSSGBallot(req, res, next) {
 
   // Get voter SSG ballot status for selected election
   static async getVoterSelectedSSGBallotStatus(req, res, next) {
-    try {
-      const { electionId } = req.params
-      const voterId = req.user.voterId
+  try {
+    const { electionId } = req.params
+    const voterId = req.user.voterId
 
-      const election = await SSGElection.findById(electionId)
-      if (!election) {
-        return res.status(404).json({ message: "SSG Election not found" })
-      }
-
-      const voter = await Voter.findById(voterId).populate('departmentId')
-      if (!voter) {
-        return res.status(404).json({ message: "Voter not found" })
-      }
-
-      const canVote = voter.isRegistered && voter.isPasswordActive
-
-      const ballot = await Ballot.findOne({ ssgElectionId: electionId, voterId })
-
-      // Check if voting is currently allowed based on election times
-      const now = new Date()
-      const isVotingTime = election.ballotsAreOpen
-
-      res.json({
-        election: {
-          _id: election._id,
-          title: election.title,
-          status: election.status,
-          ballotOpenTime: election.ballotOpenTime,
-          ballotCloseTime: election.ballotCloseTime,
-          ballotDuration: election.ballotDuration || 10,
-          isVotingTime
-        },
-        hasVoted: ballot ? ballot.isSubmitted : false,
-        canVote: canVote && !ballot?.isSubmitted && isVotingTime,
-        ballot: ballot ? {
-          _id: ballot._id,
-          isSubmitted: ballot.isSubmitted,
-          submittedAt: ballot.submittedAt,
-          createdAt: ballot.createdAt,
-          timerStarted: ballot.timerStarted,
-          ballotOpenTime: ballot.ballotOpenTime,
-          ballotCloseTime: ballot.ballotCloseTime,
-          isExpired: ballot.isExpired,
-          timeRemaining: ballot.timeRemaining,
-          ballotStatus: ballot.ballotStatus
-        } : null,
-        voterEligibility: {
-          isRegistered: voter.isRegistered,
-          isPasswordActive: voter.isPasswordActive,
-          message: canVote ? 
-            "You are eligible to vote in SSG elections" : 
-            "You must be a registered voter with an active password to participate in SSG elections"
-        }
-      })
-    } catch (error) {
-      next(error)
+    const election = await SSGElection.findById(electionId)
+    if (!election) {
+      return res.status(404).json({ message: "SSG Election not found" })
     }
+
+    const voter = await Voter.findById(voterId).populate('departmentId')
+    if (!voter) {
+      return res.status(404).json({ message: "Voter not found" })
+    }
+
+    const canVote = voter.isRegistered && voter.isPasswordActive
+
+    const ballot = await Ballot.findOne({ ssgElectionId: electionId, voterId })
+
+    // ✅ FIX: Calculate live status using SSGElectionController
+    const SSGElectionController = require('./ssgElectionController')
+    const liveStatus = SSGElectionController.computeAutomaticStatusFor(election)
+
+    // Check if voting is currently allowed based on election times
+    const now = new Date()
+    const isVotingTime = election.ballotsAreOpen
+
+    res.json({
+      election: {
+        _id: election._id,
+        title: election.title,
+        status: liveStatus, // ✅ Use computed status instead of election.status
+        ballotOpenTime: election.ballotOpenTime,
+        ballotCloseTime: election.ballotCloseTime,
+        ballotDuration: election.ballotDuration || 10,
+        isVotingTime
+      },
+      hasVoted: ballot ? ballot.isSubmitted : false,
+      canVote: canVote && !ballot?.isSubmitted && isVotingTime,
+      ballot: ballot ? {
+        _id: ballot._id,
+        isSubmitted: ballot.isSubmitted,
+        submittedAt: ballot.submittedAt,
+        createdAt: ballot.createdAt,
+        timerStarted: ballot.timerStarted,
+        ballotOpenTime: ballot.ballotOpenTime,
+        ballotCloseTime: ballot.ballotCloseTime,
+        isExpired: ballot.isExpired,
+        timeRemaining: ballot.timeRemaining,
+        ballotStatus: ballot.ballotStatus
+      } : null,
+      voterEligibility: {
+        isRegistered: voter.isRegistered,
+        isPasswordActive: voter.isPasswordActive,
+        message: canVote ? 
+          "You are eligible to vote in SSG elections" : 
+          "You must be a registered voter with an active password to participate in SSG elections"
+      }
+    })
+  } catch (error) {
+    next(error)
   }
+}
 
   // Get selected SSG election ballot with votes (for review)
   static async getSelectedSSGBallotWithVotes(req, res, next) {
@@ -1940,8 +1945,13 @@ static async startSSGBallot(req, res, next) {
       return res.status(404).json({ message: "SSG Election not found" })
     }
 
-    if (election.status !== 'active') {
-      return res.status(400).json({ message: "SSG Election is not active" })
+    const liveStatus = SSGElectionController.computeAutomaticStatusFor(election)
+    
+    if (liveStatus !== 'active') {
+      return res.status(400).json({ 
+        message: `SSG Election is ${liveStatus}, not active. Voting is not available at this time.`,
+        electionStatus: liveStatus 
+      })
     }
 
     if (!election.ballotsAreOpen) {
@@ -1953,67 +1963,69 @@ static async startSSGBallot(req, res, next) {
     }
 
     const now = new Date()
-    
-    // First, try to find and delete any expired ballot in one atomic operation
-    const deletedExpiredBallot = await Ballot.findOneAndDelete({
+
+    // ✅ STEP 1: Check for ANY existing ballot (submitted, active, or expired)
+    let existingBallot = await Ballot.findOne({
       ssgElectionId: electionId,
-      voterId,
-      isSubmitted: false,
-      ballotCloseTime: { $lt: now }
-    })
-
-    if (deletedExpiredBallot) {
-      console.log(`[BALLOT] Deleted expired ballot ${deletedExpiredBallot._id}`)
-      
-      // Delete associated votes
-      await Vote.deleteMany({ ballotId: deletedExpiredBallot._id })
-      
-      await AuditLog.logVoterAction(
-        "BALLOT_EXPIRED_DELETED",
-        { _id: voterId },
-        `Expired ballot deleted for election: ${election.title}`,
-        req
-      )
-    }
-
-    // Now check for any active (non-expired) ballot
-    const existingBallot = await Ballot.findOne({ 
-      ssgElectionId: electionId, 
-      voterId,
-      $or: [
-        { ballotCloseTime: { $gte: now } },
-        { ballotCloseTime: null }
-      ]
+      voterId
     })
 
     if (existingBallot) {
-      console.log(`[BALLOT] Found existing active ballot ${existingBallot._id}`)
-      
+      // Case 1: Already submitted - cannot vote again
       if (existingBallot.isSubmitted) {
         return res.status(400).json({ message: "You have already voted in this SSG election" })
       }
-      
-      // Start timer if not started
-      if (!existingBallot.timerStarted) {
-        console.log(`[BALLOT] Starting timer for existing ballot ${existingBallot._id}`)
-        await existingBallot.startTimer(10)
+
+      // Case 2: Ballot is expired - DELETE it and create a new one
+      if (existingBallot.timerStarted && existingBallot.ballotCloseTime && existingBallot.ballotCloseTime < now) {
+        console.log(`[BALLOT] Deleting expired ballot ${existingBallot._id} for voter ${voterId}`)
+        
+        // Delete any votes associated with the expired ballot
+        await Vote.deleteMany({ ballotId: existingBallot._id })
+        
+        // Delete the expired ballot
+        await Ballot.findByIdAndDelete(existingBallot._id)
+        
+        await AuditLog.logVoterAction(
+          "BALLOT_EXPIRED_DELETED",
+          { _id: voterId },
+          `Expired SSG ballot deleted, allowing new ballot for election: ${election.title}`,
+          req
+        )
+        
+        // Clear the reference so we create a new ballot below
+        existingBallot = null
       }
-      
-      return res.json({ 
-        message: "Continuing existing SSG ballot",
-        ballot: existingBallot 
-      })
+      // Case 3: Active ballot exists - return it
+      else if (existingBallot.timerStarted && existingBallot.ballotCloseTime && existingBallot.ballotCloseTime >= now) {
+        console.log(`[BALLOT] Found active ballot ${existingBallot._id}, returning it`)
+        return res.json({ 
+          message: "Continuing existing SSG ballot",
+          ballot: existingBallot 
+        })
+      }
+      // Case 4: Ballot exists but timer not started - start the timer
+      else if (!existingBallot.timerStarted) {
+        console.log(`[BALLOT] Starting timer for existing ballot ${existingBallot._id}`)
+        const ballotDuration = election.ballotDuration || 10
+        await existingBallot.startTimer(ballotDuration)
+        
+        return res.json({ 
+          message: "Continuing existing SSG ballot",
+          ballot: existingBallot 
+        })
+      }
     }
 
-    // Verify voter eligibility
+    // ✅ STEP 2: Verify voter eligibility
     const voter = await Voter.findById(voterId).populate('departmentId')
     if (!voter || !voter.isRegistered || !voter.isPasswordActive) {
       return res.status(400).json({ message: "Only registered voters can participate in SSG elections" })
     }
 
-    console.log(`[BALLOT] Creating new ballot for voter ${voterId}`)
+    // ✅ STEP 3: Create new ballot
+    console.log(`[BALLOT] Creating new SSG ballot for voter ${voterId}`)
 
-    // Create new ballot
     const ballotToken = crypto.randomBytes(32).toString('hex')
     
     const ballot = new Ballot({
@@ -2024,9 +2036,89 @@ static async startSSGBallot(req, res, next) {
       userAgent: req.get("User-Agent")
     })
 
-    await ballot.save()
-    const ballotDuration = election.ballotDuration || 10
-    await ballot.startTimer(ballotDuration)
+    try {
+      await ballot.save()
+      
+      const ballotDuration = election.ballotDuration || 10
+      await ballot.startTimer(ballotDuration)
+      
+      console.log(`[BALLOT] Created new ballot ${ballot._id} with ${ballotDuration} min timer`)
+      
+    } catch (saveError) {
+      // Handle duplicate key error (race condition)
+      if (saveError.code === 11000) {
+        console.log('[BALLOT] Duplicate key error - fetching existing ballot')
+        
+        const existingBallot = await Ballot.findOne({
+          ssgElectionId: electionId,
+          voterId
+        })
+        
+        if (existingBallot) {
+          if (existingBallot.isSubmitted) {
+            return res.status(400).json({ message: "You have already voted in this SSG election" })
+          }
+          
+          // Check if this existing ballot is expired
+          if (existingBallot.timerStarted && existingBallot.ballotCloseTime && existingBallot.ballotCloseTime < now) {
+            // Delete and retry - recursive call with a flag to prevent infinite loop
+            await Vote.deleteMany({ ballotId: existingBallot._id })
+            await Ballot.findByIdAndDelete(existingBallot._id)
+            
+            // Try creating again
+            const newBallot = new Ballot({
+              ssgElectionId: electionId,
+              voterId,
+              ballotToken: crypto.randomBytes(32).toString('hex'),
+              ipAddress: req.ip,
+              userAgent: req.get("User-Agent")
+            })
+            
+            await newBallot.save()
+            const ballotDuration = election.ballotDuration || 10
+            await newBallot.startTimer(ballotDuration)
+            
+            await AuditLog.logVoterAction(
+              "BALLOT_STARTED",
+              voter,
+              `Started new SSG ballot (after expired cleanup) for election: ${election.title}`,
+              req
+            )
+
+            return res.status(201).json({
+              message: "SSG Ballot started successfully",
+              ballot: {
+                _id: newBallot._id,
+                ssgElectionId: newBallot.ssgElectionId,
+                ballotToken: newBallot.ballotToken,
+                ballotOpenTime: newBallot.ballotOpenTime,
+                ballotCloseTime: newBallot.ballotCloseTime,
+                ballotDuration: newBallot.ballotDuration,
+                createdAt: newBallot.createdAt
+              }
+            })
+          }
+          
+          // Start timer if needed
+          if (!existingBallot.timerStarted) {
+            const ballotDuration = election.ballotDuration || 10
+            await existingBallot.startTimer(ballotDuration)
+          }
+          
+          return res.json({
+            message: "Continuing existing SSG ballot",
+            ballot: existingBallot
+          })
+        }
+        
+        console.error('[BALLOT] Duplicate error but no ballot found!')
+        return res.status(500).json({ 
+          message: "Error creating ballot. Please refresh and try again." 
+        })
+      }
+      
+      throw saveError
+    }
 
     await AuditLog.logVoterAction(
       "BALLOT_STARTED",
@@ -2049,15 +2141,6 @@ static async startSSGBallot(req, res, next) {
     })
   } catch (error) {
     console.error('[BALLOT] Error in startSSGBallot:', error)
-    
-    // Handle duplicate key error specifically
-    if (error.code === 11000) {
-      return res.status(409).json({ 
-        message: "A ballot operation is already in progress. Please wait a moment and try again.",
-        error: "BALLOT_CONFLICT"
-      })
-    }
-    
     next(error)
   }
 }

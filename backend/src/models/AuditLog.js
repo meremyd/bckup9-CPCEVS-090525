@@ -59,6 +59,7 @@ const auditLogSchema = new mongoose.Schema(
         "CHAT_SUPPORT_STATUS_UPDATE",
         "FILE_UPLOAD",
         "FILE_DELETE",
+        "DATA_DELETION",
         "PROFILE_ACCESS",
         "PROFILE_UPDATE",
         "PROFILE_PICTURE_UPDATE",

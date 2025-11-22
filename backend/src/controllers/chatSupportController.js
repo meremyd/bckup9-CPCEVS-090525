@@ -132,7 +132,23 @@ class ChatSupportController {
       // No birthday required anymore
 
       // Check if voter exists (optional linkage)
-      const voter = await Voter.findOne({ schoolId: schoolIdNumber })
+      // Only auto-link to a Voter when the request is authenticated as a voter (voter dashboard).
+      // Do NOT auto-link when request is unauthenticated (public forms like voterlogin or chat widget).
+      let voter = null
+      try {
+        if (req.user && req.user.userType === 'voter') {
+          // If middleware populated voterId (voterAuthMiddleware), prefer that
+          if (req.user.voterId) {
+            voter = await Voter.findById(req.user.voterId)
+          } else if (req.user.schoolId) {
+            voter = await Voter.findOne({ schoolId: Number(req.user.schoolId) })
+          }
+        }
+      } catch (e) {
+        // ignore lookup failures — proceed without linking
+        console.error('Voter lookup during support submit failed:', e)
+        voter = null
+      }
 
       // Check for duplicate recent requests (spam prevention)
       const recentRequest = await ChatSupport.findOne({
@@ -178,6 +194,13 @@ class ChatSupportController {
         photo: photoPath,
         status: "pending",
       })
+
+      // Mark whether this submission should be auto-linked to an existing Voter.
+      // We only allow auto-linking when the request is authenticated as a voter
+      // (voter dashboard). Public submissions from voterlogin should remain anonymous,
+      // so we explicitly set _autoLink to true only when `voter` was resolved above
+      // from an authenticated user.
+      chatSupport._autoLink = !!voter
 
       await chatSupport.save()
 
@@ -437,7 +460,7 @@ class ChatSupportController {
       const { id } = req.params
       const { status, response } = req.body
 
-  const validStatuses = ["pending", "in-progress", "resolved"]
+  const validStatuses = ["pending", "in-progress", "resolved", "archived"]
       if (!validStatuses.includes(status)) {
         await AuditLog.create({
           action: "UNAUTHORIZED_ACCESS_ATTEMPT",
@@ -798,7 +821,7 @@ class ChatSupportController {
         return next(error)
       }
 
-  const validStatuses = ["pending", "in-progress", "resolved"]
+  const validStatuses = ["pending", "in-progress", "resolved", "archived"]
       if (!validStatuses.includes(status)) {
         await AuditLog.create({
           action: "UNAUTHORIZED_ACCESS_ATTEMPT",

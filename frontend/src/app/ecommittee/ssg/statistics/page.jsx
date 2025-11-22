@@ -372,7 +372,7 @@ export default function SSGStatisticsPage() {
     }))
   }
 
-  const getDepartmentChartData = () => {
+const getDepartmentChartData = () => {
   if (!departmentResults?.positions) return { president: [], vicePresident: [], senators: [] }
   
   const president = departmentResults.positions.find(
@@ -390,8 +390,8 @@ export default function SSGStatisticsPage() {
 
   // Helper function to safely get candidate name
   const getCandidateName = (candidate) => {
-    // Try different possible paths for candidate name
     if (candidate.candidateName) return candidate.candidateName
+    if (candidate.name) return candidate.name // ADD THIS
     if (candidate.voterId?.firstName && candidate.voterId?.lastName) {
       return `${candidate.voterId.firstName} ${candidate.voterId.lastName}`
     }
@@ -404,21 +404,21 @@ export default function SSGStatisticsPage() {
   return {
     president: president?.candidates.map(c => ({
       name: getCandidateName(c),
-      votes: c.departmentVoteCount || 0,
-      percentage: c.percentage || 0,
-      partylist: c.partylistName || c.candidate?.partylistId?.partylistName || 'Independent'
+      votes: c.departmentVoteCount || c.voteCount || 0,
+      percentage: Number(c.percentage) || 0, // FIX: Convert to number
+      partylist: c.partylistName || c.partylist || c.candidate?.partylistId?.partylistName || 'Independent'
     })) || [],
     vicePresident: vicePresident?.candidates.map(c => ({
       name: getCandidateName(c),
-      votes: c.departmentVoteCount || 0,
-      percentage: c.percentage || 0,
-      partylist: c.partylistName || c.candidate?.partylistId?.partylistName || 'Independent'
+      votes: c.departmentVoteCount || c.voteCount || 0,
+      percentage: Number(c.percentage) || 0, // FIX: Convert to number
+      partylist: c.partylistName || c.partylist || c.candidate?.partylistId?.partylistName || 'Independent'
     })) || [],
     senators: senators?.candidates.map(c => ({
       name: getCandidateName(c),
-      votes: c.departmentVoteCount || 0,
-      percentage: c.percentage || 0,
-      partylist: c.partylistName || c.candidate?.partylistId?.partylistName || 'Independent'
+      votes: c.departmentVoteCount || c.voteCount || 0,
+      percentage: Number(c.percentage) || 0, // FIX: Convert to number
+      partylist: c.partylistName || c.partylist || c.candidate?.partylistId?.partylistName || 'Independent'
     })) || []
   }
 }
@@ -443,22 +443,23 @@ export default function SSGStatisticsPage() {
 
   // Custom Legend Component for Pie Charts
   const CustomPieLegend = ({ data, colors }) => {
-    return (
-      <div className="mt-4 grid grid-cols-1 gap-2">
-        {data.map((entry, index) => (
-          <div key={`legend-${index}`} className="flex items-center gap-2">
-            <div 
-              className="w-4 h-4 rounded" 
-              style={{ backgroundColor: colors[index % colors.length] }}
-            />
-            <span className="text-sm text-gray-700">
-              {entry.name} - {entry.votes.toLocaleString()} votes ({entry.percentage.toFixed(1)}%)
-            </span>
-          </div>
-        ))}
-      </div>
-    )
-  }
+  return (
+    <div className="mt-4 grid grid-cols-1 gap-2">
+      {data.map((entry, index) => (
+        <div key={`legend-${index}`} className="flex items-center gap-2">
+          <div 
+            className="w-4 h-4 rounded" 
+            style={{ backgroundColor: colors[index % colors.length] }}
+          />
+          <span className="text-sm text-gray-700">
+            {/* FIX: Convert percentage to number and handle undefined */}
+            {entry.name} - {entry.votes.toLocaleString()} votes ({(Number(entry.percentage) || 0).toFixed(1)}%)
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
 
   // Authentication screen
   if (!isAuthenticated) {
@@ -598,14 +599,14 @@ export default function SSGStatisticsPage() {
               Download
             </button>
 
-            <button
+            {/* <button
               onClick={() => router.push(`/ecommittee/ssg/results?ssgElectionId=${ssgElectionId}`)}
               disabled={ssgElectionData?.status !== 'completed'}
               className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
             >
               <BarChart3 className="w-4 h-4 mr-2" />
               Results
-            </button>
+            </button> */}
           </div>
         </div>
 

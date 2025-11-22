@@ -364,89 +364,92 @@ export default function SAOSSGStatisticsPage() {
   }
 
   const getDepartmentChartData = () => {
-    if (!departmentResults?.positions) return { president: [], vicePresident: [], senators: [] }
-    
-    const president = departmentResults.positions.find(
-      pos => pos.position.positionName?.toLowerCase().includes('president') && 
-             !pos.position.positionName?.toLowerCase().includes('vice')
-    )
-    
-    const vicePresident = departmentResults.positions.find(
-      pos => pos.position.positionName?.toLowerCase().includes('vice president')
-    )
-    
-    const senators = departmentResults.positions.find(
-      pos => pos.position.positionName?.toLowerCase().includes('senator')
-    )
+  if (!departmentResults?.positions) return { president: [], vicePresident: [], senators: [] }
+  
+  const president = departmentResults.positions.find(
+    pos => pos.position.positionName?.toLowerCase().includes('president') && 
+           !pos.position.positionName?.toLowerCase().includes('vice')
+  )
+  
+  const vicePresident = departmentResults.positions.find(
+    pos => pos.position.positionName?.toLowerCase().includes('vice president')
+  )
+  
+  const senators = departmentResults.positions.find(
+    pos => pos.position.positionName?.toLowerCase().includes('senator')
+  )
 
-    const getCandidateName = (candidate) => {
-      if (candidate.candidateName) return candidate.candidateName
-      if (candidate.voterId?.firstName && candidate.voterId?.lastName) {
-        return `${candidate.voterId.firstName} ${candidate.voterId.lastName}`
-      }
-      if (candidate.candidate?.voterId?.firstName && candidate.candidate?.voterId?.lastName) {
-        return `${candidate.candidate.voterId.firstName} ${candidate.candidate.voterId.lastName}`
-      }
-      return 'Unknown Candidate'
+  // Helper function to safely get candidate name
+  const getCandidateName = (candidate) => {
+    if (candidate.candidateName) return candidate.candidateName
+    if (candidate.name) return candidate.name // ADD THIS LINE
+    if (candidate.voterId?.firstName && candidate.voterId?.lastName) {
+      return `${candidate.voterId.firstName} ${candidate.voterId.lastName}`
     }
-
-    return {
-      president: president?.candidates.map(c => ({
-        name: getCandidateName(c),
-        votes: c.departmentVoteCount || 0,
-        percentage: c.percentage || 0,
-        partylist: c.partylistName || c.candidate?.partylistId?.partylistName || 'Independent'
-      })) || [],
-      vicePresident: vicePresident?.candidates.map(c => ({
-        name: getCandidateName(c),
-        votes: c.departmentVoteCount || 0,
-        percentage: c.percentage || 0,
-        partylist: c.partylistName || c.candidate?.partylistId?.partylistName || 'Independent'
-      })) || [],
-      senators: senators?.candidates.map(c => ({
-        name: getCandidateName(c),
-        votes: c.departmentVoteCount || 0,
-        percentage: c.percentage || 0,
-        partylist: c.partylistName || c.candidate?.partylistId?.partylistName || 'Independent'
-      })) || []
+    if (candidate.candidate?.voterId?.firstName && candidate.candidate?.voterId?.lastName) {
+      return `${candidate.candidate.voterId.firstName} ${candidate.candidate.voterId.lastName}`
     }
+    return 'Unknown Candidate'
   }
+
+  return {
+    president: president?.candidates.map(c => ({
+      name: getCandidateName(c),
+      votes: c.departmentVoteCount || c.voteCount || 0, // ADD FALLBACK
+      percentage: Number(c.percentage) || 0, // FIX: Convert to number
+      partylist: c.partylistName || c.partylist || c.candidate?.partylistId?.partylistName || 'Independent' // ADD FALLBACKS
+    })) || [],
+    vicePresident: vicePresident?.candidates.map(c => ({
+      name: getCandidateName(c),
+      votes: c.departmentVoteCount || c.voteCount || 0, // ADD FALLBACK
+      percentage: Number(c.percentage) || 0, // FIX: Convert to number
+      partylist: c.partylistName || c.partylist || c.candidate?.partylistId?.partylistName || 'Independent' // ADD FALLBACKS
+    })) || [],
+    senators: senators?.candidates.map(c => ({
+      name: getCandidateName(c),
+      votes: c.departmentVoteCount || c.voteCount || 0, // ADD FALLBACK
+      percentage: Number(c.percentage) || 0, // FIX: Convert to number
+      partylist: c.partylistName || c.partylist || c.candidate?.partylistId?.partylistName || 'Independent' // ADD FALLBACKS
+    })) || []
+  }
+}
 
   const CustomTooltip = ({ active, payload }) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload
-      return (
-        <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
-          <p className="font-semibold text-gray-900">{data.name}</p>
-          {data.partylist && (
-            <p className="text-sm text-gray-600">{data.partylist}</p>
-          )}
-          <p className="text-[#001f65] font-medium">
-            {payload[0].value?.toLocaleString()} votes {data.percentage && `(${data.percentage.toFixed(1)}%)`}
-          </p>
-        </div>
-      )
-    }
-    return null
-  }
-
-  const CustomPieLegend = ({ data, colors }) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload
     return (
-      <div className="mt-4 grid grid-cols-1 gap-2">
-        {data.map((entry, index) => (
-          <div key={`legend-${index}`} className="flex items-center gap-2">
-            <div 
-              className="w-4 h-4 rounded" 
-              style={{ backgroundColor: colors[index % colors.length] }}
-            />
-            <span className="text-sm text-gray-700">
-              {entry.name} - {entry.votes.toLocaleString()} votes ({entry.percentage.toFixed(1)}%)
-            </span>
-          </div>
-        ))}
+      <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
+        <p className="font-semibold text-gray-900">{data.name}</p>
+        {data.partylist && (
+          <p className="text-sm text-gray-600">{data.partylist}</p>
+        )}
+        <p className="text-[#001f65] font-medium">
+          {payload[0].value?.toLocaleString()} votes {data.percentage && `(${(Number(data.percentage) || 0).toFixed(1)}%)`}
+        </p>
       </div>
     )
   }
+  return null
+}
+
+  const CustomPieLegend = ({ data, colors }) => {
+  return (
+    <div className="mt-4 grid grid-cols-1 gap-2">
+      {data.map((entry, index) => (
+        <div key={`legend-${index}`} className="flex items-center gap-2">
+          <div 
+            className="w-4 h-4 rounded" 
+            style={{ backgroundColor: colors[index % colors.length] }}
+          />
+          <span className="text-sm text-gray-700">
+            {/* FIX: Convert percentage to number and handle undefined */}
+            {entry.name} - {entry.votes.toLocaleString()} votes ({(Number(entry.percentage) || 0).toFixed(1)}%)
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
 
   if (!isAuthenticated) {
     return (
@@ -581,14 +584,14 @@ export default function SAOSSGStatisticsPage() {
               Download
             </button>
 
-            <button
+            {/* <button
               onClick={() => router.push(`/sao/ssg/results?ssgElectionId=${ssgElectionId}`)}
               disabled={ssgElectionData?.status !== 'completed'}
               className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
             >
               <BarChart3 className="w-4 h-4 mr-2" />
               Results
-            </button>
+            </button> */}
           </div>
         </div>
 

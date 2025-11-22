@@ -33,43 +33,71 @@ export default function SSGVoterBallotPage() {
   const searchParams = useSearchParams()
   const electionId = searchParams.get('id')
   const timerInterval = useRef(null)
+  const hasShownExpiredAlert = useRef(false)
+  const isNavigating = useRef(false)
+  const isMounted = useRef(true)
 
   useEffect(() => {
-    if (electionId) {
-      initializeBallot()
-    } else {
-      router.push('/voter/ssg/elections')
-    }
+  isMounted.current = true
+  hasShownExpiredAlert.current = false
+  isNavigating.current = false
+  
+  // Check if we already showed expired alert (using sessionStorage as backup)
+  const expiredKey = `ballot_expired_${electionId}`
+  if (sessionStorage.getItem(expiredKey)) {
+    // Already handled, redirect immediately without showing alert
+    sessionStorage.removeItem(expiredKey)
+    router.replace(`/voter/ssg/info?id=${electionId}`)
+    return
+  }
+  
+  if (electionId) {
+    initializeBallot()
+  } else {
+    router.push('/voter/ssg/elections')
+  }
 
-    return () => {
-      if (timerInterval.current) {
-        clearInterval(timerInterval.current)
-      }
-    }
-  }, [electionId])
-
-  useEffect(() => {
   return () => {
-    // Cleanup timer on unmount to prevent memory leaks
+    isMounted.current = false
     if (timerInterval.current) {
       clearInterval(timerInterval.current)
       timerInterval.current = null
     }
+    Swal.close()
   }
-}, [])
+}, [electionId])
 
-  const initializeBallot = async () => {
+//   useEffect(() => {
+//   return () => {
+//     // Cleanup timer on unmount to prevent memory leaks
+//     if (timerInterval.current) {
+//       clearInterval(timerInterval.current)
+//       timerInterval.current = null
+//     }
+//   }
+// }, [])
+
+ const initializeBallot = async () => {
+  isNavigating.current = false
+  hasShownExpiredAlert.current = false
+  
   try {
     setLoading(true)
 
     const statusResponse = await ballotAPI.voter.getVoterSelectedSSGBallotStatus(electionId)
     
+    if (!isMounted.current) return
+    
+    // ✅ If already voted, show receipt
     if (statusResponse.hasVoted) {
+      isNavigating.current = true
       await showVotingReceipt()
       return
     }
 
-    if (!statusResponse.canVote) {
+    // ✅ If can't vote (not eligible, wrong time, etc.) - but NOT because of expired ballot
+    if (!statusResponse.canVote && !statusResponse.ballot?.isExpired && statusResponse.ballot?.ballotStatus !== 'expired') {
+      isNavigating.current = true
       Swal.fire({
         icon: 'info',
         title: 'Cannot Vote',
@@ -83,13 +111,40 @@ export default function SSGVoterBallotPage() {
       return
     }
 
-    const startResponse = await ballotAPI.voter.startSSGBallot(electionId)
-    const ballotData = startResponse.ballot
+    // ✅ REMOVED: The check for expired ballot here
+    // We now let the backend handle expired ballots by deleting them and creating new ones
+    // The startSSGBallot endpoint will handle this case
 
+    let startResponse
+    let retryCount = 0
+    const maxRetries = 2
+
+    while (retryCount <= maxRetries) {
+      if (!isMounted.current) return
+      
+      try {
+        startResponse = await ballotAPI.voter.startSSGBallot(electionId)
+        break
+      } catch (startError) {
+        if (startError.response?.status === 409 && retryCount < maxRetries) {
+          retryCount++
+          await new Promise(resolve => setTimeout(resolve, 500))
+          continue
+        }
+        throw startError
+      }
+    }
+
+    if (!isMounted.current) return
+
+    const ballotData = startResponse.ballot
     setBallot(ballotData)
     setElection(statusResponse.election)
 
     const previewResponse = await ballotAPI.voter.previewSSGBallot(electionId)
+    
+    if (!isMounted.current) return
+    
     setPositions(previewResponse.ballot)
 
     if (ballotData.ballotCloseTime) {
@@ -97,11 +152,14 @@ export default function SSGVoterBallotPage() {
       const now = new Date()
       
       if (closeTime < now) {
-        // Ballot already expired
+        // This should rarely happen now since backend should give fresh ballot
+        // But just in case, show error and redirect
+        isNavigating.current = true
+        hasShownExpiredAlert.current = true
         Swal.fire({
           icon: 'warning',
           title: 'Ballot Expired',
-          text: 'This ballot has expired and cannot be accessed.',
+          text: 'This ballot has expired. Please try again.',
           confirmButtonColor: '#001f65',
           allowOutsideClick: false,
           allowEscapeKey: false
@@ -117,73 +175,125 @@ export default function SSGVoterBallotPage() {
   } catch (error) {
     console.error('Error initializing ballot:', error)
     
-    // Handle specific error cases
-    let errorMessage = 'Failed to load ballot. Please try again.'
-    let shouldRedirect = true
+    if (!isMounted.current) return
     
-    if (error.response?.data?.error === 'BALLOT_CONFLICT') {
-      errorMessage = 'A ballot session is in progress. Please try again in a moment.'
-      shouldRedirect = false
-    } else if (error.response?.status === 409) {
-      errorMessage = 'Unable to start ballot. Please refresh the page and try again.'
-      shouldRedirect = false
+    isNavigating.current = true
+    
+    let errorMessage = 'Failed to load ballot. Please try again.'
+    
+    if (error.response?.status === 409) {
+      errorMessage = 'A ballot session conflict occurred. Please refresh the page.'
+    } else if (error.response?.status === 400) {
+      errorMessage = error.response?.data?.message || 'You cannot vote at this time.'
     }
     
     Swal.fire({
       icon: 'error',
       title: 'Error',
-      text: error.response?.data?.message || errorMessage,
+      text: errorMessage,
       confirmButtonColor: '#001f65',
       allowOutsideClick: false,
       allowEscapeKey: false
     }).then(() => {
-      if (shouldRedirect) {
-        router.replace(`/voter/ssg/info?id=${electionId}`)
-      } else {
-        router.replace(`/voter/ssg/elections`)
-      }
+      router.replace(`/voter/ssg/info?id=${electionId}`)
     })
   } finally {
-    setLoading(false)
+    if (isMounted.current) {
+      setLoading(false)
+    }
   }
 }
 
   const startTimer = (closeTime) => {
-    const updateTimer = () => {
-      const now = new Date()
-      const remaining = Math.max(0, Math.floor((closeTime - now) / 1000))
-      
-      setTimeRemaining(remaining)
-      
-      if (remaining <= 0) {
-        clearInterval(timerInterval.current)
-        handleTimeExpired()
-      }
-    }
-
-    updateTimer()
-    timerInterval.current = setInterval(updateTimer, 1000)
-  }
-
-  const handleTimeExpired = () => {
-  // Clear interval immediately to prevent re-triggering
+  // Clear any existing timer
   if (timerInterval.current) {
     clearInterval(timerInterval.current)
     timerInterval.current = null
   }
   
-  Swal.fire({
-    icon: 'warning',
-    title: 'Time Expired',
-    text: 'Your voting time has expired. The ballot will now close.',
-    confirmButtonColor: '#001f65',
-    allowOutsideClick: false,
-    allowEscapeKey: false
-  }).then(() => {
-    // Use replace instead of push to prevent back navigation loop
-    router.replace(`/voter/ssg/info?id=${electionId}`)
-  })
+  hasShownExpiredAlert.current = false
+  
+  const updateTimer = () => {
+    // Check guards before doing anything
+    if (!isMounted.current || isNavigating.current || hasShownExpiredAlert.current) {
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current)
+        timerInterval.current = null
+      }
+      return
+    }
+    
+    const now = new Date()
+    const remaining = Math.max(0, Math.floor((closeTime - now) / 1000))
+    
+    setTimeRemaining(remaining)
+    
+    if (remaining <= 0) {
+      // Clear interval BEFORE calling handleTimeExpired
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current)
+        timerInterval.current = null
+      }
+      handleTimeExpired()
+    }
+  }
+
+  // Initial call
+  updateTimer()
+  
+  // Only start interval if we haven't already expired
+  if (!hasShownExpiredAlert.current && !isNavigating.current) {
+    timerInterval.current = setInterval(updateTimer, 1000)
+  }
 }
+
+
+ const handleTimeExpired = () => {
+  // Guard: check all conditions
+  if (!isMounted.current || hasShownExpiredAlert.current || isNavigating.current) {
+    return
+  }
+  
+  // Set flags
+  hasShownExpiredAlert.current = true
+  isNavigating.current = true
+  
+  // Clear timer immediately
+  if (timerInterval.current) {
+    clearInterval(timerInterval.current)
+    timerInterval.current = null
+  }
+  
+  // Set sessionStorage flag as backup to prevent loops
+  const expiredKey = `ballot_expired_${electionId}`
+  sessionStorage.setItem(expiredKey, 'true')
+  
+  // Close any existing Swal
+  Swal.close()
+  
+  // Show alert with slight delay to ensure cleanup
+  setTimeout(() => {
+    // Double check we should still show this
+    if (!isMounted.current) {
+      router.replace(`/voter/ssg/info?id=${electionId}`)
+      return
+    }
+    
+    Swal.fire({
+      icon: 'warning',
+      title: 'Time Expired',
+      text: 'Your voting time has expired. The ballot will now close.',
+      confirmButtonColor: '#001f65',
+      allowOutsideClick: false,
+      allowEscapeKey: false
+    }).then(() => {
+      // Clear the sessionStorage flag after successful navigation
+      sessionStorage.removeItem(expiredKey)
+      router.replace(`/voter/ssg/info?id=${electionId}`)
+    })
+  }, 50)
+}
+
 
   const formatTime = (seconds) => {
     if (seconds === null) return '00:00'

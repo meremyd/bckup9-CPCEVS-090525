@@ -143,16 +143,17 @@ export default function VoterSSGResultsPage() {
     }
   }
 
-  // ✅ FIXED: Keep candidates anonymous during active election, show names only when completed
+  // ✅ FIXED: Updated getCandidateDisplay to check for candidate name data
   const getCandidateDisplay = (candidate, index, isCompleted = false) => {
-    // Only show names if election is completed
-    if (isCompleted) {
+    // Check if election is completed OR if we have candidate name data
+    const shouldShowName = isCompleted || (candidate.name && candidate.name !== 'Unknown Candidate')
+    
+    if (shouldShowName && candidate.name) {
       return {
-        name: candidate.name || 'Unknown Candidate',
+        name: candidate.name,
         partylist: candidate.partylist || 'Independent'
       }
     } else {
-      // During active election, keep candidates anonymous
       const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
       return {
         name: `Candidate ${alphabet[index] || index + 1}`,
