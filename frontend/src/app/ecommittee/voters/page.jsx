@@ -169,14 +169,41 @@ export default function ElectionCommitteeVotersPage() {
     router.push("/adminlogin")
   }
 
-  const handleToggleOfficer = async (voterId) => {
+ const handleToggleOfficer = async (voterId) => {
     try {
       setToggleLoading(prev => ({ ...prev, [voterId]: true }))
       
       const result = await votersAPI.toggleOfficerStatus(voterId)
       
-      // Refresh all relevant data
-      await fetchAllData()
+      // Update the voter in all relevant lists without full page refresh
+      const updateVoterInList = (voters) => 
+        voters.map(voter => {
+          if (voter._id === voterId) {
+            const newIsOfficer = !voter.isClassOfficer
+            return { ...voter, isClassOfficer: newIsOfficer }
+          }
+          return voter
+        })
+
+      setAllVoters(prev => updateVoterInList(prev))
+      setRegisteredVoters(prev => updateVoterInList(prev))
+      
+      // For officers list, we need to add or remove the voter
+      setOfficers(prev => {
+        const voterIndex = prev.findIndex(v => v._id === voterId)
+        if (voterIndex !== -1) {
+          // Voter is currently an officer, remove them
+          return prev.filter(v => v._id !== voterId)
+        } else {
+          // Voter is not an officer, add them
+          const voterToAdd = allVoters.find(v => v._id === voterId) || 
+                            registeredVoters.find(v => v._id === voterId)
+          if (voterToAdd) {
+            return [...prev, { ...voterToAdd, isClassOfficer: true }]
+          }
+          return prev
+        }
+      })
       
       // Clear any existing errors
       setError("")
