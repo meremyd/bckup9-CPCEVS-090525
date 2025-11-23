@@ -12,12 +12,17 @@ export default function LeftSide() {
       <img
         src="/cpclogo.png"
         alt="Cordova Public College Logo"
-        className="w-32 h-32 mb-4 sm:w-52 sm:h-52 md:mb-10 md:w-64 md:h-64 lg:w-72 lg:h-72 xl:w-96 xl:h-96 xl:-mt-30  rounded-full shadow-lg"
+        className="w-32 h-32 mb-4 sm:w-52 sm:h-52 md:mb-10 md:w-64 md:h-64 lg:w-72 lg:h-72 xl:w-96 xl:h-96 rounded-full shadow-lg"
       />
-      <h1 className="text-2xl font-bold text-center mb-1 tracking-wide whitespace-nowrap md:text-3xl md:mb-2 xl:text-5xl">
+
+      {/* Adjusted sizes to prevent wrapping */}
+      <h1 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl xl:text-5xl font-bold text-center mb-1 tracking-wide whitespace-nowrap">
         ELECTION WEBSITE
       </h1>
-      <p className="text-base text-center font-light md:text-lg xl:text-3xl">VOTE FOR A CHANGE</p>
+
+      <p className="text-sm sm:text-base md:text-lg lg:text-xl xl:text-3xl text-center font-light">
+        VOTE FOR A CHANGE
+      </p>
     </div>
   )
 }

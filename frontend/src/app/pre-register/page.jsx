@@ -139,7 +139,7 @@ export default function PreRegister() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-[#123b7a] mb-1">Last Name</label>
-                  <input type="text" name="lastName" placeholder="Last Name" value={form.lastName} onChange={handleChange} className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-800" />
+                  <input type="text" name="lastName" placeholder="Last Name" value={form.lastName} onChange={handleChange} className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-800" />
                 </div>
               </div>
 

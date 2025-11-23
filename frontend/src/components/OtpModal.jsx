@@ -21,10 +21,10 @@ export default function OtpModal({ visible, onClose, onSubmit, initialVoterId })
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 px-4">
+    <div className="fixed inset-0 z-100 flex items-center justify-center bg-black bg-opacity-40 px-4">
       <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-lg">
         <div className="flex items-start justify-between">
-          <h3 className="text-lg font-semibold">Enter OTP</h3>
+          <h3 className="text-lg font-semibold text-blue-900 ">Enter OTP</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
         </div>
         <p className="mt-2 mb-4 text-sm text-gray-600">We've sent a one-time password to your registered email. Enter it below to complete login.</p>
@@ -36,7 +36,7 @@ export default function OtpModal({ visible, onClose, onSubmit, initialVoterId })
               value={otp}
               onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, ''))}
               placeholder="------"
-              className="w-full text-center px-4 py-3 border border-gray-200 rounded-lg text-xl tracking-widest placeholder-gray-300"
+              className="w-full text-center px-4 py-3 border border-gray-200 focus:outline-blue-500 rounded-lg text-xl tracking-widest placeholder-gray-300"
               required
               maxLength={6}
             />

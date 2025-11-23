@@ -34,22 +34,27 @@ export default function VerifyOtp() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row">
+    <div className="min-h-screen flex flex-col md:flex-row overflow-x-hidden overflow-y-auto">
       <LeftSide />
-      <div className="w-full flex-grow flex items-center justify-center p-8 bg-white">
-        <div className="max-w-md w-full">
-          <h2 className="text-2xl font-bold mb-4">Verify OTP</h2>
-          <p className="mb-6 text-gray-600">Enter the OTP sent to your email.</p>
 
-          {error && <div className="mb-4 text-red-600">{error}</div>}
+      <div className="w-full flex-grow bg-white flex flex-col items-center justify-center p-6 relative rounded-t-2xl -mt-3 md:mt-0 md:rounded-none md:w-3/5 md:h-screen md:p-9 xl:gap-y-20">
+        <div className="w-full max-w-lg bg-white rounded-2xl shadow-lg border border-white/20 p-6 md:p-10">
+          <h2 className="font-semibold text-blue-900 mb-2 text-[clamp(1.25rem,3.5vw,1.75rem)]">Verify OTP</h2>
+          <p className="mb-6 text-[#123b7a]/80 text-sm md:text-base">Enter the OTP sent to your email.</p>
 
-          <form onSubmit={handleSubmit}>
-            <div className="mb-4">
-              <input name="otp" value={form.otp} onChange={handleChange} placeholder="OTP" className="w-full p-3 border rounded" required />
+          {error && <div className="mb-4 text-red-600 text-sm">{error}</div>}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="otp" className="block text-sm font-medium text-[#123b7a] mb-1">OTP</label>
+              <input id="otp" name="otp" value={form.otp} onChange={handleChange} placeholder="Enter the OTP" className="w-full p-3 md:p-4 border border-gray-200 rounded-lg focus:outline-blue-500" required />
             </div>
-            <div className="flex space-x-2">
-              <button type="submit" disabled={loading} className="px-4 py-2 bg-blue-600 text-white rounded">{loading ? 'Verifying...' : 'Verify OTP'}</button>
-              <button type="button" onClick={() => router.push('/forgot-password')} className="px-4 py-2 border rounded">Back</button>
+
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <button type="submit" disabled={loading} className="w-full sm:w-auto px-5 py-3 bg-blue-500 hover:bg-blue-700 text-white rounded-lg font-medium shadow-sm transition">
+                {loading ? 'Verifying...' : 'Verify OTP'}
+              </button>
+              <button type="button" onClick={() => router.push('/forgot-password')} className="w-full sm:w-auto px-5 py-3 border border-gray-200 rounded-lg text-[#001f65] bg-white hover:bg-gray-50 transition">Back</button>
             </div>
           </form>
         </div>

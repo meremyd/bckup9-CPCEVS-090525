@@ -62,41 +62,43 @@ export default function PreRegisterStep2() {
     <>
       <div className="min-h-screen flex flex-col md:flex-row overflow-x-hidden overflow-y-auto">
         <LeftSide />
-        <div className="w-full flex-grow bg-white flex flex-col items-center justify-center p-6 relative rounded-t-3xl -mt-3 md:mt-0 md:rounded-none md:w-3/5 md:h-screen xl:min-w-[600px] xl:-mt-10">
-          <div className="text-center mb-6 -mt-1 md:mb-8 md:mt-10 lg:mb-10 lg:-mt-0 xl:mb-12">
-            <div className="flex flex-row items-center justify-center w-full mb-2 xl:mt-10">
-              <img src="/voteicon.png" alt="Vote Icon" className="w-10 h-10 md:w-12 md:h-12 xl:w-14 xl:h-14 mr-3" />
-              <h2 className="text-lg font-bold text-blue-700 md:text-xl lg:text-2xl xl:text-2xl m-0">Pre Registration</h2>
+
+        <div className="w-full flex-grow bg-white flex flex-col items-center justify-center p-6 relative rounded-t-2xl -mt-3 md:mt-0 md:rounded-none md:w-3/5 md:h-screen md:p-9 xl:gap-y-20">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-lg border border-white/20 p-6 md:p-10">
+            <div className="text-center mb-4">
+              <div className="flex flex-row items-center justify-center w-full mb-2">
+                <img src="/voteicon.png" alt="Vote Icon" className="w-10 h-10 md:w-12 md:h-12 mr-3" />
+                <h2 className="font-semibold text-[#001f65] mb-0 text-[clamp(1rem,3.2vw,1.5rem)]">Pre Registration</h2>
+              </div>
+              <p className="text-[#123b7a]/80 text-sm md:text-base">Enter your email to receive an OTP to continue</p>
             </div>
-            <p className="text-sm text-gray-600 md:text-base xl:text-base">Enter your email to receive an OTP to continue</p>
-          </div>
 
-          <div className="w-full max-w-sm md:max-w-md xl:max-w-xl 2xl:max-w-2xl text-left mb-3">
-            <span className="text-sm font-bold text-gray-800 md:text-base xl:text-lg">STEP 2</span>
-            <div className="text-xs text-gray-600 mt-1 md:text-xs xl:text-sm">Welcome, {voterInfo.firstName} {voterInfo.lastName} (ID: {voterInfo.schoolId})</div>
-          </div>
+            <div className="w-full text-left mb-3">
+              <span className="text-sm font-bold text-gray-800 md:text-base">STEP 2</span>
+              <div className="text-xs text-gray-600 mt-1 md:text-sm">Welcome, {voterInfo.firstName} {voterInfo.lastName} (ID: {voterInfo.schoolId})</div>
+            </div>
 
-          {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm w-full max-w-sm">{error}</div>}
+            {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm w-full">{error}</div>}
 
-          {!otpSent ? (
-            <form className="w-full max-w-sm" onSubmit={sendOtp}>
-              <div className="mb-4">
-                  <label className="block text-gray-700 text-sm mb-2 font-medium">Email *</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200" />
+            {!otpSent ? (
+              <form className="w-full" onSubmit={sendOtp}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-[#123b7a] mb-2">Email *</label>
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-blue-500" />
                 </div>
                 <div className="flex space-x-2">
-                  <button type="submit" disabled={loading} className="flex-1 px-4 py-3 bg-blue-700 text-white rounded-lg font-semibold">{loading ? 'Sending...' : 'Send OTP'}</button>
+                  <button type="submit" disabled={loading} className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-700 text-white rounded-lg font-semibold">{loading ? 'Sending...' : 'Send OTP'}</button>
                   <button type="button" onClick={() => router.push('/pre-register')} className="px-4 py-3 border border-gray-200 rounded-lg">Back</button>
                 </div>
-            </form>
-          ) : (
-            <form className="w-full max-w-sm" onSubmit={verify}>
-              <div className="mb-4">
-                  <label className="block text-gray-700 text-sm mb-2 font-medium">Enter OTP *</label>
-                  <input type="text" value={otp} onChange={(e) => setOtp(e.target.value)} required className="w-full px-4 py-3 border border-gray-200 rounded-lg text-lg tracking-widest text-center" />
+              </form>
+            ) : (
+              <form className="w-full" onSubmit={verify}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-[#123b7a] mb-2">Enter OTP *</label>
+                  <input type="text" value={otp} onChange={(e) => setOtp(e.target.value)} required className="w-full px-4 py-3 border border-gray-200  focus:outline-blue-500 rounded-lg text-lg tracking-widest text-center" />
                 </div>
                 <div className="flex space-x-2">
-                  <button type="submit" disabled={loading} className="flex-1 px-4 py-3 bg-blue-700 text-white rounded-lg font-semibold">{loading ? 'Verifying...' : 'Verify OTP'}</button>
+                  <button type="submit" disabled={loading} className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-700 text-white rounded-lg font-semibold">{loading ? 'Verifying...' : 'Verify OTP'}</button>
                   <button
                     type="button"
                     onClick={async () => {
@@ -104,7 +106,6 @@ export default function PreRegisterStep2() {
                       setLoading(true); setError("")
                       try {
                         await authAPI.resendOtp({ voterId: voterInfo.id })
-                        // keep otpSent true and show a small success message
                         setError('OTP resent to your email')
                       } catch (err) {
                         setError(err.message || 'Failed to resend OTP')
@@ -117,10 +118,13 @@ export default function PreRegisterStep2() {
                     Resend
                   </button>
                 </div>
-            </form>
-          )}
+              </form>
+            )}
 
-          <ChatSupportBtn />
+            <div className="mt-6">
+              <ChatSupportBtn />
+            </div>
+          </div>
         </div>
       </div>
 

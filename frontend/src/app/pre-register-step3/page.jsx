@@ -3,7 +3,6 @@ import LeftSide from "../../components/LeftSide"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
 import ChatSupportBtn from "../../components/ChatSupportBtn"
-import Swal from "sweetalert2"
 import { authAPI } from '@/lib/api/auth'
 
 export default function PreRegisterStep3() {
@@ -17,73 +16,45 @@ export default function PreRegisterStep3() {
 
   useEffect(() => {
     const storedVoter = localStorage.getItem("preRegisterVoter")
-    if (!storedVoter) { 
-      router.push("/pre-register")
-      return 
-    }
+    if (!storedVoter) { router.push("/pre-register"); return }
     setVoterInfo(JSON.parse(storedVoter))
   }, [router])
 
-  const handleChange = (e) => { 
-    setForm({ ...form, [e.target.name]: e.target.value })
-    setError("") 
-  }
+  const handleChange = (e) => {
+    const {name, value} = e.target;
+    const newValue = value.replace(/\s/g, '');
+    setForm({ ...form, [name]: newValue });
+    }
+
+  // Facial registration has been removed; registration will proceed without selfie capture.
 
   const handleDone = async (e) => {
     e.preventDefault()
-    
-    if (form.password !== form.confirmPassword) { 
-      setError('Passwords do not match')
-      return 
-    }
-    
-    if (form.password.length < 6) { 
-      setError('Password must be at least 6 characters long')
-      return 
-    }
-    
-    setLoading(true)
-    setError('')
-    
-    try { 
-      await authAPI.preRegisterStep3({ 
-        voterId: voterInfo.id, 
-        password: form.password, 
-        confirmPassword: form.confirmPassword, 
-        firstName: voterInfo.firstName, 
-        middleName: voterInfo.middleName, 
-        lastName: voterInfo.lastName, 
+    if (form.password !== form.confirmPassword) { setError('Passwords do not match'); return }
+    if (form.password.length < 6) { setError('Password must be at least 6 characters long'); return }
+    setLoading(true); setError('')
+    try {
+      await authAPI.preRegisterStep3({
+        voterId: voterInfo.id,
+        password: form.password,
+        confirmPassword: form.confirmPassword,
+        firstName: voterInfo.firstName,
+        middleName: voterInfo.middleName,
+        lastName: voterInfo.lastName,
         schoolId: voterInfo.schoolId
       })
-      
       localStorage.removeItem('preRegisterVoter')
-      
-      await Swal.fire({
-        icon: 'success',
-        title: 'Registration Complete!',
-        text: 'Your registration has been completed successfully. You can now login.',
-        confirmButtonColor: '#2563eb',
-        confirmButtonText: 'Ok'
-      })
-      
+      // show confirmation and redirect
+      alert('Registration completed successfully! You can now login.')
       router.push('/voterlogin')
-    } catch (err) { 
+    } catch (err) {
       setError(err.message || 'Registration failed')
-      
-      Swal.fire({
-        icon: 'error',
-        title: 'Registration Failed',
-        text: err.message || 'An error occurred during registration. Please try again.',
-        confirmButtonColor: '#2563eb'
-      })
-    } finally { 
-      setLoading(false) 
+    } finally {
+      setLoading(false)
     }
   }
 
-  const handleLogin = () => { 
-    router.push('/voterlogin') 
-  }
+  const handleLogin = () => { router.push('/voterlogin') }
 
   if (!voterInfo) return <div>Loading...</div>
 
@@ -91,90 +62,51 @@ export default function PreRegisterStep3() {
     <>
       <div className="min-h-screen flex flex-col md:flex-row overflow-x-hidden overflow-y-auto">
         <LeftSide />
-        <div className="w-full flex-grow bg-white flex flex-col items-center justify-center p-6 relative rounded-t-3xl -mt-3 md:mt-0 md:rounded-none md:w-3/5 md:h-screen xl:min-w-[600px] xl:-mt-10">
-          <div className="text-center mb-6 -mt-1 md:mb-8 md:mt-10 lg:mb-10 lg:-mt-0 xl:mb-12">
-            <div className="flex flex-row items-center justify-center w-full mb-2 xl:mt-10">
-              <img src="/voteicon.png" alt="Fingerprint Icon" className="w-10 h-10 md:w-12 md:h-12 xl:w-14 xl:h-14 mr-3" />
-              <h2 className="text-lg font-bold text-blue-700 md:text-xl lg:text-2xl xl:text-2xl m-0">Pre Registration</h2>
-            </div>
-            <p className="text-sm text-gray-600 md:text-base xl:text-base">Create a password to complete your registration</p>
-          </div>
 
-          <div className="w-full max-w-sm md:max-w-md xl:max-w-xl 2xl:max-w-2xl text-left mb-3">
-            <span className="text-sm font-bold text-gray-800 md:text-base xl:text-lg">STEP 3</span>
-            <div className="text-xs text-gray-600 mt-1 md:text-xs xl:text-sm">Welcome, {voterInfo.firstName} {voterInfo.lastName} (ID: {voterInfo.schoolId})</div>
-          </div>
-
-          {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm w-full max-w-sm md:max-w-md xl:max-w-xl">{error}</div>}
-
-          <form className="w-full max-w-sm mb-4 md:max-w-md md:mb-6 xl:max-w-xl 2xl:max-w-2xl" onSubmit={handleDone}>
-            <div className="mb-3 md:mb-4 xl:mb-5">
-              <label className="block text-gray-700 text-sm mb-2 md:text-sm xl:text-base font-medium">Create a password *</label>
-              <div className="relative flex items-center border border-gray-200 rounded-lg shadow-sm px-4 py-2 md:py-2 xl:py-3 2xl:px-5 2xl:py-3 bg-white">
-                <input 
-                  type={showPassword ? 'text' : 'password'} 
-                  name="password" 
-                  value={form.password} 
-                  onChange={handleChange} 
-                  className="flex-1 bg-transparent outline-none text-gray-800 text-sm placeholder-gray-500 md:text-sm xl:text-base" 
-                  placeholder="Enter your password"
-                  required 
-                  disabled={loading} 
-                  minLength={6} 
-                />
-                <button 
-                  type="button" 
-                  onClick={() => setShowPassword(!showPassword)} 
-                  className="ml-2 text-gray-500 hover:text-gray-700 text-sm"
-                >
-                  {showPassword ? 'Hide' : 'Show'}
-                </button>
+        <div className="w-full flex-grow bg-white flex flex-col items-center justify-center p-6 relative rounded-t-2xl -mt-3 md:mt-0 md:rounded-none md:w-3/5 md:h-screen md:p-9 xl:gap-y-20">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-lg border border-white/20 p-6 md:p-10">
+            <div className="text-center mb-4">
+              <div className="flex flex-row items-center justify-center w-full mb-2">
+                <img src="/voteicon.png" alt="Fingerprint Icon" className="w-10 h-10 md:w-12 md:h-12 mr-3" />
+                <h2 className="font-semibold text-[#001f65] mb-0 text-[clamp(1rem,3.2vw,1.5rem)]">Pre Registration</h2>
               </div>
+              <p className="text-[#123b7a]/80 text-sm md:text-base">Create a password to complete your registration</p>
             </div>
 
-            <div className="mb-4 md:mb-5 xl:mb-6">
-              <label className="block text-gray-700 text-xs mb-2 md:text-sm xl:text-base font-medium">Confirm your password *</label>
-              <div className="relative flex items-center border border-gray-300 rounded-full shadow-sm px-4 py-2 md:py-2 xl:py-3 2xl:px-5 2xl:py-4 bg-blue-50">
-                <input 
-                  type={showConfirmPassword ? 'text' : 'password'} 
-                  name="confirmPassword" 
-                  value={form.confirmPassword} 
-                  onChange={handleChange} 
-                  className="flex-1 bg-transparent outline-none text-gray-800 text-xs placeholder-gray-500 md:text-sm xl:text-base xl:ml-2 2xl:ml-4" 
-                  placeholder="Re-enter your password"
-                  required 
-                  disabled={loading} 
-                  minLength={6} 
-                />
-                <button 
-                  type="button" 
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)} 
-                  className="ml-2 text-gray-500 hover:text-gray-700"
-                >
-                  {showConfirmPassword ? 'Hide' : 'Show'}
-                </button>
+            <div className="w-full text-left mb-3">
+              <span className="text-sm font-bold text-gray-800 md:text-base">STEP 3</span>
+              <div className="text-xs text-gray-600 mt-1 md:text-sm">Welcome, {voterInfo.firstName} {voterInfo.lastName} (ID: {voterInfo.schoolId})</div>
+            </div>
+
+            {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm w-full">{error}</div>}
+
+            <form className="w-full" onSubmit={handleDone}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-[#123b7a] mb-2">Create a password *</label>
+                <div className="relative flex items-center border border-gray-200 focus:outline-blue-500 rounded-lg shadow-sm px-4 py-2 bg-white">
+                  <input type={showPassword ? 'text' : 'password'} name="password" value={form.password} onChange={handleChange} className="flex-1 bg-transparent outline-none text-gray-800 text-sm placeholder-gray-500" required disabled={loading} minLength={6} />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="ml-2 text-gray-500 hover:text-gray-700 text-sm">{showPassword ? 'Hide' : 'Show'}</button>
+                </div>
               </div>
-            </div>
 
-            <div className="flex flex-row justify-center gap-3 mt-8 lg:text-lg xl:mt-10 w-full">
-              <button 
-                type="button" 
-                onClick={handleLogin} 
-                disabled={loading} 
-                className="flex-1 rounded-lg py-3 text-blue-700 bg-white border border-blue-200 font-semibold shadow-sm hover:bg-blue-50 transition xl:text-lg disabled:opacity-50"
-              >
-                Log In
-              </button>
-              <button 
-                type="submit" 
-                disabled={loading} 
-                className="flex-1 rounded-lg py-3 text-white bg-blue-700 hover:bg-blue-800 font-semibold shadow-sm xl:text-lg ml-0 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Processing...' : 'Complete Registration'}
-              </button>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-[#123b7a] mb-2">Confirm your password *</label>
+                <div className="relative flex items-center border border-gray-200 rounded-lg shadow-sm px-4 py-2 bg-white">
+                  <input type={showConfirmPassword ? 'text' : 'password'} name="confirmPassword" value={form.confirmPassword} onChange={handleChange} className="flex-1 bg-transparent outline-none text-gray-800 text-sm placeholder-gray-500" required disabled={loading} minLength={6} />
+                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="ml-2 text-gray-500 hover:text-gray-700">{showConfirmPassword ? 'Hide' : 'Show'}</button>
+                </div>
+              </div>
+
+              <div className="flex flex-row justify-center gap-3 mt-6">
+                <button type="button" onClick={handleLogin} disabled={loading} className="flex-1 rounded-lg py-3 text-[#001f65] bg-white border border-gray-200 font-semibold shadow-sm hover:bg-gray-50 transition disabled:opacity-50">Log In</button>
+                <button type="submit" disabled={loading} className="flex-1 rounded-lg py-3 text-white bg-blue-500 hover:bg-blue-700 font-semibold shadow-sm ml-0 disabled:opacity-50 disabled:cursor-not-allowed">{loading ? 'Processing...' : 'Complete Registration'}</button>
+              </div>
+            </form>
+
+            <div className="mt-6">
+              <ChatSupportBtn />
             </div>
-          </form>
-          <ChatSupportBtn />
+          </div>
         </div>
       </div>
     </>
