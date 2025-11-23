@@ -62,6 +62,7 @@ const auditLogSchema = new mongoose.Schema(
         "DATA_DELETION",
         "PROFILE_ACCESS",
         "PROFILE_UPDATE",
+        "UNREGISTER_VOTER",
         "PROFILE_PICTURE_UPDATE",
         "CAMPAIGN_PICTURE_UPDATE",
         "VOTER_PARTICIPATED_IN_SSG_ELECTION",
