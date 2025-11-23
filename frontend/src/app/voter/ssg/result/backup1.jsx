@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { votingAPI } from "@/lib/api/voting"
 import { ssgElectionsAPI } from "@/lib/api/ssgElections"
 import { departmentsAPI } from "@/lib/api/departments"
+import { electionParticipationAPI } from "@/lib/api/electionParticipation"
 import VoterLayout from '@/components/VoterLayout'
 import SSGNavbar from '@/components/SSGNavbar'
 import Swal from 'sweetalert2'
@@ -14,7 +15,10 @@ import {
   Users,
   Award,
   Building2,
-  ChevronRight
+  ChevronRight,
+  Download,
+  X,
+  AlertCircle
 } from "lucide-react"
 
 export default function VoterSSGResultsPage() {
@@ -26,6 +30,9 @@ export default function VoterSSGResultsPage() {
   const [loading, setLoading] = useState(true)
   const [loadingDepartment, setLoadingDepartment] = useState(false)
   const [error, setError] = useState("")
+  const [showReceiptModal, setShowReceiptModal] = useState(false)
+  const [receiptData, setReceiptData] = useState(null)
+  const [loadingReceipt, setLoadingReceipt] = useState(false)
   
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -128,24 +135,84 @@ export default function VoterSSGResultsPage() {
     }
   }
 
+  const handleOpenReceipt = async () => {
+    setLoadingReceipt(true)
+    setShowReceiptModal(true)
+    
+    try {
+      const data = await electionParticipationAPI.getSSGVotingReceiptDetails(electionId)
+      setReceiptData(data)
+    } catch (error) {
+      console.error("Error loading voting receipt:", error)
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'Failed to load voting receipt',
+        confirmButtonColor: '#001f65'
+      })
+      setShowReceiptModal(false)
+    } finally {
+      setLoadingReceipt(false)
+    }
+  }
+
+  const handleDownloadReceipt = async () => {
+    try {
+      Swal.fire({
+        title: 'Generating Receipt...',
+        allowOutsideClick: false,
+        didOpen: () => {
+          Swal.showLoading()
+        }
+      })
+
+      const blob = await electionParticipationAPI.exportSSGVotingReceiptPDF(electionId)
+      
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `SSG_Voting_Receipt_${receiptData?.voter?.schoolId || 'voter'}_${election?.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      
+      Swal.fire({
+        icon: 'success',
+        title: 'Receipt Downloaded',
+        text: 'Your voting receipt has been downloaded successfully',
+        confirmButtonColor: '#001f65',
+        timer: 2000
+      })
+    } catch (error) {
+      console.error("Error downloading receipt:", error)
+      Swal.fire({
+        icon: 'error',
+        title: 'Download Failed',
+        text: 'Failed to download voting receipt',
+        confirmButtonColor: '#001f65'
+      })
+    }
+  }
+
   const formatDateTime = (dateString) => {
     if (!dateString) return 'N/A'
     try {
       const date = new Date(dateString)
-      return date.toLocaleDateString('en-US', {
+      return date.toLocaleString('en-US', {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
-        weekday: 'long'
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
       })
     } catch (error) {
       return 'Invalid date'
     }
   }
 
-  // ✅ FIXED: Updated getCandidateDisplay to check for candidate name data
   const getCandidateDisplay = (candidate, index, isCompleted = false) => {
-    // Check if election is completed OR if we have candidate name data
     const shouldShowName = isCompleted || (candidate.name && candidate.name !== 'Unknown Candidate')
     
     if (shouldShowName && candidate.name) {
@@ -192,11 +259,9 @@ export default function VoterSSGResultsPage() {
     return grouped
   }
 
-  // ✅ FIXED: Updated renderPositionResults to properly handle both overall and department results
   const renderPositionResults = (positions, title, showDepartmentName = false, isCompleted = null) => {
     if (positions.length === 0) return null
 
-    // Use passed isCompleted status, or fallback to election status
     const shouldShowNames = isCompleted !== null ? isCompleted : election?.status === 'completed'
 
     return (
@@ -223,15 +288,12 @@ export default function VoterSSGResultsPage() {
         {positions.map((position) => (
           <div key={position.position._id} className="space-y-3 mb-6">
             {position.candidates.map((candidate, index) => {
-              // ✅ FIXED: Use updated getCandidateDisplay
               const display = getCandidateDisplay(candidate, index, shouldShowNames)
               
-              // ✅ FIXED: Handle both departmentVoteCount and voteCount
               const voteCount = showDepartmentName ? 
                 (candidate.departmentVoteCount || candidate.voteCount) : 
                 candidate.voteCount
               
-              // ✅ FIXED: Handle both totalDepartmentVotes and totalVotes
               const totalVotes = showDepartmentName ? 
                 (position.totalDepartmentVotes || position.totalVotes) : 
                 position.totalVotes
@@ -332,6 +394,7 @@ export default function VoterSSGResultsPage() {
         electionId={electionId}
         pageTitle={election?.title}
         pageSubtitle="Live Results"
+        onReceiptClick={handleOpenReceipt}
       />
 
       {/* Main Content */}
@@ -421,7 +484,6 @@ export default function VoterSSGResultsPage() {
                 </p>
               </div>
 
-              {/* ✅ FIXED: Pass election status to rendering function */}
               {renderPositionResults(
                 groupedDepartmentPositions.presidential, 
                 'PRESIDENTIAL RACE', 
@@ -458,6 +520,116 @@ export default function VoterSSGResultsPage() {
 
         </div>
       </div>
+
+      {/* Receipt Modal */}
+      {showReceiptModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 relative max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setShowReceiptModal(false)}
+              className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-gradient-to-br from-[#001f65] to-[#003399] rounded-full flex items-center justify-center mx-auto mb-4">
+                <Download className="w-8 h-8 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold text-[#001f65] mb-2">Voting Receipt</h2>
+            </div>
+
+            {loadingReceipt ? (
+              <div className="text-center py-8">
+                <Loader2 className="animate-spin rounded-full h-12 w-12 mx-auto text-[#001f65]" />
+                <p className="mt-4 text-gray-600">Loading receipt...</p>
+              </div>
+            ) : receiptData ? (
+              <div className="space-y-4">
+                <div className="bg-blue-50 rounded-xl p-4">
+                  <h3 className="font-bold text-[#001f65] mb-3">Voter Information</h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Name:</span>
+                      <span className="font-medium text-right">
+                        {receiptData.voter?.fullName || 'N/A'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">School ID:</span>
+                      <span className="font-medium">{receiptData.voter?.schoolId || 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Department:</span>
+                      <span className="font-medium text-right">
+                        {receiptData.voter?.department?.departmentCode || 'N/A'}
+                      </span>
+                    </div>
+                    {receiptData.voter?.department?.degreeProgram && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Program:</span>
+                        <span className="font-medium text-right text-xs">
+                          {receiptData.voter.department.degreeProgram}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className={`rounded-xl p-4 ${receiptData.hasVoted ? 'bg-green-50' : 'bg-gray-50'}`}>
+                  <h3 className={`font-bold mb-3 ${receiptData.hasVoted ? 'text-green-800' : 'text-gray-800'}`}>
+                    Voting Status
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Status:</span>
+                      <span className={`font-bold ${receiptData.hasVoted ? 'text-green-600' : 'text-gray-600'}`}>
+                        {receiptData.hasVoted ? 'VOTED' : 'NOT VOTED'}
+                      </span>
+                    </div>
+                    {receiptData.hasVoted && receiptData.submittedAt && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Voted At:</span>
+                        <span className="font-medium text-right text-xs">
+                          {formatDateTime(receiptData.submittedAt)}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Election:</span>
+                      <span className="font-medium text-right text-xs">
+                        {receiptData.electionTitle || election?.title}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {receiptData.hasVoted ? (
+                  <button
+                    onClick={handleDownloadReceipt}
+                    className="w-full bg-[#001f65] hover:bg-[#003399] text-white px-6 py-3 rounded-lg transition-colors font-medium flex items-center justify-center gap-2"
+                  >
+                    <Download className="w-5 h-5" />
+                    Download Receipt (PDF)
+                  </button>
+                ) : (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                    <p className="text-yellow-800 text-sm">
+                      You haven't voted in this election yet. Vote to generate your receipt.
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
+                <p className="text-gray-600">Failed to load voting receipt</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </VoterLayout>
   )
 }

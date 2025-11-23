@@ -236,8 +236,8 @@ export default function DepartmentalPositionsPage() {
           </div>
           
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
-            <textarea id="description" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent resize-none" rows="3" placeholder="Position responsibilities and requirements..."></textarea>
+            <label class="block text-sm font-medium text-gray-700 mb-2"></label>
+            <textarea hidden id="description" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent resize-none" rows="3" placeholder="Position responsibilities and requirements..."></textarea>
           </div>
         </div>
       `,
@@ -390,8 +390,8 @@ export default function DepartmentalPositionsPage() {
           </div>
           
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
-            <textarea id="description" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent resize-none" rows="3">${position.description || ''}</textarea>
+            <label class="block text-sm font-medium text-gray-700 mb-2"></label>
+            <textarea hidden id="description" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent resize-none" rows="3">${position.description || ''}</textarea>
           </div>
         </div>
       `,
@@ -626,9 +626,9 @@ export default function DepartmentalPositionsPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Max Candidates
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Description
-                    </th>
+                    </th> */}
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Candidates
                     </th>
@@ -654,11 +654,11 @@ export default function DepartmentalPositionsPage() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-sm text-gray-900">{position.maxCandidates || 10}</span>
                       </td>
-                      <td className="px-6 py-4">
+                      {/* <td className="px-6 py-4">
                         <div className="text-sm text-gray-500 max-w-xs truncate">
                           {position.description || 'No description'}
                         </div>
-                      </td>
+                      </td> */}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-sm text-gray-900">
                           {position.candidateCount || 0} active

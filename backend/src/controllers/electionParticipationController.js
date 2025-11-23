@@ -1161,109 +1161,245 @@ static async getDepartmentalVotingStatus(req, res, next) {
 
 // Export SSG voting receipt as PDF (voter only)
 static async exportSSGVotingReceiptPDF(req, res, next) {
+  let doc = null
+  let pdfStarted = false
+
   try {
     const { ssgElectionId } = req.params
     const voterId = req.user.voterId
 
-    const receipt = await ElectionParticipation.generateVotingReceipt(
-      voterId, 
-      ssgElectionId, 
-      'ssg'
-    )
+    // Get voter info
+    const voter = await Voter.findById(voterId)
+      .select('schoolId firstName middleName lastName yearLevel')
+      .populate('departmentId', 'departmentCode degreeProgram college')
 
-    if (!receipt.hasVoted) {
-      return res.status(404).json({ 
-        message: "No voting record found",
-        reason: receipt.reason 
-      })
-    }
-
-    // Get election and voter info for receipt
-    const [ssgElection, voter] = await Promise.all([
-      SSGElection.findById(ssgElectionId, 'title electionDate electionYear'),
-      Voter.findById(voterId, 'schoolId firstName middleName lastName').populate('departmentId', 'departmentCode degreeProgram college')
-    ])
-
-    // Create PDF
-    const doc = new PDFDocument()
-    
-    // Set response headers
-    res.setHeader('Content-Type', 'application/pdf')
-    res.setHeader('Content-Disposition', `attachment; filename="SSG_Voting_Receipt_${voter.schoolId}_${ssgElection.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`)
-    
-    doc.pipe(res)
-
-    // PDF Content
-    doc.fontSize(16).text(`SSG Election Voting Receipt`, { align: 'center' })
-    doc.moveDown()
-    doc.fontSize(12).text(`Election: ${ssgElection.title}`)
-    doc.text(`Election Year: ${ssgElection.electionYear}`)
-    doc.text(`Election Date: ${new Date(ssgElection.electionDate).toLocaleDateString()}`)
-    doc.moveDown()
-    doc.text(`Voter Information:`)
-    doc.text(`School ID: ${voter.schoolId}`)
-    doc.text(`Name: ${voter.fullName}`)
-    doc.text(`Department: ${voter.departmentId.departmentCode} - ${voter.departmentId.degreeProgram}`)
-    doc.text(`College: ${voter.departmentId.college}`)
-    doc.moveDown()
-    doc.text(`Voting Details:`)
-    doc.text(`Ballot Token: ${receipt.ballotToken}`)
-    doc.text(`Submitted At: ${new Date(receipt.submittedAt).toLocaleString()}`)
-    doc.text(`Total Votes Cast: ${receipt.totalVotes}`)
-    doc.moveDown()
-    doc.text(`Vote Summary:`)
-    
-    receipt.voteDetails.forEach((vote, index) => {
-      doc.text(`${index + 1}. ${vote.position}: #${vote.candidateNumber} - ${vote.candidateName}`)
-    })
-    
-    doc.moveDown()
-    doc.fontSize(10).text(`This is an official voting receipt generated on ${new Date().toLocaleString()}`, { align: 'center' })
-
-    doc.end()
-
-    await AuditLog.logVoterAction(
-      "VOTE_RECEIPT_PDF_EXPORT",
-      voter,
-      `Exported SSG voting receipt as PDF: ${ssgElection.title}`,
-      req
-    )
-
-  } catch (error) {
-    next(error)
-  }
-}
-
-// Export Departmental voting receipt as PDF
-static async exportDepartmentalVotingReceiptPDF(req, res, next) {
-  let doc = null
-  let docEnded = false
-  
-  try {
-    const { deptElectionId } = req.params
-    const voterId = req.user.voterId
-
-    // Get all required data BEFORE starting PDF generation
-    const Voter = require('../models/Voter')
-    const DepartmentalElection = require('../models/DepartmentalElection')
-    const Ballot = require('../models/Ballot')
-    const Vote = require('../models/Vote')
-    const Position = require('../models/Position')
-    
-    const voter = await Voter.findById(voterId).populate('departmentId')
     if (!voter) {
       return res.status(404).json({ 
         success: false,
         message: 'Voter not found' 
       })
     }
+
+    // Get election info
+    const ssgElection = await SSGElection.findById(ssgElectionId, 'title electionDate electionYear')
+    if (!ssgElection) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'SSG Election not found' 
+      })
+    }
+
+    // Check participation
+    const participation = await ElectionParticipation.findOne({
+      voterId,
+      ssgElectionId
+    })
+
+    if (!participation) {
+      return res.status(404).json({
+        success: false,
+        message: 'No participation record found for this election'
+      })
+    }
+
+    // Get submitted ballot
+    const Ballot = require('../models/Ballot')
+    const Vote = require('../models/Vote')
+
+    const submittedBallot = await Ballot.findOne({
+      voterId,
+      ssgElectionId,
+      isSubmitted: true
+    })
+
+    // Get votes if ballot exists
+    let votes = []
+    if (submittedBallot) {
+      votes = await Vote.find({ 
+        ballotId: submittedBallot._id,
+        ssgElectionId 
+      })
+      .populate({
+        path: 'candidateId',
+        populate: {
+          path: 'voterId',
+          select: 'firstName middleName lastName'
+        }
+      })
+      .populate('positionId', 'positionName positionOrder')
+      .sort({ 'positionId.positionOrder': 1 })
+    }
+
+    // Create PDF
+    doc = new PDFDocument({ margin: 50 })
     
+    // Set response headers
+    const safeTitle = ssgElection.title ? ssgElection.title.replace(/[^a-zA-Z0-9]/g, '_') : 'SSG_Election'
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="SSG_Voting_Receipt_${voter.schoolId}_${safeTitle}.pdf"`)
+    
+    doc.pipe(res)
+    pdfStarted = true
+
+    // Helper function to get year suffix
+    const getYearSuffix = (year) => {
+      if (year === 1) return 'st'
+      if (year === 2) return 'nd'
+      if (year === 3) return 'rd'
+      return 'th'
+    }
+
+    // Header
+    doc.fontSize(20).font('Helvetica-Bold').text('VOTING RECEIPT', { align: 'center' })
+    doc.fontSize(16).font('Helvetica').text('SSG Election', { align: 'center' })
+    doc.moveDown()
+
+    // Election info
+    doc.fontSize(12).font('Helvetica-Bold').text('Election Information')
+    doc.fontSize(10).font('Helvetica')
+    doc.text('Election: ' + ssgElection.title)
+    doc.text('Election Year: ' + ssgElection.electionYear)
+    doc.text('Election Date: ' + new Date(ssgElection.electionDate).toLocaleDateString())
+    doc.moveDown()
+
+    // Voter info
+    doc.fontSize(12).font('Helvetica-Bold').text('Voter Information')
+    doc.fontSize(10).font('Helvetica')
+    const voterFullName = [voter.firstName, voter.middleName, voter.lastName]
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    doc.text('Name: ' + voterFullName)
+    doc.text('School ID: ' + voter.schoolId)
+    if (voter.departmentId) {
+      doc.text('Department: ' + voter.departmentId.departmentCode + ' - ' + voter.departmentId.degreeProgram)
+      doc.text('College: ' + voter.departmentId.college)
+    }
+    if (voter.yearLevel) {
+      doc.text('Year Level: ' + voter.yearLevel + getYearSuffix(voter.yearLevel) + ' Year')
+    }
+    doc.moveDown()
+
+    // Your Votes section
+    doc.fontSize(12).font('Helvetica-Bold').text('Your Votes')
+    doc.moveDown(0.5)
+
+    if (votes.length === 0) {
+      doc.fontSize(10).font('Helvetica-Oblique')
+        .text('No votes have been recorded yet.', { align: 'center' })
+    } else {
+      // Group votes by position
+      const votesByPosition = {}
+      votes.forEach(vote => {
+        if (!vote.positionId) return
+        
+        const positionId = vote.positionId._id.toString()
+        if (!votesByPosition[positionId]) {
+          votesByPosition[positionId] = {
+            positionName: vote.positionId.positionName,
+            positionOrder: vote.positionId.positionOrder,
+            votes: []
+          }
+        }
+        
+        let candidateName = 'Unknown Candidate'
+        
+        if (vote.candidateId && vote.candidateId.voterId) {
+          const cVoter = vote.candidateId.voterId
+          candidateName = [cVoter.firstName, cVoter.middleName, cVoter.lastName]
+            .filter(Boolean)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+        }
+        
+        votesByPosition[positionId].votes.push({
+          candidateName: candidateName
+        })
+      })
+
+      const sortedPositions = Object.values(votesByPosition).sort((a, b) => a.positionOrder - b.positionOrder)
+      
+      sortedPositions.forEach((positionVotes, index) => {
+        doc.fontSize(11).font('Helvetica-Bold').text((index + 1) + '. ' + positionVotes.positionName)
+        positionVotes.votes.forEach((vote, voteIndex) => {
+          const bullet = String.fromCharCode(97 + voteIndex) // a, b, c...
+          doc.fontSize(9).font('Helvetica')
+            .text('   ' + bullet + '. ' + vote.candidateName)
+        })
+        doc.moveDown(0.5)
+      })
+    }
+
+    // Footer
+    doc.moveDown(2)
+    doc.fontSize(10).font('Helvetica-Oblique')
+    const currentDateTime = new Date().toLocaleString()
+    doc.text('Receipt generated on: ' + currentDateTime, { align: 'center' })
+    doc.text('This is an official voting receipt', { align: 'center' })
+
+    doc.end()
+
+    // Audit log
+    await AuditLog.logVoterAction(
+      "VOTE_RECEIPT_PDF_EXPORT",
+      voter,
+      `Exported SSG voting receipt as PDF: ${ssgElection.title}`,
+      req
+    ).catch(err => console.error('Audit log error:', err))
+
+  } catch (error) {
+    console.error('Error exporting SSG voting receipt PDF:', error)
+    
+    // If PDF already started, just end it cleanly
+    if (pdfStarted && doc) {
+      try {
+        doc.end()
+      } catch (endError) {
+        console.error('Error ending PDF document:', endError)
+      }
+      return
+    }
+    
+    // If headers not sent yet, send JSON error
+    if (!res.headersSent) {
+      return res.status(500).json({ 
+        success: false,
+        message: 'Failed to generate receipt PDF',
+        error: error.message 
+      })
+    }
+  }
+}
+
+// Export Departmental voting receipt as PDF
+static async exportDepartmentalVotingReceiptPDF(req, res, next) {
+  let doc = null
+  let pdfStarted = false
+  
+  try {
+    const { deptElectionId } = req.params
+    const voterId = req.user.voterId
+
+    const Voter = require('../models/Voter')
+    const voter = await Voter.findById(voterId).populate('departmentId')
+    
+    if (!voter) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Voter not found' 
+      })
+    }
+
+    const DepartmentalElection = require('../models/DepartmentalElection')
     const election = await DepartmentalElection.findById(deptElectionId)
       .populate('departmentId')
+    
     if (!election) {
       return res.status(404).json({ 
         success: false,
-        message: 'Election not found' 
+        message: 'Departmental election not found' 
       })
     }
 
@@ -1271,6 +1407,7 @@ static async exportDepartmentalVotingReceiptPDF(req, res, next) {
       voterId,
       deptElectionId
     })
+
     if (!participation) {
       return res.status(404).json({
         success: false,
@@ -1279,6 +1416,9 @@ static async exportDepartmentalVotingReceiptPDF(req, res, next) {
     }
 
     // Get submitted ballots
+    const Ballot = require('../models/Ballot')
+    const Vote = require('../models/Vote')
+    
     const submittedBallots = await Ballot.find({
       voterId,
       deptElectionId,
@@ -1286,33 +1426,7 @@ static async exportDepartmentalVotingReceiptPDF(req, res, next) {
     }).populate('currentPositionId', 'positionName positionOrder description')
       .sort({ 'currentPositionId.positionOrder': 1 })
 
-    // Get ALL positions and filter by year level eligibility
-    const allPositions = await Position.find({
-      deptElectionId,
-      isActive: true
-    }).sort({ positionOrder: 1 })
-
-    const eligiblePositions = allPositions.filter(position => {
-      if (!position.description) return true
-      
-      const yearLevelMatch = position.description.match(/Year levels?: (.*?)(?:\n|$)/)
-      if (!yearLevelMatch) return true
-      
-      const restrictionText = yearLevelMatch[1]
-      if (restrictionText.includes('All year levels')) return true
-      
-      const allowedLevels = []
-      if (restrictionText.includes('1st')) allowedLevels.push(1)
-      if (restrictionText.includes('2nd')) allowedLevels.push(2)
-      if (restrictionText.includes('3rd')) allowedLevels.push(3)
-      if (restrictionText.includes('4th')) allowedLevels.push(4)
-      
-      return allowedLevels.includes(voter.yearLevel)
-    })
-
-    const totalEligiblePositions = eligiblePositions.length
-
-    // Get votes
+    // Get votes (if any)
     let votes = []
     if (submittedBallots.length > 0) {
       const ballotIds = submittedBallots.map(b => b._id)
@@ -1331,15 +1445,26 @@ static async exportDepartmentalVotingReceiptPDF(req, res, next) {
       .sort({ 'positionId.positionOrder': 1 })
     }
 
-    // NOW start PDF generation with all data ready
+    // Create PDF
     const PDFDocument = require('pdfkit')
     doc = new PDFDocument({ margin: 50 })
 
-    const safeTitle = election.title.replace(/[^a-zA-Z0-9]/g, '_')
+    // Set response headers
+    const safeTitle = election.title ? election.title.replace(/[^a-zA-Z0-9]/g, '_') : 'Election'
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="Departmental_Voting_Receipt_${voter.schoolId}_${safeTitle}.pdf"`)
 
+    // Pipe to response
     doc.pipe(res)
+    pdfStarted = true
+
+    // Helper function to get year suffix
+    const getYearSuffix = (year) => {
+      if (year === 1) return 'st'
+      if (year === 2) return 'nd'
+      if (year === 3) return 'rd'
+      return 'th'
+    }
 
     // Header
     doc.fontSize(20).font('Helvetica-Bold').text('VOTING RECEIPT', { align: 'center' })
@@ -1349,58 +1474,39 @@ static async exportDepartmentalVotingReceiptPDF(req, res, next) {
     // Election info
     doc.fontSize(12).font('Helvetica-Bold').text('Election Information')
     doc.fontSize(10).font('Helvetica')
-    doc.text(`Election: ${election.title}`)
-    doc.text(`Department: ${election.departmentId.departmentCode} - ${election.departmentId.degreeProgram}`)
-    doc.text(`College: ${election.departmentId.college}`)
-    doc.text(`Election Date: ${new Date(election.electionDate).toLocaleDateString()}`)
+    doc.text('Election: ' + election.title)
+    doc.text('Department: ' + election.departmentId.departmentCode + ' - ' + election.departmentId.degreeProgram)
+    doc.text('College: ' + election.departmentId.college)
+    doc.text('Election Date: ' + new Date(election.electionDate).toLocaleDateString())
     doc.moveDown()
 
     // Voter info
     doc.fontSize(12).font('Helvetica-Bold').text('Voter Information')
     doc.fontSize(10).font('Helvetica')
-    const voterFullName = `${voter.firstName} ${voter.middleName || ''} ${voter.lastName}`.replace(/\s+/g, ' ').trim()
-    doc.text(`Name: ${voterFullName}`)
-    doc.text(`School ID: ${voter.schoolId}`)
-    doc.text(`Department: ${voter.departmentId.departmentCode}`)
-    const yearSuffix = voter.yearLevel === 1 ? 'st' : voter.yearLevel === 2 ? 'nd' : voter.yearLevel === 3 ? 'rd' : 'th'
-    doc.text(`Year Level: ${voter.yearLevel}${yearSuffix} Year`)
+    const voterFullName = [voter.firstName, voter.middleName, voter.lastName]
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    doc.text('Name: ' + voterFullName)
+    doc.text('School ID: ' + voter.schoolId)
+    doc.text('Department: ' + voter.departmentId.departmentCode)
+    doc.text('Year Level: ' + voter.yearLevel + getYearSuffix(voter.yearLevel) + ' Year')
     doc.moveDown()
 
-    // Voting progress
-    doc.fontSize(12).font('Helvetica-Bold').text('Voting Progress')
-    doc.fontSize(10).font('Helvetica')
-    doc.text(`Eligible Positions: ${totalEligiblePositions}`)
-    doc.text(`Voted Positions: ${submittedBallots.length}`)
-    doc.text(`Remaining: ${totalEligiblePositions - submittedBallots.length}`)
-    
-    const votingStatus = submittedBallots.length >= totalEligiblePositions ? 'COMPLETED' : 'IN PROGRESS'
-    doc.font('Helvetica-Bold')
-    if (votingStatus === 'COMPLETED') {
-      doc.fillColor('green').text(`Status: ✓ ${votingStatus}`)
-    } else {
-      doc.fillColor('orange').text(`Status: ⚠ ${votingStatus}`)
-    }
-    doc.fillColor('black').font('Helvetica')
-    doc.moveDown()
+    // Your Votes section
+    doc.fontSize(12).font('Helvetica-Bold').text('Your Votes')
+    doc.moveDown(0.5)
 
-    // Show votes or no votes message
     if (votes.length === 0) {
-      doc.fontSize(12).font('Helvetica-Bold').text('Your Votes')
-      doc.moveDown(0.5)
       doc.fontSize(10).font('Helvetica-Oblique')
-        .fillColor('red')
-        .text('⚠ You have not cast any votes yet in this election.', { align: 'center' })
-        .fillColor('black')
-      doc.moveDown()
-      doc.fontSize(9).font('Helvetica')
-        .text('Please complete voting for all eligible positions before the election closes.', { align: 'center' })
+        .text('No votes have been recorded yet.', { align: 'center' })
     } else {
-      // Show votes by position
-      doc.fontSize(12).font('Helvetica-Bold').text('Your Votes')
-      doc.moveDown(0.5)
-
+      // Group votes by position
       const votesByPosition = {}
       votes.forEach(vote => {
+        if (!vote.positionId) return
+        
         const positionId = vote.positionId._id.toString()
         if (!votesByPosition[positionId]) {
           votesByPosition[positionId] = {
@@ -1414,7 +1520,11 @@ static async exportDepartmentalVotingReceiptPDF(req, res, next) {
         
         if (vote.candidateId && vote.candidateId.voterId) {
           const cVoter = vote.candidateId.voterId
-          candidateName = `${cVoter.firstName} ${cVoter.middleName || ''} ${cVoter.lastName}`.replace(/\s+/g, ' ').trim()
+          candidateName = [cVoter.firstName, cVoter.middleName, cVoter.lastName]
+            .filter(Boolean)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim()
         }
         
         votesByPosition[positionId].votes.push({
@@ -1425,56 +1535,41 @@ static async exportDepartmentalVotingReceiptPDF(req, res, next) {
       const sortedPositions = Object.values(votesByPosition).sort((a, b) => a.positionOrder - b.positionOrder)
       
       sortedPositions.forEach((positionVotes, index) => {
-        doc.fontSize(11).font('Helvetica-Bold').text(`${index + 1}. ${positionVotes.positionName}`)
+        doc.fontSize(11).font('Helvetica-Bold').text((index + 1) + '. ' + positionVotes.positionName)
         positionVotes.votes.forEach((vote, voteIndex) => {
-          const bullet = String.fromCharCode(97 + voteIndex)
+          const bullet = String.fromCharCode(97 + voteIndex) // a, b, c...
           doc.fontSize(9).font('Helvetica')
-            .text(`   ${bullet}. ${vote.candidateName}`)
+            .text('   ' + bullet + '. ' + vote.candidateName)
         })
         doc.moveDown(0.5)
       })
-
-      // Warning if not all ELIGIBLE positions voted
-      if (submittedBallots.length < totalEligiblePositions) {
-        doc.moveDown()
-        doc.fontSize(10).font('Helvetica-Bold')
-          .fillColor('orange')
-          .text('⚠ WARNING: Voting incomplete', { align: 'center' })
-          .fillColor('black')
-        doc.fontSize(9).font('Helvetica')
-          .text(`You have voted for ${submittedBallots.length} out of ${totalEligiblePositions} eligible positions.`, { align: 'center' })
-          .text('Please continue voting to complete your ballot.', { align: 'center' })
-      }
     }
 
     // Footer
-    doc.moveDown()
-    doc.fontSize(10).font('Helvetica-Italic')
+    doc.moveDown(2)
+    doc.fontSize(10).font('Helvetica-Oblique')
     const currentDateTime = new Date().toLocaleString()
-    doc.text(`Receipt generated on: ${currentDateTime}`, { align: 'center' })
+    doc.text('Receipt generated on: ' + currentDateTime, { align: 'center' })
     doc.text('This is an official voting receipt', { align: 'center' })
 
-    // Audit log BEFORE ending document
+    // End the document
+    doc.end()
+
+    // Audit log
     const AuditLog = require('../models/AuditLog')
     await AuditLog.logVoterAction(
       "RECEIPT_EXPORTED",
       voter,
-      `Exported departmental voting receipt PDF for election: ${election.title} (${submittedBallots.length}/${totalEligiblePositions} eligible positions voted)`,
+      `Exported departmental voting receipt PDF for election: ${election.title}`,
       req
-    )
-
-    // End the document (this must be the last thing)
-    doc.end()
-    docEnded = true
+    ).catch(err => console.error('Audit log error:', err))
 
   } catch (error) {
     console.error('Error exporting departmental voting receipt PDF:', error)
     
-    // If PDF was started but not ended, end it with error message
-    if (doc && !docEnded) {
+    // If PDF already started, just end it cleanly
+    if (pdfStarted && doc) {
       try {
-        doc.fontSize(12).fillColor('red')
-          .text('An error occurred while generating this receipt.', { align: 'center' })
         doc.end()
       } catch (endError) {
         console.error('Error ending PDF document:', endError)
@@ -1482,7 +1577,7 @@ static async exportDepartmentalVotingReceiptPDF(req, res, next) {
       return
     }
     
-    // If PDF hasn't started, send JSON error
+    // If headers not sent yet, send JSON error
     if (!res.headersSent) {
       return res.status(500).json({ 
         success: false,
