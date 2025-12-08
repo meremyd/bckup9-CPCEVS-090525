@@ -86,27 +86,385 @@ async function migrate() {
     ])
     console.log(`Migrated ${departments.length} departments`)
 
-    // Create sample voters (unregistered - for OTP/registration flow)
-    console.log("Creating sample unregistered voters...")
-    const unregisteredVotersData = [
+    // Create 3 students with no email and password
+    console.log("Creating students...")
+    const studentsData = [
       {
         schoolId: 20210001,
         firstName: "Jay",
         middleName: "Lee",
         lastName: "Taylor",
         sex: "Male",
-        departmentId: departments[3]._id, // BSIT (index 3)
+        departmentId: departments[3]._id, // BSIT
         yearLevel: 3,
-        email: "jay.taylor@student.edu",
+        email: null,
         password: null,
-        faceEncoding: null,
-        profilePicture: null,
         isActive: true,
         isRegistered: false,
-        isClassOfficer: false,
-        otpCode: null,
-        otpExpires: null,
-        otpVerified: false,
+      },
+      {
+        schoolId: 20220001,
+        firstName: "Emmanuel",
+        middleName: "",
+        lastName: "Bautista",
+        sex: "Male",
+        departmentId: departments[2]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220002,
+        firstName: "Joshua John",
+        middleName: "",
+        lastName: "Valenzuela",
+        sex: "Male",
+        departmentId: departments[3]._id, // BSIT
+        yearLevel: 2,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220003,
+        firstName: "Josh Garnet",
+        middleName: "",
+        lastName: "Martinez",
+        sex: "Male",
+        departmentId: departments[1]._id, // BSIT
+        yearLevel: 4,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220004,
+        firstName: "Jone",
+        middleName: "",
+        lastName: "Ceriaca",
+        sex: "Male",
+        departmentId: departments[3]._id, // BSIT
+        yearLevel: 1,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220005,
+        firstName: "Roger",
+        middleName: "",
+        lastName: "Lasaga",
+        sex: "Male",
+        departmentId: departments[2]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220006,
+        firstName: "Joreza",
+        middleName: "",
+        lastName: "Jamora",
+        sex: "Female",
+        departmentId: departments[0]._id, // BSIT
+        yearLevel: 2,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220007,
+        firstName: "Deither",
+        middleName: "",
+        lastName: "Cabansay",
+        sex: "Male",
+        departmentId: departments[1]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220008,
+        firstName: "Egie",
+        middleName: "",
+        lastName: "Nunez",
+        sex: "Male",
+        departmentId: departments[3]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220009,
+        firstName: "Zenith",
+        middleName: "",
+        lastName: "Marzan",
+        sex: "Male",
+        departmentId: departments[1]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220010,
+        firstName: "Errol",
+        middleName: "",
+        lastName: "Ramos",
+        sex: "Male",
+        departmentId: departments[2]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220011,
+        firstName: "Clint Joseph",
+        middleName: "",
+        lastName: "Goden",
+        sex: "Male",
+        departmentId: departments[2]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220012,
+        firstName: "Jenne Rose",
+        middleName: "",
+        lastName: "Lampera",
+        sex: "Female",
+        departmentId: departments[0]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220013,
+        firstName: "Warren James",
+        middleName: "",
+        lastName: "Villamor",
+        sex: "Male",
+        departmentId: departments[1]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220014,
+        firstName: "Glenda",
+        middleName: "",
+        lastName: "Inting",
+        sex: "Male",
+        departmentId: departments[3]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220015,
+        firstName: "Beverly",
+        middleName: "",
+        lastName: "Sinogbuhan",
+        sex: "Female",
+        departmentId: departments[1]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220016,
+        firstName: "Ralph",
+        middleName: "",
+        lastName: "Menguito",
+        sex: "Male",
+        departmentId: departments[3]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220017,
+        firstName: "Jorex",
+        middleName: "",
+        lastName: "Amoren",
+        sex: "Male",
+        departmentId: departments[0]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220018,
+        firstName: "Pepin",
+        middleName: "",
+        lastName: "Apa",
+        sex: "Male",
+        departmentId: departments[3]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220019,
+        firstName: "Romil",
+        middleName: "",
+        lastName: "Bautista",
+        sex: "Male",
+        departmentId: departments[1]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+      {
+        schoolId: 20220020,
+        firstName: "Glee",
+        middleName: "",
+        lastName: "Canete",
+        sex: "Male",
+        departmentId: departments[1]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+       {
+        schoolId: 20220021,
+        firstName: "Mark Anthony",
+        middleName: "",
+        lastName: "Casquejo",
+        sex: "Male",
+        departmentId: departments[1]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+       {
+        schoolId: 20220022,
+        firstName: "Juswell",
+        middleName: "",
+        lastName: "Berame",
+        sex: "Female",
+        departmentId: departments[1]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+       {
+        schoolId: 20220023,
+        firstName: "Elmarie Joy",
+        middleName: "",
+        lastName: "Gante",
+        sex: "Female",
+        departmentId: departments[1]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+       {
+        schoolId: 20220024,
+        firstName: "John Mark",
+        middleName: "",
+        lastName: "Inoc",
+        sex: "Male",
+        departmentId: departments[3]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+       {
+        schoolId: 20220025,
+        firstName: "James Harode",
+        middleName: "",
+        lastName: "Loberanes",
+        sex: "Male",
+        departmentId: departments[3]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+       {
+        schoolId: 20220026,
+        firstName: "Mia Jane",
+        middleName: "",
+        lastName: "Panganuron",
+        sex: "Male",
+        departmentId: departments[1]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+       {
+        schoolId: 20220027,
+        firstName: "Ian",
+        middleName: "",
+        lastName: "Petallar",
+        sex: "Male",
+        departmentId: departments[1]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
+      },
+       {
+        schoolId: 20220028,
+        firstName: "Quennie",
+        middleName: "",
+        lastName: "Ruelo",
+        sex: "Female",
+        departmentId: departments[1]._id, // BSIT
+        yearLevel: 3,
+        email: null,
+        password: null,
+        isActive: true,
+        isRegistered: false,
       },
       {
         schoolId: 20210002,
@@ -114,18 +472,12 @@ async function migrate() {
         middleName: "Jane",
         lastName: "Smith",
         sex: "Female",
-        departmentId: departments[2]._id, // BSHM (index 2)
+        departmentId: departments[2]._id, // BSHM
         yearLevel: 2,
-        email: "mary.smith@student.edu",
+        email: null,
         password: null,
-        faceEncoding: null,
-        profilePicture: null,
         isActive: true,
         isRegistered: false,
-        isClassOfficer: false,
-        otpCode: null,
-        otpExpires: null,
-        otpVerified: false,
       },
       {
         schoolId: 20210003,
@@ -133,127 +485,23 @@ async function migrate() {
         middleName: "Paul",
         lastName: "Doe",
         sex: "Male",
-        departmentId: departments[0]._id, // BEED (index 0)
+        departmentId: departments[0]._id, // BEED
         yearLevel: 1,
-        email: "john.doe@student.edu",
+        email: null,
         password: null,
-        faceEncoding: null,
-        profilePicture: null,
         isActive: true,
         isRegistered: false,
-        isClassOfficer: false,
-        otpCode: null,
-        otpExpires: null,
-        otpVerified: false,
       },
     ]
 
-    const unregisteredVoters = await Voter.insertMany(unregisteredVotersData)
-    console.log(`Created ${unregisteredVoters.length} unregistered voters`)
-
-    // Create sample registered voters
-    console.log("Creating sample registered voters...")
-    const registeredVotersData = [
-      {
-        schoolId: 20210004,
-        firstName: "Alice",
-        middleName: "Marie",
-        lastName: "Johnson",
-        sex: "Female",
-        departmentId: departments[3]._id, // BSIT
-        yearLevel: 4,
-        email: "alice.johnson@student.edu",
-        password: "password123",
-        faceEncoding: null,
-        profilePicture: null,
-        isActive: true,
-        isRegistered: true,
-        isClassOfficer: true,
-        isPasswordActive: true,
-      },
-      {
-        schoolId: 20210005,
-        firstName: "Bob",
-        middleName: "Andrew",
-        lastName: "Williams",
-        sex: "Male",
-        departmentId: departments[1]._id, // BSED
-        yearLevel: 3,
-        email: "bob.williams@student.edu",
-        password: "password123",
-        faceEncoding: null,
-        profilePicture: null,
-        isActive: true,
-        isRegistered: true,
-        isClassOfficer: true,
-        isPasswordActive: true,
-      },
-      {
-        schoolId: 20210006,
-        firstName: "Charlie",
-        middleName: "David",
-        lastName: "Brown",
-        sex: "Male",
-        departmentId: departments[3]._id, // BSIT
-        yearLevel: 2,
-        email: "charlie.brown@student.edu",
-        password: "password123",
-        faceEncoding: null,
-        profilePicture: null,
-        isActive: true,
-        isRegistered: true,
-        isClassOfficer: false,
-        isPasswordActive: true,
-      },
-    ]
-
-    const registeredVoters = await Voter.insertMany(registeredVotersData)
-    console.log(`Created ${registeredVoters.length} registered voters`)
-
-    // Create sample SSG election
-    console.log("Creating sample SSG election...")
-    const ssgElectionData = {
-      ssgElectionId: "SSG-2025",
-      electionYear: 2025,
-      title: "SSG General Elections 2025",
-      status: "upcoming",
-      electionDate: new Date("2025-11-15"),
-      ballotOpenTime: "08:00",
-      ballotCloseTime: "17:00",
-      ballotDuration: 10,
-      createdBy: users[0]._id,
-      totalVotes: 0,
-      voterTurnout: 0,
-    }
-
-    const ssgElection = await SSGElection.create(ssgElectionData)
-    console.log(`Created SSG election: ${ssgElection.title}`)
-
-    // Create sample departmental election
-    console.log("Creating sample departmental election...")
-    const deptElectionData = {
-      deptElectionId: "DEPT-BSIT-2025",
-      electionYear: 2025,
-      title: "BSIT Departmental Elections 2025",
-      departmentId: departments[3]._id, // BSIT
-      status: "upcoming",
-      electionDate: new Date("2025-11-20"),
-      createdBy: users[0]._id,
-      totalVotes: 0,
-      voterTurnout: 0,
-    }
-
-    const deptElection = await DepartmentalElection.create(deptElectionData)
-    console.log(`Created departmental election: ${deptElection.title}`)
+    const students = await Voter.insertMany(studentsData)
+    console.log(`Created ${students.length} students`)
 
     console.log("\n✅ Migration completed successfully!")
     console.log("\n📊 Summary:")
     console.log(`- Users: ${users.length}`)
     console.log(`- Departments: ${departments.length}`)
-    console.log(`- Unregistered Voters: ${unregisteredVoters.length}`)
-    console.log(`- Registered Voters: ${registeredVoters.length}`)
-    console.log(`- SSG Elections: 1`)
-    console.log(`- Departmental Elections: 1`)
+    console.log(`- Students: ${students.length}`)
 
   } catch (error) {
     console.error("❌ Migration failed:", error)

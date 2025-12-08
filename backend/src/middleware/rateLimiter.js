@@ -3,7 +3,7 @@ const rateLimit = require("express-rate-limit")
 // Global limiter - applies to all routes by default
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, 
-  max: 2000, // Reduced from 200 for better security
+  max: 2000,
   message: {
     error: "Too many requests from this IP address",
     message: "Please wait 15 minutes before making more requests",
@@ -23,7 +23,7 @@ const globalLimiter = rateLimit({
 // Strict login limiter - prevents brute force attacks
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Reduced from 10 for better security
+  max: 100,
   message: {
     error: "Too many login attempts",
     message: "Please wait 15 minutes before attempting to login again",
@@ -32,8 +32,8 @@ const loginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true, // Don't count successful login attempts
-  keyGenerator: (req) => {
-    // Use IP + attempted username for more granular limiting
+  keyGenerator: (req, res) => {
+    // Fixed: Properly handle IPv6 by using req.ip directly (express-rate-limit handles it)
     const username = req.body?.username || req.body?.userId || 'unknown'
     return `${req.ip}-${username}`
   },
@@ -67,10 +67,9 @@ const registrationLimiter = rateLimit({
   }
 })
 
-
 const adminLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
-  max: 1500, // Reduced from 200, but still allows productive work
+  max: 1500,
   message: {
     error: "Admin request limit exceeded",
     message: "Please slow down your requests and try again in a few minutes",
@@ -110,7 +109,7 @@ const voterLimiter = rateLimit({
 // Voting action limiter - extremely strict for ballot submissions
 const votingLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 1000, // Very few voting-related requests per hour
+  max: 1000,
   message: {
     error: "Voting limit exceeded",
     message: "Too many voting attempts. Please contact support if you need assistance.",
@@ -119,10 +118,9 @@ const votingLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req, res) => {
-    // Use voter ID from token if available for more accurate limiting
+    // Fixed: Use req.ip directly (express-rate-limit handles IPv6 properly)
     const voterId = req.user?.voterId || req.user?.userId || 'unknown-user'
-    const ipKey = req.ip || req.connection.remoteAddress || 'unknown-ip'
-    return `voting-${voterId}-${ipKey}`
+    return `voting-${voterId}-${req.ip}`
   },
   handler: (req, res) => {
     res.status(429).json({
@@ -137,7 +135,7 @@ const votingLimiter = rateLimit({
 // Chat support limiter - prevent spam
 const chatSupportLimiter = rateLimit({
   windowMs: 30 * 60 * 1000, // 30 minutes
-  max: 500, // 5 support requests per 30 minutes
+  max: 500,
   message: {
     error: "Support request limit exceeded",
     message: "Please wait before submitting another support request",
@@ -157,7 +155,7 @@ const chatSupportLimiter = rateLimit({
 // Dashboard limiter - moderate restrictions for dashboard access
 const dashboardLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutes
-  max: 50, // 50 requests per 5 minutes
+  max: 50,
   message: {
     error: "Dashboard request limit exceeded",
     message: "Please wait a few minutes before refreshing the dashboard",

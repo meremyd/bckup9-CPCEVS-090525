@@ -422,10 +422,6 @@ static async submitSelectedSSGBallot(req, res, next) {
 
     const ballot = await Ballot.findOne({ ssgElectionId: electionId, voterId })
 
-    // ✅ FIX: Calculate live status using SSGElectionController
-    const SSGElectionController = require('./ssgElectionController')
-    const liveStatus = SSGElectionController.computeAutomaticStatusFor(election)
-
     // Check if voting is currently allowed based on election times
     const now = new Date()
     const isVotingTime = election.ballotsAreOpen
@@ -434,7 +430,7 @@ static async submitSelectedSSGBallot(req, res, next) {
       election: {
         _id: election._id,
         title: election.title,
-        status: liveStatus, // ✅ Use computed status instead of election.status
+        status: election.status, // ✅ Direct status, no computation
         ballotOpenTime: election.ballotOpenTime,
         ballotCloseTime: election.ballotCloseTime,
         ballotDuration: election.ballotDuration || 10,
@@ -466,6 +462,7 @@ static async submitSelectedSSGBallot(req, res, next) {
     next(error)
   }
 }
+
 
   // Get selected SSG election ballot with votes (for review)
   static async getSelectedSSGBallotWithVotes(req, res, next) {
@@ -1945,12 +1942,11 @@ static async startSSGBallot(req, res, next) {
       return res.status(404).json({ message: "SSG Election not found" })
     }
 
-    const liveStatus = SSGElectionController.computeAutomaticStatusFor(election)
-    
-    if (liveStatus !== 'active') {
+    // ✅ Use manual status directly
+    if (election.status !== 'active') {
       return res.status(400).json({ 
-        message: `SSG Election is ${liveStatus}, not active. Voting is not available at this time.`,
-        electionStatus: liveStatus 
+        message: `SSG Election is ${election.status}, not active. Voting is not available at this time.`,
+        electionStatus: election.status
       })
     }
 

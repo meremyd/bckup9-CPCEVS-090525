@@ -96,15 +96,19 @@ export default function SSGLayout({
       
       const response = await ssgElectionsAPI.getById(ssgElectionId)
       
-      // Handle different response structures
-      let electionData
-      if (response.success && response.data) {
-        electionData = response.data
-      } else if (response.election) {
-        electionData = response.election
-      } else if (response._id || response.ssgElectionId) {
-        electionData = response
-      } else {
+      // Handle different response structures robustly and pick the actual election object
+      let electionData = null
+      // common API shape: { success: true, data: { election: {...}, ... } }
+      if (response && response.success && response.data) {
+        if (response.data.election) electionData = response.data.election
+        else electionData = response.data
+      }
+      // alternative shapes: { election: {...} } or plain election object
+      if (!electionData) {
+        if (response && response.election) electionData = response.election
+        else if (response && (response._id || response.ssgElectionId || response.title)) electionData = response
+      }
+      if (!electionData) {
         throw new Error('Invalid response structure from API')
       }
       
@@ -112,8 +116,8 @@ export default function SSGLayout({
       
       // Store only essential election data to avoid localStorage quota issues
       const essentialElectionData = {
-        _id: electionData._id,
-        id: electionData.id,
+        _id: electionData._id || electionData.id,
+        id: electionData.id || electionData._id,
         ssgElectionId: electionData.ssgElectionId,
         electionYear: electionData.electionYear,
         title: electionData.title,

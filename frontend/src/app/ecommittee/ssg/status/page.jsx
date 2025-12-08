@@ -30,6 +30,7 @@ export default function SSGStatusPage() {
     ssgElectionId: '',
     electionYear: new Date().getFullYear(),
     title: '',
+    status: 'upcoming',
     electionDate: '',
     ballotOpenTime: '',
     ballotCloseTime: ''
@@ -38,44 +39,6 @@ export default function SSGStatusPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const ssgElectionId = searchParams.get('ssgElectionId')
-
-  // Helper function to calculate automatic status based on dates and times
-  const calculateAutomaticStatus = (electionDate, ballotOpenTime, ballotCloseTime) => {
-    if (!electionDate) return 'upcoming'
-    
-    const now = new Date()
-    const elecDate = new Date(electionDate)
-    
-    // Set times to start/end of day for comparison
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const elecDateStart = new Date(elecDate.getFullYear(), elecDate.getMonth(), elecDate.getDate())
-    
-    // Before election date
-    if (todayStart < elecDateStart) {
-      return 'upcoming'
-    }
-    
-    // On election date
-    if (todayStart.getTime() === elecDateStart.getTime()) {
-      // If ballot times are set, check if voting has closed
-      if (ballotCloseTime) {
-        const [closeHours, closeMinutes] = ballotCloseTime.split(':').map(Number)
-        const closeDateTime = new Date(elecDate)
-        closeDateTime.setHours(closeHours, closeMinutes, 0, 0)
-        
-        // If current time is past close time, mark as completed
-        if (now > closeDateTime) {
-          return 'completed'
-        }
-      }
-      
-      // Otherwise, it's active on election day
-      return 'active'
-    }
-    
-    // After election date
-    return 'completed'
-  }
 
   // Helper function to format time for display (24-hour to 12-hour)
   const formatTimeDisplay = (time24) => {
@@ -151,6 +114,7 @@ export default function SSGStatusPage() {
               ssgElectionId: parsed.ssgElectionId || '',
               electionYear: parsed.electionYear || new Date().getFullYear(),
               title: parsed.title || '',
+              status: parsed.status || 'upcoming',
               electionDate: parsed.electionDate ? 
                 new Date(parsed.electionDate).toISOString().slice(0, 10) : '',
               ballotOpenTime: parsed.ballotOpenTime || '',
@@ -175,17 +139,21 @@ export default function SSGStatusPage() {
       setError('')
       
       const response = await ssgElectionsAPI.getById(ssgElectionId)
-      
-      let electionData
-      if (response.success && response.data) {
-        electionData = response.data
-      } else if (response.election) {
-        electionData = response.election
-      } else if (response._id || response.ssgElectionId) {
-        electionData = response
-      } else {
-        throw new Error('Invalid response structure from API')
+
+      // Robustly pick the real election object from different API shapes:
+      // - { success: true, data: { election: {...}, ... } }
+      // - { success: true, data: {...} } (where data is the election)
+      // - { election: {...} }
+      // - plain election object
+      let electionData = null
+      if (response && response.success && response.data) {
+        electionData = response.data.election ? response.data.election : response.data
       }
+      if (!electionData) {
+        if (response && response.election) electionData = response.election
+        else if (response && (response._id || response.id || response.ssgElectionId || response.title)) electionData = response
+      }
+      if (!electionData) throw new Error('Invalid response structure from API')
       
       setElection(electionData)
       
@@ -193,6 +161,7 @@ export default function SSGStatusPage() {
         ssgElectionId: electionData.ssgElectionId || '',
         electionYear: electionData.electionYear || new Date().getFullYear(),
         title: electionData.title || '',
+        status: electionData.status || 'upcoming',
         electionDate: electionData.electionDate ? 
           new Date(electionData.electionDate).toISOString().slice(0, 10) : '',
         ballotOpenTime: electionData.ballotOpenTime || '',
@@ -255,6 +224,9 @@ export default function SSGStatusPage() {
       if (!formData.electionDate) {
         throw new Error('Election date is required')
       }
+      if (!formData.status) {
+        throw new Error('Status is required')
+      }
 
       // Validate ballot times
       const timeValidation = validateBallotTimes(formData.ballotOpenTime, formData.ballotCloseTime)
@@ -262,11 +234,12 @@ export default function SSGStatusPage() {
         throw new Error(timeValidation.error)
       }
 
-      // Prepare update data - NO STATUS FIELD (will be calculated automatically by backend)
+      // Prepare update data with MANUAL status
       const updatePayload = {
         ssgElectionId: formData.ssgElectionId,
         electionYear: formData.electionYear,
         title: formData.title,
+        status: formData.status, // MANUAL STATUS
         electionDate: formData.electionDate,
         ballotOpenTime: formData.ballotOpenTime || null,
         ballotCloseTime: formData.ballotCloseTime || null
@@ -274,18 +247,20 @@ export default function SSGStatusPage() {
 
       const response = await ssgElectionsAPI.update(ssgElectionId, updatePayload)
       
-      let updatedElectionData
-      if (response.success && response.data) {
-        updatedElectionData = response.data
-      } else if (response.election) {
-        updatedElectionData = response.election
-      } else if (response._id || response.ssgElectionId) {
-        updatedElectionData = response
-      } else {
+      // Normalize update response similar to fetchElection
+      let updatedElectionData = null
+      if (response && response.success && response.data) {
+        updatedElectionData = response.data.election ? response.data.election : response.data
+      }
+      if (!updatedElectionData) {
+        if (response && response.election) updatedElectionData = response.election
+        else if (response && (response._id || response.id || response.ssgElectionId || response.title)) updatedElectionData = response
+      }
+      if (!updatedElectionData) {
         const freshData = await ssgElectionsAPI.getById(ssgElectionId)
-        if (freshData.success && freshData.data) {
-          updatedElectionData = freshData.data
-        } else if (freshData.election) {
+        if (freshData && freshData.success && freshData.data) {
+          updatedElectionData = freshData.data.election ? freshData.data.election : freshData.data
+        } else if (freshData && freshData.election) {
           updatedElectionData = freshData.election
         } else {
           updatedElectionData = freshData
@@ -299,6 +274,7 @@ export default function SSGStatusPage() {
           ssgElectionId: updatedElectionData.ssgElectionId || '',
           electionYear: updatedElectionData.electionYear || new Date().getFullYear(),
           title: updatedElectionData.title || '',
+          status: updatedElectionData.status || 'upcoming',
           electionDate: updatedElectionData.electionDate ? 
             new Date(updatedElectionData.electionDate).toISOString().slice(0, 10) : '',
           ballotOpenTime: updatedElectionData.ballotOpenTime || '',
@@ -307,12 +283,12 @@ export default function SSGStatusPage() {
       }
       
       setIsEditing(false)
-      setSuccess('Election updated successfully! Status is automatically managed based on dates.')
+      setSuccess('Election updated successfully!')
       
       Swal.fire({
         icon: 'success',
         title: 'Success!',
-        text: 'Election updated successfully! Status is automatically managed.',
+        text: 'Election updated successfully!',
         timer: 2000,
         showConfirmButton: false,
         toast: true,
@@ -361,6 +337,7 @@ export default function SSGStatusPage() {
             ssgElectionId: election.ssgElectionId || '',
             electionYear: election.electionYear || new Date().getFullYear(),
             title: election.title || '',
+            status: election.status || 'upcoming',
             electionDate: election.electionDate ? 
               new Date(election.electionDate).toISOString().slice(0, 10) : '',
             ballotOpenTime: election.ballotOpenTime || '',
@@ -444,11 +421,6 @@ export default function SSGStatusPage() {
     }
   }
 
-  // Calculate what the current automatic status should be
-  const currentAutomaticStatus = election ? 
-    calculateAutomaticStatus(election.electionDate, election.ballotOpenTime, election.ballotCloseTime) : 
-    'upcoming'
-
   if (!ssgElectionId) {
     return (
       <SSGLayout
@@ -482,7 +454,6 @@ export default function SSGStatusPage() {
       activeItem="status"
     >
       <div className="max-w-4xl mx-auto space-y-6">
-
 
         {/* Status Overview Card */}
         <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
@@ -568,7 +539,7 @@ export default function SSGStatusPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getBallotStatusColor(election.ballotStatus)}`}>
-                      {election.ballotStatus?.replace('_', ' ').toUpperCase() || 'NOT SCHEDULED'}
+                      {election.ballotStatus?.replace('_', ' ').toUpperCase() || 'SCHEDULED'}
                     </span>
                   </div>
                 </div>
@@ -676,6 +647,26 @@ export default function SSGStatusPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Status *
+                </label>
+                <select
+                  required
+                  value={formData.status}
+                  onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                >
+                  <option value="upcoming">Upcoming</option>
+                  <option value="active">Active</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Manually control the election status. Change this based on your election timeline.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Election Date *
                 </label>
                 <input
@@ -686,7 +677,7 @@ export default function SSGStatusPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Status is automatically set: Upcoming (before), Active (on date), Completed (after close time)
+                  Election date can be modified unless votes have been submitted
                 </p>
               </div>
 

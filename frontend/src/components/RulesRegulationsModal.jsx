@@ -11,7 +11,7 @@ export default function RulesRegulationsModal({ isOpen, onClose, isFirstLogin = 
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="bg-gradient-to-r from-[#001f65] to-[#003399] text-white p-6 rounded-t-2xl flex items-center justify-between sticky top-0">
+        <div className="bg-gradient-to-r from-[#3A89FF] to-[#6BBBFF] text-white p-6 rounded-t-2xl flex items-center justify-between sticky top-0">
           <div className="flex items-center">
             <BookOpen className="w-8 h-8 mr-3" />
             <h2 className="text-2xl font-bold">Rules and Regulations</h2>

@@ -7,7 +7,7 @@ export default function VoterLayout({ children, className = "" }) {
       <div 
         className="fixed inset-0 z-0"
         style={{
-          background: 'linear-gradient(135deg, #5D9FFF 0%, #B3D1F0 100%)'
+        background: "linear-gradient(180deg, #3A89FF 0%, #6BBBFF 100%)",
         }}
       />
       
