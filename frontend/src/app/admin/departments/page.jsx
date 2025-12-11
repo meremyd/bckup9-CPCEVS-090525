@@ -382,7 +382,7 @@ export default function AdminDepartments() {
                   placeholder="Search departments..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent w-full sm:w-64"
+                  className="pl-10 text-gray-700 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent w-full sm:w-64"
                 />
               </div>
               <button
@@ -505,7 +505,7 @@ export default function AdminDepartments() {
                     type="text"
                     value={departmentCode}
                     onChange={(e) => setDepartmentCode(e.target.value.toUpperCase())}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                    className="w-full text-gray-700 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
                     placeholder="e.g., COCS, EDUC"
                     required
                   />
@@ -533,7 +533,7 @@ export default function AdminDepartments() {
                     type="text"
                     value={degreeProgram}
                     onChange={(e) => setDegreeProgram(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                    className="w-full text-gray-700 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
                     placeholder="e.g., Bachelor of Science in Computer Science"
                     required
                   />
@@ -583,7 +583,7 @@ export default function AdminDepartments() {
                     type="text"
                     value={departmentCode}
                     onChange={(e) => setDepartmentCode(e.target.value.toUpperCase())}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                    className="w-full text-gray-700 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
                     placeholder="e.g., COCS, EDUC"
                     required
                   />
@@ -611,7 +611,7 @@ export default function AdminDepartments() {
                     type="text"
                     value={degreeProgram}
                     onChange={(e) => setDegreeProgram(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                    className="w-full text-gray-700 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
                     placeholder="e.g., Bachelor of Science in Computer Science"
                     required
                   />

@@ -1716,7 +1716,6 @@ static async getDepartmentalVotingReceiptDetails(req, res, next) {
       })
     }
 
-    // ✅ Get ALL votes from ALL submitted ballots
     const ballotIds = submittedBallots.map(b => b._id)
     const votes = await Vote.find({ 
       ballotId: { $in: ballotIds },
@@ -1732,7 +1731,6 @@ static async getDepartmentalVotingReceiptDetails(req, res, next) {
     .populate('positionId', 'positionName positionOrder')
     .sort({ 'positionId.positionOrder': 1 })
 
-    // ✅ Group votes by position
     const votesByPosition = {}
     votes.forEach(vote => {
       const positionId = vote.positionId._id.toString()
@@ -1788,7 +1786,6 @@ static async getDepartmentalVotingReceiptDetails(req, res, next) {
       await participation.save()
     }
 
-    // ✅ Return comprehensive receipt details
     res.json({
       success: true,
       hasVoted: votedPositionsCount > 0,
@@ -1804,7 +1801,7 @@ static async getDepartmentalVotingReceiptDetails(req, res, next) {
         department: election.departmentId
       },
       votingProgress: {
-        totalPositions: totalEligiblePositions, // ✅ Only eligible positions
+        totalPositions: totalEligiblePositions, 
         votedPositions: votedPositionsCount,
         remainingPositions: totalEligiblePositions - votedPositionsCount
       },

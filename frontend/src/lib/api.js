@@ -67,13 +67,11 @@ api.interceptors.response.use(
         window.location.href = '/adminlogin'
       }
     }
-    
-    // Enhanced error messages
+
     if (error.response?.data?.message) {
       const originalMessage = error.response.data.message
       let userFriendlyMessage = originalMessage
-      
-      // Transform backend messages to user-friendly ones
+
       if (originalMessage.includes('Too many requests')) {
         if (originalMessage.includes('login attempts')) {
           userFriendlyMessage = 'Too many login attempts. Please wait 15 minutes before trying again.'
@@ -143,8 +141,7 @@ export const fetchWithAuth = async (endpoint, options = {}) => {
     }
     
     const errorData = await response.json()
-    
-    // Enhanced error handling
+ 
     let errorMessage = errorData.message || "API request failed"
     
     if (errorMessage.includes('Too many requests')) {

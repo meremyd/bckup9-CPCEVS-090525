@@ -518,7 +518,7 @@ export default function ElectionCommitteeVotersPage() {
               placeholder="Search voters by name, school ID, or email..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-[#001f65] bg-white/80 backdrop-blur-sm"
+              className="w-full text-gray-700 pl-10 pr-4 py-3 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#001f65] focus:border-[#001f65] bg-white/80 backdrop-blur-sm"
             />
             <Search className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" />
           </div>

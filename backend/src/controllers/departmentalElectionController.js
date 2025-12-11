@@ -11,12 +11,11 @@ const Voter = require("../models/Voter")
 const ElectionParticipation = require("../models/ElectionParticipation")
 
 class DepartmentalElectionController {
-  // Get all departmental elections with enhanced filtering and pagination
+
   static async getAllDepartmentalElections(req, res, next) {
     try {
       const { departmentId, status, year, page = 1, limit = 50, search } = req.query
-      
-      // Build filter for departmental elections only
+
       const filter = {}
       if (departmentId) filter.departmentId = departmentId
       if (status) filter.status = status

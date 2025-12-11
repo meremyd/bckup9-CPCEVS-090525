@@ -84,7 +84,7 @@ export default function AdminLogin() {
                 name="username"
                 value={form.username}
                 onChange={handleChange}
-                className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
+                className="block text-gray-700 w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
                 placeholder="Enter your username"
                 required
                 disabled={loading}
@@ -104,7 +104,7 @@ export default function AdminLogin() {
                 name="password"
                 value={form.password}
                 onChange={handleChange}
-                className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
+                className="block text-gray-700 w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
                 placeholder="Enter your password"
                 required
                 disabled={loading}

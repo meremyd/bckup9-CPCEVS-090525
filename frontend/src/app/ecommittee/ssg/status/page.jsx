@@ -612,7 +612,7 @@ export default function SSGStatusPage() {
                   value={formData.ssgElectionId}
                   onChange={(e) => setFormData(prev => ({ ...prev, ssgElectionId: e.target.value }))}
                   placeholder="e.g., SSG2024-001"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                  className="w-full text-gray-700 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
                 />
               </div>
 
@@ -627,7 +627,7 @@ export default function SSGStatusPage() {
                   onChange={(e) => setFormData(prev => ({ ...prev, electionYear: parseInt(e.target.value) }))}
                   min="2024"
                   max="2030"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                  className="w-full text-gray-700 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
                 />
               </div>
 
@@ -641,7 +641,7 @@ export default function SSGStatusPage() {
                   value={formData.title}
                   onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
                   placeholder="e.g., SSG Election 2024"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                  className="w-full text-gray-700 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
                 />
               </div>
 
@@ -674,7 +674,7 @@ export default function SSGStatusPage() {
                   required
                   value={formData.electionDate}
                   onChange={(e) => setFormData(prev => ({ ...prev, electionDate: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                  className="w-full text-gray-700 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Election date can be modified unless votes have been submitted
@@ -689,7 +689,7 @@ export default function SSGStatusPage() {
                   type="time"
                   value={formData.ballotOpenTime}
                   onChange={(e) => setFormData(prev => ({ ...prev, ballotOpenTime: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                  className="w-full text-gray-700 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   What time voting opens on the election date (24-hour format, e.g., 08:00)
@@ -704,7 +704,7 @@ export default function SSGStatusPage() {
                   type="time"
                   value={formData.ballotCloseTime}
                   onChange={(e) => setFormData(prev => ({ ...prev, ballotCloseTime: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
+                  className="w-full text-gray-700 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   What time voting ends on the election date (24-hour format, e.g., 17:00). Can be extended even after voting starts.

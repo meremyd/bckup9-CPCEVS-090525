@@ -263,7 +263,7 @@ export default function DepartmentalLayout({
 
       {/* Sidebar - Only show when deptElectionId exists */}
       {deptElectionId && (
-        <div className={`fixed left-0 top-0 h-full w-64 z-50 transform transition-transform duration-300 ease-in-out ${
+        <div className={`fixed overflow-auto left-0 top-0 h-full w-64 z-50 transform transition-transform duration-300 ease-in-out ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         } lg:translate-x-0`}
         style={{
@@ -274,7 +274,7 @@ export default function DepartmentalLayout({
               <div>
                 <h2 className="text-xl font-bold text-white">Election Committee</h2>
                 <div className="flex items-center gap-2 mt-1">
-                  <p className="text-sm text-white/70 truncate">{departmentalElection?.title || 'Departmental Election'}</p>
+                  <p className="text-sm text-white/70 whitespace-normal break-words">{departmentalElection?.title || 'Departmental Election'}</p>
                 </div>
                 <p className="text-xs text-white/60 mt-1">ID: {departmentalElection?.deptElectionId || deptElectionId}</p>
                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(departmentalElection?.status).replace('border-', 'bg-').replace('text-', 'text-white')}`}>

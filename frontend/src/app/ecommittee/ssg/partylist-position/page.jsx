@@ -113,14 +113,14 @@ export default function SSGPositionsPartylistsPage() {
         pos.positionName?.toLowerCase() === 'president'
       )
       if (existingPresident) {
-        console.log('❌ FOUND EXISTING PRESIDENT POSITION:', existingPresident)
+        console.log('FOUND EXISTING PRESIDENT POSITION:', existingPresident)
       } else {
-        console.log('✅ No President position found in fetched data')
+        console.log('No President position found in fetched data')
       }
     }
     
     console.log('=== END POSITION FETCH DEBUG ===')
-    // END DEBUG LOGGING ===========================================
+
     
     setPositions(response.data?.positions || [])
     
@@ -296,7 +296,7 @@ export default function SSGPositionsPartylistsPage() {
 
       // Validation checks
       if (!ssgElectionId || ssgElectionId.length !== 24) {
-        console.error('❌ INVALID SSG ELECTION ID:', ssgElectionId);
+        console.error('INVALID SSG ELECTION ID:', ssgElectionId);
         Swal.fire({
           icon: 'error',
           title: 'Invalid Election ID',
@@ -308,7 +308,7 @@ export default function SSGPositionsPartylistsPage() {
 
       // Check if ssgElectionId is a valid ObjectId format
       if (!/^[0-9a-fA-F]{24}$/.test(ssgElectionId)) {
-        console.error('❌ SSG Election ID is not a valid ObjectId format:', ssgElectionId);
+        console.error('SSG Election ID is not a valid ObjectId format:', ssgElectionId);
         Swal.fire({
           icon: 'error',
           title: 'Invalid Election ID Format',
@@ -318,8 +318,8 @@ export default function SSGPositionsPartylistsPage() {
         return;
       }
 
-      console.log('✅ Election ID validation passed');
-      // END DEBUG LOGGING =====================================
+      console.log('Election ID validation passed');
+
       
       console.log('=== CALLING API WITH DATA ===');
       console.log('Data being sent:', formValues);

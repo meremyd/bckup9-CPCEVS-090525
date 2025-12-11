@@ -1374,11 +1374,10 @@ static async getDepartmentalOfficers(req, res, next) {
       return next(error)
     }
 
-    // UPDATED: Filter for active class officers (removed registration requirement)
     const filter = { 
       departmentId: departmentId,
       isClassOfficer: true,
-      isActive: true // Only requirement: active and class officer
+      isActive: true 
     }
     
     if (yearLevel) filter.yearLevel = Number(yearLevel)
@@ -1547,7 +1546,6 @@ static async getActiveOfficersByDepartmentCode(req, res, next) {
 
     const departmentIds = departments.map(dept => dept._id)
 
-    // UPDATED: Only require active and class officer status
     const filter = { 
       departmentId: { $in: departmentIds },
       isClassOfficer: true,
@@ -2026,7 +2024,7 @@ static async getActiveOfficersByDepartmentCode(req, res, next) {
           doc.text(`Total Records: ${voters.length}`)
           doc.moveDown()
 
-          // Table headers - FIXED: Match column widths with headers
+          // Table headers
           doc.fontSize(10).font('Helvetica-Bold')
           let yPosition = doc.y
           const rowHeight = 20
@@ -2044,7 +2042,7 @@ static async getActiveOfficersByDepartmentCode(req, res, next) {
           yPosition += rowHeight
           doc.font('Helvetica').fontSize(8)
 
-          // Table rows - FIXED: Match data with columns
+          // Table rows
           voters.forEach((voter, index) => {
             if (yPosition > 700) { // Start new page if needed
               doc.addPage()
@@ -2074,7 +2072,7 @@ static async getActiveOfficersByDepartmentCode(req, res, next) {
         } else if (format === 'docx') {
   const { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun, HeadingLevel, AlignmentType } = require('docx')
 
-  // Create table rows - FIXED: Include sex field
+  // Create table rows
   const tableRows = [
     new TableRow({
       children: [

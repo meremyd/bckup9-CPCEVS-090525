@@ -8,7 +8,7 @@ const Partylist = require("../models/Partylist")
 const AuditLog = require("../models/AuditLog")
 
 class CandidateController {
-  // Helper method to validate ObjectId
+
   static validateObjectId(id, fieldName) {
     if (!id) return null
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -17,7 +17,6 @@ class CandidateController {
     return id
   }
 
-  // Helper method to log audit actions
   static async logAuditAction(action, user, message, req, isVoter = false) {
     try {
       if (isVoter) {
@@ -30,7 +29,6 @@ class CandidateController {
     }
   }
 
-  // Get all candidates with enhanced filtering and pagination
   static async getAllCandidates(req, res, next) {
     try {
       const { page = 1, limit = 10, type, electionId, positionId, status, search } = req.query
@@ -150,20 +148,12 @@ class CandidateController {
   const { voterId, ssgElectionId, positionId, partylistId } = candidateData
   const errors = []
 
-  // Verify voter exists (REMOVED registration requirement)
   const voter = await Voter.findById(voterId).populate('departmentId')
   if (!voter) {
     errors.push('Voter not found')
     return { isValid: false, errors }
   }
 
-  // REMOVED: Registration requirement check
-  // if (!voter.isRegistered || !voter.isPasswordActive) {
-  //   errors.push('Only registered voters can be SSG candidates')
-  //   return { isValid: false, errors }
-  // }
-
-  // Check if voter is already a candidate in this SSG election (any position)
   const existingCandidateQuery = {
     voterId,
     ssgElectionId,
@@ -254,7 +244,6 @@ static async validateDepartmentalCandidate(candidateData, excludeCandidateId = n
     return { isValid: false, errors }
   }
 
-  // --- Debug and robust department matching ---
   let voterDeptId = null
   let electionDeptId = null
 
@@ -283,9 +272,7 @@ static async validateDepartmentalCandidate(candidateData, excludeCandidateId = n
     errors.push(`Only officers from ${deptElection.departmentId.departmentCode || '(unknown)'} department can be candidates in this election`)
     return { isValid: false, errors }
   }
-  // --- End department matching ---
 
-  // Check if voter is already a candidate in this departmental election (any position)
   const existingCandidateQuery = {
     voterId,
     deptElectionId,
@@ -384,7 +371,6 @@ static async getPartylistCandidateSlots(req, res, next) {
     }
   }
 
-  // Get candidate by ID with enhanced details
   static async getCandidateById(req, res, next) {
     try {
       const { id } = req.params
@@ -568,12 +554,10 @@ static async getPartylistCandidateSlots(req, res, next) {
     }
   }
 
-  // Create candidate with comprehensive validation
   static async createCandidate(req, res, next) {
   try {
     const candidateData = req.body
 
-    // Use model validation first
     const validation = Candidate.validateCandidateData(candidateData)
     if (!validation.isValid) {
       await CandidateController.logAuditAction(
@@ -596,7 +580,7 @@ static async getPartylistCandidateSlots(req, res, next) {
       positionId,
       partylistId,
       candidateNumber,
-      credentials, // Changed from platform
+      credentials, 
       isActive = true
     } = candidateData
 
@@ -606,7 +590,6 @@ static async getPartylistCandidateSlots(req, res, next) {
     CandidateController.validateObjectId(positionId, 'position ID')
     if (partylistId) CandidateController.validateObjectId(partylistId, 'partylist ID')
 
-    // Verify voter exists and is eligible
     const voter = await Voter.findById(voterId).populate('departmentId')
     if (!voter) {
       await CandidateController.logAuditAction(
@@ -621,7 +604,6 @@ static async getPartylistCandidateSlots(req, res, next) {
       return next(error)
     }
 
-    // Optional: Log when adding unregistered voters as candidates
     // if (!voter.isRegistered) {
     //   await CandidateController.logAuditAction(
     //     "CREATE_CANDIDATE",
@@ -778,8 +760,8 @@ if (candidateData.campaignPicture) {
   positionId,
   partylistId: electionType === 'ssg' ? partylistId : null,
   candidateNumber: finalCandidateNumber,
-  credentials: credentialsBuffer, // Changed from platform
-  campaignPicture: campaignPictureBuffer, // Add this line
+  credentials: credentialsBuffer, 
+  campaignPicture: campaignPictureBuffer, 
   isActive
 })
 
@@ -848,7 +830,6 @@ if (candidateData.campaignPicture) {
       partylistId: req.body.partylistId || null
     }
 
-    // Enhanced SSG validation with position limits
     const validation = await CandidateController.validateSSGCandidate(candidateData)
     if (!validation.isValid) {
       await CandidateController.logAuditAction(
@@ -951,7 +932,6 @@ static async checkCandidateEligibility(req, res, next) {
       partylistId: null   
     }
 
-    // Remove ONLY credentials, keep campaign picture
     delete candidateData.credentials
 
     const validation = await CandidateController.validateDepartmentalCandidate(candidateData)
@@ -1022,7 +1002,7 @@ static async checkCandidateEligibility(req, res, next) {
     if (campaignPictureBuffer && campaignPictureBuffer.length > 0) {
       updateData.campaignPicture = campaignPictureBuffer
     } else {
-      delete updateData.campaignPicture // Don't update if invalid
+      delete updateData.campaignPicture 
     }
   } catch (error) {
     const err = new Error("Invalid campaign picture format")
@@ -1045,7 +1025,7 @@ static async checkCandidateEligibility(req, res, next) {
         if (credentialsBuffer && credentialsBuffer.length > 0) {
           updateData.credentials = credentialsBuffer
         } else {
-          delete updateData.credentials // Don't update if invalid
+          delete updateData.credentials 
         }
       } catch (error) {
         const err = new Error("Invalid credentials format")
@@ -1232,17 +1212,14 @@ static async checkCandidateEligibility(req, res, next) {
       return next(error)
     }
 
-    // Remove partylist if present (not allowed for departmental)
     if (updateData.partylistId) {
       const error = new Error("Departmental candidates cannot have partylists")
       error.statusCode = 400
       return next(error)
     }
     
-    //  Only remove credentials, keep campaign picture
     delete updateData.credentials
 
-    // If changing voter, validate that new voter is an active class officer in correct department
     if (updateData.voterId && updateData.voterId !== candidate.voterId.toString()) {
       const candidateData = {
         voterId: updateData.voterId,
@@ -1686,7 +1663,6 @@ static async getCandidatesByDepartmentalElection(req, res, next) {
       query.isActive = status === 'active'
     }
 
-    // UPDATED: Get candidates with full population and campaign picture handling
     const candidates = await Candidate.find(query)
       .populate({
         path: 'voterId',
@@ -1706,7 +1682,6 @@ static async getCandidatesByDepartmentalElection(req, res, next) {
         candidateNumber: 1
       })
 
-    // UPDATED: Process candidates with campaign picture data
     const processedCandidates = candidates.map(candidate => {
       const candidateObj = candidate.toObject()
       
@@ -1723,7 +1698,6 @@ static async getCandidatesByDepartmentalElection(req, res, next) {
       candidateObj.isActive = candidate.isActive !== false
       candidateObj.isClassOfficer = candidate.voterId?.isClassOfficer || false
       
-      // UPDATED: Ensure campaign picture is properly formatted
       if (candidate.campaignPicture) {
         candidateObj.hasCampaignPicture = true
         // Keep the buffer for API responses that will convert to base64
@@ -1940,7 +1914,6 @@ static async getCandidatesByElection(req, res, next) {
     }
   }
 
-  // Export candidates data with enhanced formatting
   static async exportCandidates(req, res, next) {
   try {
     const { type, electionId, format = 'csv' } = req.query
@@ -2187,8 +2160,7 @@ static async getCandidateCredentials(req, res, next) {
       return next(error)
     }
 
-    // UPDATED: Set image content type instead of PDF
-    res.setHeader('Content-Type', 'image/jpeg') // or 'image/png' based on your needs
+    res.setHeader('Content-Type', 'image/jpeg') 
     res.setHeader('Cache-Control', 'public, max-age=3600')
     res.send(candidate.credentials)
 

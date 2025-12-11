@@ -52,12 +52,12 @@ userSchema.pre('save', async function(next) {
 userSchema.methods.comparePassword = async function (password) {
   try {
     if (!this.passwordHash) {
-      console.log("❌ No password hash stored for user")
+      console.log("No password hash stored for user")
       return false
     }
     return await bcrypt.compare(password, this.passwordHash)
   } catch (error) {
-    console.error("❌ Password comparison error:", error)
+    console.error("Password comparison error:", error)
     return false
   }
 }

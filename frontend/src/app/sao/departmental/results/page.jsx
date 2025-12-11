@@ -482,7 +482,7 @@ export default function SAODepartmentalStatisticsPage() {
 
         {positions.length > 0 && (
           <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
-            <label className="block text-white font-medium mb-2">Select Position to View Statistics</label>
+            <label className="block text-white font-medium mb-2">Position</label>
             <div className="relative">
               <select
                 value={selectedPosition?.position?._id || selectedPosition?._id || ''}

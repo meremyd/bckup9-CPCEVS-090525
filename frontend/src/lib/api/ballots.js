@@ -172,6 +172,16 @@ export const ballotAPI = {
       return response.data
     },
 
+    getPositionBallotTiming: async (positionId) => {
+    try {
+      const response = await api.get(`/ballots/voter/departmental/position/${positionId}/timing`)
+      return response.data
+    } catch (error) {
+      console.error('Error fetching position ballot timing (voter):', error)
+      throw error
+    }
+  },
+
     // Start departmental ballot with timer (Voters)
     startDepartmentalBallot: async (electionId, positionId) => {
       const response = await api.post('/ballots/voter/departmental/start', { electionId, positionId })

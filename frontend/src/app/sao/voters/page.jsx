@@ -71,7 +71,6 @@ export default function SAOVotersPage() {
       
       console.log("Fetching all data...")
       
-      // FIXED: Use the correct API calls that fetch only active voters and departments
       const [votersData, registeredData, officersData, departmentsData] = await Promise.all([
         votersAPI.getActive().then(data => {
           console.log("Active voters data:", data)
@@ -94,7 +93,7 @@ export default function SAOVotersPage() {
           console.error("Error fetching active officers:", error)
           return []
         }),
-        // FIXED: Properly fetch departments
+
         departmentsAPI.getAll().then(data => {
           console.log("Departments data:", data)
           return Array.isArray(data) ? data : (data.departments || data.data || [])
@@ -189,7 +188,6 @@ export default function SAOVotersPage() {
       return []
     }
 
-    // FIXED: Only show active voters (this is now redundant since we're already fetching only active voters)
     return voters.filter(voter => {
       const matchesSearch = 
         voter.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||

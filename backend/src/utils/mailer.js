@@ -62,7 +62,7 @@ function sendViaElasticEmail({ to, subject, text, html }) {
           const parsed = JSON.parse(data);
           // Elastic Email v2 returns { success: true/false, error: "..." }
           if (parsed && parsed.success) {
-            console.log('✅ Elastic Email accepted:', parsed);
+            console.log('Elastic Email accepted:', parsed);
             resolve(parsed);
           } else {
             const err = new Error('Elastic Email API error: ' + (parsed && parsed.error ? parsed.error : data));
@@ -105,10 +105,10 @@ async function sendMail({ to, subject, text, html }) {
       text,
       html,
     });
-    console.log('✅ SMTP Email sent:', info && info.messageId);
+    console.log('SMTP Email sent:', info && info.messageId);
     return { provider: 'smtp', info };
   } catch (error) {
-    console.error('❌ Error sending email via SMTP:', error);
+    console.error('Error sending email via SMTP:', error);
     throw error;
   }
 }

@@ -123,7 +123,6 @@ candidateSchema.methods.getDisplayName = function() {
   return null
 }
 
-// UPDATED: Get candidate full info for display (removed platform, added credentials status)
 candidateSchema.methods.getDisplayInfo = function() {
   if (!this.populated('voterId') || !this.voterId) {
     return null
@@ -147,7 +146,6 @@ candidateSchema.methods.getDisplayInfo = function() {
   }
 }
 
-// UPDATED: Format candidate for display (removed platform, added hasCredentials)
 candidateSchema.methods.formatForDisplay = function() {
   return {
     _id: this._id,
@@ -167,9 +165,7 @@ candidateSchema.methods.formatForDisplay = function() {
   }
 }
 
-// STATIC METHODS
 
-// UPDATED: Validate candidate data (removed platform validation)
 candidateSchema.statics.validateCandidateData = function(candidateData) {
   const errors = []
 
@@ -204,12 +200,11 @@ candidateSchema.statics.validateCandidateData = function(candidateData) {
   }
 }
 
-// UPDATED: Enhanced validation for SSG candidates (removed platform validation)
 candidateSchema.statics.validateSSGCandidate = async function(candidateData, excludeCandidateId = null) {
   const { voterId, ssgElectionId, positionId, partylistId } = candidateData
   const errors = []
 
-  // Verify voter exists (removed registration requirement)
+  // Verify voter exists
   const Voter = require('./Voter')
   const voter = await Voter.findById(voterId).populate('departmentId')
   if (!voter) {
@@ -265,10 +260,7 @@ candidateSchema.statics.validateSSGCandidate = async function(candidateData, exc
   }
 }
 
-// Rest of the static methods remain the same...
-// [Including all the existing static methods without changes]
 
-// UPDATED: Check if voter can be SSG candidate (any voter allowed)
 candidateSchema.statics.checkSSGEligibility = async function(voterId, ssgElectionId, excludeCandidateId = null) {
   const Voter = require('./Voter')
   
@@ -371,7 +363,6 @@ candidateSchema.statics.filterByType = function(candidates, type) {
   return candidates
 }
 
-// UPDATED: Get candidates statistics (updated to handle credentials instead of platform)
 candidateSchema.statics.getStatistics = function(candidates) {
   const stats = {
     total: candidates.length,
@@ -546,7 +537,6 @@ candidateSchema.statics.validateSSGCandidateWithPositionLimits = async function(
   const { voterId, ssgElectionId, positionId, partylistId } = candidateData
   const errors = []
 
-  // Run basic SSG validation first - FIXED: Use the correct method
   const basicValidation = await this.validateSSGCandidate ? 
     await this.validateSSGCandidate(candidateData, excludeCandidateId) : 
     { isValid: true, errors: [], voter: null }

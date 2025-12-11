@@ -152,7 +152,7 @@ export default function VoterLogin() {
                   maxLength="8"
                   value={form.userId}
                   onChange={handleChange}
-                  className="flex-1 bg-transparent outline-none text-base text-black-900 md:text-lg lg:text-xl xl:text-2xl placeholder-gray-500"
+                  className="flex-1 text-gray-700 bg-transparent outline-none text-base text-black-900 md:text-lg lg:text-xl xl:text-2xl placeholder-gray-500"
                   required
                   disabled={isLoading}
                 />
@@ -183,7 +183,7 @@ export default function VoterLogin() {
                   placeholder="Enter your password"
                   value={form.password}
                   onChange={handleChange}
-                  className="flex-1 bg-transparent outline-none text-black-900 md:text-lg lg:text-xl xl:text-2xl placeholder-gray-500"
+                  className="flex-1 text-gray-700 bg-transparent outline-none text-black-900 md:text-lg lg:text-xl xl:text-2xl placeholder-gray-500"
                   required
                   disabled={isLoading}
                 />

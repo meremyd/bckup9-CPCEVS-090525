@@ -123,10 +123,10 @@ export default function DepartmentalStatisticsPage() {
 
   const fetchResultsData = async () => {
   try {
-    // ✅ Changed from getDepartmentalElectionLiveResults to staff endpoint
+
     const response = await votingAPI.getDepartmentalElectionLiveResults(deptElectionId)
     
-    console.log('Results response:', response) // Debug log
+    console.log('Results response:', response) 
     
     if (response?.success && response?.data) {
       setResultsData(response.data)
@@ -252,7 +252,6 @@ export default function DepartmentalStatisticsPage() {
             `${candidate.voterId.firstName} ${candidate.voterId.lastName}` : 
             `Candidate #${candidate.candidateNumber}`
           
-          // ✅ UPDATED: Calculate percentage based on total votes
           const totalVotes = position.totalVotes || 0
           const percentage = totalVotes > 0 ? ((candidate.voteCount / totalVotes) * 100).toFixed(1) : '0.0'
           
@@ -289,7 +288,6 @@ export default function DepartmentalStatisticsPage() {
     })
   }
 
-  // ✅ UPDATED: Calculate percentage based on TOTAL VOTES
   const getPositionChartData = (position) => {
     if (!position || !position.candidates) return []
     
@@ -490,7 +488,7 @@ export default function DepartmentalStatisticsPage() {
 
         {positions.length > 0 && (
           <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
-            <label className="block text-white font-medium mb-2">Select Position to View Statistics</label>
+            <label className="block text-white font-medium mb-2">Position</label>
             <div className="relative">
               <select
                 value={selectedPosition?.position?._id || selectedPosition?._id || ''}

@@ -84,7 +84,7 @@ export default function PreRegisterStep3() {
               <div className="mb-4">
                 <label className="block text-sm font-medium text-[#123b7a] mb-2">Create a password *</label>
                 <div className="relative flex items-center border border-gray-200 focus:outline-blue-500 rounded-lg shadow-sm px-4 py-2 bg-white">
-                  <input type={showPassword ? 'text' : 'password'} name="password" value={form.password} onChange={handleChange} className="flex-1 bg-transparent outline-none text-gray-800 text-sm placeholder-gray-500" required disabled={loading} minLength={6} />
+                  <input type={showPassword ? 'text' : 'password'} name="password" value={form.password} onChange={handleChange} className="flex-1 text-gray-700 bg-transparent outline-none text-gray-800 text-sm placeholder-gray-500" required disabled={loading} minLength={6} />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} className="ml-2 text-gray-500 hover:text-gray-700 text-sm">{showPassword ? 'Hide' : 'Show'}</button>
                 </div>
               </div>
@@ -92,7 +92,7 @@ export default function PreRegisterStep3() {
               <div className="mb-4">
                 <label className="block text-sm font-medium text-[#123b7a] mb-2">Confirm your password *</label>
                 <div className="relative flex items-center border border-gray-200 rounded-lg shadow-sm px-4 py-2 bg-white">
-                  <input type={showConfirmPassword ? 'text' : 'password'} name="confirmPassword" value={form.confirmPassword} onChange={handleChange} className="flex-1 bg-transparent outline-none text-gray-800 text-sm placeholder-gray-500" required disabled={loading} minLength={6} />
+                  <input type={showConfirmPassword ? 'text' : 'password'} name="confirmPassword" value={form.confirmPassword} onChange={handleChange} className="flex-1 text-gray-700 bg-transparent outline-none text-gray-800 text-sm placeholder-gray-500" required disabled={loading} minLength={6} />
                   <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="ml-2 text-gray-500 hover:text-gray-700">{showConfirmPassword ? 'Hide' : 'Show'}</button>
                 </div>
               </div>

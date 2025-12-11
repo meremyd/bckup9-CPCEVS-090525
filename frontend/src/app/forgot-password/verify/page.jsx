@@ -47,7 +47,7 @@ export default function VerifyOtp() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="otp" className="block text-sm font-medium text-[#123b7a] mb-1">OTP</label>
-              <input id="otp" name="otp" value={form.otp} onChange={handleChange} placeholder="Enter the OTP" className="w-full p-3 md:p-4 border border-gray-200 rounded-lg focus:outline-blue-500" required />
+              <input id="otp" name="otp" value={form.otp} onChange={handleChange} placeholder="Enter the OTP" className="w-full text-gray-700 p-3 md:p-4 border border-gray-200 rounded-lg focus:outline-blue-500" required />
             </div>
 
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

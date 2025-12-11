@@ -143,7 +143,6 @@ export function getUserFromToken() {
   }
 }
 
-// FIXED: Better token validation with debugging
 export function getVoterFromToken() {
   const token = getVoterToken()
   if (!token) {

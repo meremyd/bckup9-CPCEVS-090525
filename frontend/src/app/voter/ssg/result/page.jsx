@@ -212,12 +212,10 @@ export default function VoterSSGResultsPage() {
     }
   }
 
-  // FIXED: Check if election is completed
   const isElectionCompleted = election?.status === 'completed'
 
-  // FIXED: Updated function to show anonymous labels when election is ongoing
   const getCandidateDisplay = (candidate, index, isCompleted = false) => {
-    // If election is ongoing (not completed), always show anonymous labels
+
     if (!isCompleted) {
       const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
       return {
@@ -276,7 +274,6 @@ export default function VoterSSGResultsPage() {
   const renderPositionResults = (positions, title, showDepartmentName = false, isCompleted = null) => {
     if (positions.length === 0) return null
 
-    // FIXED: Determine if names should be shown based on election completion status
     const shouldShowNames = isCompleted !== null ? isCompleted : isElectionCompleted
 
     return (
@@ -303,7 +300,7 @@ export default function VoterSSGResultsPage() {
         {positions.map((position) => (
           <div key={position.position._id} className="space-y-3 mb-6">
             {position.candidates.map((candidate, index) => {
-              // FIXED: Pass the actual completion status
+
               const display = getCandidateDisplay(candidate, index, shouldShowNames)
               
               const voteCount = showDepartmentName ? 

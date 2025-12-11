@@ -12,8 +12,6 @@ const ElectionParticipation = require("../models/ElectionParticipation")
 
 class SSGElectionController {
 
-
-  // Get all SSG elections with enhanced filtering and pagination
   static async getAllSSGElections(req, res, next) {
   try {
     const { status, year, page = 1, limit = 50, search } = req.query
@@ -664,7 +662,6 @@ class SSGElectionController {
       return next(error)
     }
 
-    // Enhanced basic counts with more detailed statistics
     const totalPositions = await Position.countDocuments({ ssgElectionId: id, isActive: true })
     const totalCandidates = await Candidate.countDocuments({ ssgElectionId: id, isActive: true })
     const totalPartylists = await Partylist.countDocuments({ ssgElectionId: id, isActive: true })
@@ -674,7 +671,6 @@ class SSGElectionController {
     const pendingBallots = totalBallots - submittedBallots
     const totalVotes = await Vote.countDocuments({ ssgElectionId: id })
 
-    // Enhanced candidates by position with more detailed vote information
     const candidatesByPosition = await Position.aggregate([
       { $match: { ssgElectionId: new mongoose.Types.ObjectId(id), isActive: true } },
       { $sort: { positionOrder: 1 } },
@@ -763,7 +759,6 @@ class SSGElectionController {
       }
     ])
 
-    // Enhanced partylist statistics with vote counts
     const partylistStats = await Partylist.aggregate([
       { $match: { ssgElectionId: new mongoose.Types.ObjectId(id), isActive: true } },
       {
@@ -958,7 +953,6 @@ class SSGElectionController {
       }
     ])
 
-    // Enhanced election overview
     const overview = {
       totalPositions,
       totalCandidates,
@@ -981,7 +975,7 @@ class SSGElectionController {
     await AuditLog.logUserAction(
       "SYSTEM_ACCESS",
       req.user,
-      `Accessed enhanced SSG election statistics - ${election.title} (${election.ssgElectionId}) - ${totalCandidates} candidates, ${submittedBallots} votes, ${totalVotes} total votes cast`,
+      `Accessed SSG election statistics - ${election.title} (${election.ssgElectionId}) - ${totalCandidates} candidates, ${submittedBallots} votes, ${totalVotes} total votes cast`,
       req
     )
 
@@ -1017,7 +1011,7 @@ class SSGElectionController {
     await AuditLog.logUserAction(
       "SYSTEM_ACCESS",
       req.user,
-      `Failed to retrieve enhanced SSG election statistics for ${req.params.id}: ${error.message}`,
+      `Failed to retrieve SSG election statistics for ${req.params.id}: ${error.message}`,
       req
     )
     next(error)
@@ -1055,7 +1049,7 @@ static async getSSGElectionResults(req, res, next) {
       return next(error)
     }
 
-    // Get detailed results by position - FIXED: Exclude binary fields
+    // Get detailed results by position
     const results = await Position.aggregate([
       { $match: { ssgElectionId: new mongoose.Types.ObjectId(id), isActive: true } },
       { $sort: { positionOrder: 1 } },
@@ -1075,7 +1069,7 @@ static async getSSGElectionResults(req, res, next) {
                 }
               }
             },
-            // CRITICAL FIX: Exclude binary fields to avoid size limits
+
             {
               $project: {
                 campaignPicture: 0,
@@ -1157,14 +1151,13 @@ static async getSSGElectionResults(req, res, next) {
       }
     ])
 
-    // FIX: Calculate votePercentage for each candidate AFTER aggregation
     const positionResults = results.map(position => {
       const totalVotes = position.totalVotesForPosition || 0
       
       const candidatesWithPercentage = position.candidates.map(candidate => ({
         ...candidate,
         votePercentage: totalVotes > 0 
-          ? Math.round((candidate.voteCount / totalVotes) * 1000) / 10  // Round to 1 decimal
+          ? Math.round((candidate.voteCount / totalVotes) * 1000) / 10  
           : 0
       }))
 
@@ -2432,7 +2425,7 @@ static async getAllSSGElectionsForVoters(req, res, next) {
       res.json({
         success: true,
         data: {
-          elections, // ✅ No status override, use manual status
+          elections, 
           pagination: {
             currentPage: parseInt(page),
             totalPages: Math.ceil(total / limitNum),
@@ -2466,7 +2459,6 @@ static async getSSGElectionForVoters(req, res, next) {
       return next(error)
     }
 
-    // ✅ Use manual status directly
     // Get positions and candidates count
     const totalPositions = await Position.countDocuments({ ssgElectionId: id, isActive: true })
     const totalCandidates = await Candidate.countDocuments({ ssgElectionId: id, isActive: true })
@@ -2481,7 +2473,7 @@ static async getSSGElectionForVoters(req, res, next) {
     res.json({
       success: true,
       data: {
-        election, // ✅ No status override
+        election, 
         summary: {
           totalPositions,
           totalCandidates
@@ -2588,7 +2580,7 @@ static async getCandidatesForVoter(req, res, next) {
           _id: election._id,
           title: election.title,
           ssgElectionId: election.ssgElectionId,
-          status: election.status, // ✅ Manual status
+          status: election.status, 
           electionDate: election.electionDate,
           ballotOpenTime: election.ballotOpenTime,
           ballotCloseTime: election.ballotCloseTime,
@@ -2757,7 +2749,7 @@ static async getSSGElectionResultsForVoters(req, res, next) {
           id: election._id,
           title: election.title,
           ssgElectionId: election.ssgElectionId,
-          status: election.status, // ✅ Manual status
+          status: election.status, 
           electionDate: election.electionDate,
           type: 'SSG'
         },
@@ -2914,7 +2906,7 @@ static async getSSGElectionStatisticsForVoters(req, res, next) {
       submittedBallots,
       totalVotes,
       turnoutPercentage: totalRegisteredVoters > 0 ? ((submittedBallots / totalRegisteredVoters) * 100).toFixed(2) : 0,
-      status: election.status, // ✅ Manual status
+      status: election.status, 
       electionDate: election.electionDate,
       electionType: "ssg"
     }
@@ -2935,7 +2927,7 @@ static async getSSGElectionStatisticsForVoters(req, res, next) {
           id: election._id,
           title: election.title,
           ssgElectionId: election.ssgElectionId,
-          status: election.status, // ✅ Manual status
+          status: election.status, 
           electionDate: election.electionDate,
           type: 'SSG'
         },

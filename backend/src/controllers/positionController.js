@@ -7,107 +7,6 @@ const mongoose = require("mongoose")
 
 class PositionController {
 
-//   static async checkDuplicatePositionName(positionName, ssgElectionId = null, deptElectionId = null, excludePositionId = null) {
-//   try {
-//     console.log('=== DUPLICATE CHECK DEBUG ===')
-//     console.log('Position Name:', positionName)
-//     console.log('SSG Election ID:', ssgElectionId, 'Type:', typeof ssgElectionId)
-//     console.log('Dept Election ID:', deptElectionId, 'Type:', typeof deptElectionId)
-//     console.log('Exclude Position ID:', excludePositionId, 'Type:', typeof excludePositionId)
-    
-//     const query = {
-//       positionName: { 
-//         $regex: new RegExp(`^${positionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') 
-//       }
-//     }
-
-//     console.log('Base query:', JSON.stringify(query, null, 2))
-
-//     // Handle SSG election filtering - ONLY check within the SAME SSG election
-//     if (ssgElectionId) {
-//       console.log('Filtering for specific SSG election only')
-      
-//       // Ensure we have a proper ObjectId
-//       let ssgObjectId
-//       if (mongoose.Types.ObjectId.isValid(ssgElectionId)) {
-//         if (typeof ssgElectionId === 'string') {
-//           ssgObjectId = new mongoose.Types.ObjectId(ssgElectionId)
-//         } else {
-//           ssgObjectId = ssgElectionId
-//         }
-//       } else {
-//         console.error('Invalid SSG Election ID:', ssgElectionId)
-//         return null
-//       }
-      
-//       // ✅ KEY CHANGE: Only check within the SAME SSG election (like partylist logic)
-//       query.ssgElectionId = ssgObjectId
-//       query.deptElectionId = null
-//     } 
-//     // Handle departmental election filtering - ONLY check within the SAME dept election
-//     else if (deptElectionId) {
-//       console.log('Filtering for specific departmental election only')
-      
-//       // Ensure we have a proper ObjectId
-//       let deptObjectId
-//       if (mongoose.Types.ObjectId.isValid(deptElectionId)) {
-//         if (typeof deptElectionId === 'string') {
-//           deptObjectId = new mongoose.Types.ObjectId(deptElectionId)
-//         } else {
-//           deptObjectId = deptElectionId
-//         }
-//       } else {
-//         console.error('Invalid Dept Election ID:', deptElectionId)
-//         return null
-//       }
-      
-//       // ✅ KEY CHANGE: Only check within the SAME dept election
-//       query.deptElectionId = deptObjectId
-//       query.ssgElectionId = null
-//     } else {
-//       console.log('⚠️ WARNING: No election ID provided - will search ALL elections!')
-//       // If no election ID is provided, we might want to return null or handle differently
-//       // For now, keeping the original behavior but this should probably be an error
-//     }
-
-//     // Handle exclusion of current position (for updates)
-//     if (excludePositionId) {
-//       console.log('Excluding position ID:', excludePositionId)
-      
-//       let excludeObjectId
-//       if (mongoose.Types.ObjectId.isValid(excludePositionId)) {
-//         if (typeof excludePositionId === 'string') {
-//           excludeObjectId = new mongoose.Types.ObjectId(excludePositionId)
-//         } else {
-//           excludeObjectId = excludePositionId
-//         }
-//       } else {
-//         console.error('Invalid exclude Position ID:', excludePositionId)
-//         return null
-//       }
-      
-//       query._id = { $ne: excludeObjectId }
-//     }
-
-//     console.log('Final query:', JSON.stringify(query, null, 2))
-
-//     const existingPosition = await Position.findOne(query)
-    
-//     console.log('Query result:', existingPosition ? {
-//       id: existingPosition._id,
-//       name: existingPosition.positionName,
-//       ssgElectionId: existingPosition.ssgElectionId,
-//       deptElectionId: existingPosition.deptElectionId
-//     } : null)
-    
-//     console.log('=== END DUPLICATE CHECK DEBUG ===')
-    
-//     return existingPosition
-//   } catch (error) {
-//     console.error('Error in checkDuplicatePositionName:', error)
-//     return null
-//   }
-// }
   // SSG Position Controllers
   static async getAllSSGPositions(req, res) {
     try {
@@ -459,12 +358,11 @@ allPresidentPositions.forEach((pos, index) => {
   console.log(`  ${index + 1}. Election: ${pos.ssgElectionId} - Dept: ${pos.deptElectionId} - Active: ${pos.isActive}`)
 })
 
-    // ✅ DIRECT DUPLICATE CHECK - Same logic as partylist controller
     console.log('=== CHECKING FOR DUPLICATE POSITION NAME ===')
     console.log('Checking position name:', trimmedPositionName)
     console.log('In SSG election:', electionObjectId.toString())
 
-    // Check position name ONLY within the specific SSG election (same logic as partylist)
+    // Check position name ONLY within the specific SSG election
     const existingPositionName = await Position.findOne({
       ssgElectionId: electionObjectId,
       deptElectionId: null,
@@ -615,13 +513,12 @@ allPresidentPositions.forEach((pos, index) => {
         })
       }
 
-      // ✅ DIRECT DUPLICATE CHECK - Same logic as partylist controller
       console.log('=== CHECKING FOR DUPLICATE ON UPDATE ===')
       console.log('New position name:', trimmedPositionName)
       console.log('Current position ID:', id)
       console.log('SSG Election ID:', position.ssgElectionId.toString())
 
-      // Check for duplicate name ONLY in same SSG election (excluding current position)
+      // Check for duplicate name ONLY in same SSG election
       const existingPositionName = await Position.findOne({
         ssgElectionId: position.ssgElectionId,
         deptElectionId: null,

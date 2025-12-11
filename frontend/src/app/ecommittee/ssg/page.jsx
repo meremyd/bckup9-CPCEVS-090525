@@ -662,11 +662,12 @@ export default function SSGPage() {
     <BackgroundWrapper>
       {/* Add Election Form Modal */}
       {showAddForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-auto">
-            <div className="p-6">
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 sm:p-6">
+          {/* Use viewport-based max width for very small screens, allow scrolling if content is tall */}
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[95vw] sm:max-w-sm md:max-w-md mx-auto max-h-[90vh] overflow-y-auto">
+            <div className="p-4 sm:p-6">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold text-gray-800">Create New SSG Election</h3>
+                <h3 className="text-lg sm:text-xl font-bold text-gray-800">Create New SSG Election</h3>
                 <button
                   onClick={() => setShowAddForm(false)}
                   className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -675,11 +676,11 @@ export default function SSGPage() {
                 </button>
               </div>
 
-              <form onSubmit={handleFormSubmit} className="space-y-4">
+              <form onSubmit={handleFormSubmit} className="space-y-3 sm:space-y-4">
                 {error && (
-                  <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center gap-2 p-2 sm:p-3 bg-red-50 border border-red-200 rounded-lg">
                     <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-                    <p className="text-sm text-red-700">{error}</p>
+                    <p className="text-xs sm:text-sm text-red-700">{error}</p>
                   </div>
                 )}
 
@@ -693,10 +694,10 @@ export default function SSGPage() {
                     value={formData.ssgElectionId}
                     onChange={(e) => setFormData(prev => ({ ...prev, ssgElectionId: e.target.value }))}
                     placeholder="e.g., SSG2024-001"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
-
+ 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Election Year *
@@ -708,10 +709,10 @@ export default function SSGPage() {
                     onChange={(e) => setFormData(prev => ({ ...prev, electionYear: parseInt(e.target.value) }))}
                     min="2024"
                     max="2030"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
-
+ 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Election Title *
@@ -722,10 +723,10 @@ export default function SSGPage() {
                     value={formData.title}
                     onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
                     placeholder="e.g., SSG Election 2024"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
-
+ 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Election Date *
@@ -735,11 +736,10 @@ export default function SSGPage() {
                     required
                     value={formData.electionDate}
                     onChange={(e) => setFormData(prev => ({ ...prev, electionDate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
-
-                {/* FIXED: Using time input instead of datetime-local */}
+ 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Ballot Open Time
@@ -748,14 +748,13 @@ export default function SSGPage() {
                     type="time"
                     value={formData.ballotOpenTime}
                     onChange={(e) => setFormData(prev => ({ ...prev, ballotOpenTime: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                   <p className="text-xs text-gray-500 mt-1">
                     When voters can start casting ballots on the election date (optional)
                   </p>
                 </div>
-
-                {/* FIXED: Using time input instead of datetime-local */}
+ 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Ballot Close Time
@@ -764,41 +763,41 @@ export default function SSGPage() {
                     type="time"
                     value={formData.ballotCloseTime}
                     onChange={(e) => setFormData(prev => ({ ...prev, ballotCloseTime: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                   <p className="text-xs text-gray-500 mt-1">
                     When voting ends on the election date (optional)
                   </p>
                 </div>
-
-                <div className="flex gap-3 pt-4">
+ 
+                <div className="flex flex-col sm:flex-row gap-3 pt-4">
                   <button
                     type="button"
                     onClick={() => setShowAddForm(false)}
-                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="w-full sm:flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={formLoading}
-                    className="flex-1 flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="w-full sm:flex-1 flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {formLoading ? (
                       <Loader2 className="animate-spin rounded-full h-4 w-4" />
                     ) : (
                       <>
                         <Save className="w-4 h-4 mr-2" />
-                        Create Election
+                        <span className="text-sm sm:text-base">Create Election</span>
                       </>
                     )}
                   </button>
                 </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
+               </form>
+             </div>
+           </div>
+         </div>
+       )}
 
       {/* Header - Only show when no election is selected */}
 <div className="bg-[#b0c8fe]/95 backdrop-blur-sm shadow-lg border-b border-[#b0c8fe]/30 px-4 sm:px-6 py-4">

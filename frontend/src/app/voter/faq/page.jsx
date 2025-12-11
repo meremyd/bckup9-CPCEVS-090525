@@ -24,6 +24,17 @@ export default function VoterFAQ() {
   const [showRulesModal, setShowRulesModal] = useState(false)
   const router = useRouter()
 
+  // Remove appended ticket/courtesy lines that admins used to append to responses
+  const cleanResponse = (text) => {
+    if (!text) return ""
+    try {
+      // Remove any block starting with "Ticket ID:" up through the "Kindly check your email" phrase
+      return text.replace(/Ticket ID:[\s\S]*?Kindly check your email(?: for upcoming response\.)?[\s\S]*$/i, "").trim()
+    } catch (e) {
+      return text
+    }
+  }
+
   useEffect(() => {
     const checkAuthAndLoadData = async () => {
       try {
@@ -83,15 +94,38 @@ export default function VoterFAQ() {
       setLoading(true)
       
       const params = { limit: 50 }
-      if (categoryId) {
-        params.category = categoryId
+      if (categoryId) params.category = categoryId
+
+      // Try server-side filtered FAQs first
+      let response = null
+      try {
+        response = await chatSupportAPI.getFAQs(params)
+      } catch (e) {
+        response = null
       }
-      
-      const response = await chatSupportAPI.getFAQs(params)
-      
-      if (response.success && response.data) {
+
+      if (response && response.success && response.data && Array.isArray(response.data.faqs) && response.data.faqs.length > 0) {
         setFaqs(response.data.faqs || [])
+      } else if (categoryId) {
+        // Fallback: fetch all FAQs and filter client-side by department _id or departmentCode
+        try {
+          const allResp = await chatSupportAPI.getFAQs({ limit: 200 })
+          const allFaqs = (allResp && allResp.success && allResp.data && Array.isArray(allResp.data.faqs)) ? allResp.data.faqs : (allResp || [])
+          const filtered = allFaqs.filter(f => {
+            try {
+              if (!f.department) return false
+              const depId = f.department._id || f.department.id || f.department
+              return String(depId) === String(categoryId) || String(f.department.departmentCode || '').toLowerCase() === String(categoryId).toLowerCase()
+            } catch (err) {
+              return false
+            }
+          })
+          setFaqs(filtered)
+        } catch (e) {
+          setFaqs([])
+        }
       } else {
+        // no category selected and server returned nothing
         setFaqs([])
       }
     } catch (error) {
@@ -189,7 +223,7 @@ export default function VoterFAQ() {
                   placeholder="Search FAQs..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent bg-white/80"
+                  className="w-full text-gray-700 pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent bg-white/80"
                 />
               </div>
 
@@ -199,7 +233,7 @@ export default function VoterFAQ() {
                 <select
                   value={selectedCategory}
                   onChange={(e) => handleCategoryChange(e.target.value)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent bg-white/80"
+                  className="flex-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent bg-white/80"
                 >
                   <option value="">All Departments</option>
                   {categories.map((category) => (
@@ -259,7 +293,7 @@ export default function VoterFAQ() {
                       <div className="pt-4">
                         <div className="bg-blue-50/80 rounded-lg p-4">
                           <p className="text-sm font-medium text-[#001f65] mb-2">Answer:</p>
-                          <p className="text-gray-700 whitespace-pre-wrap">{faq.answer}</p>
+                          <p className="text-gray-700 whitespace-pre-wrap">{cleanResponse(faq.answer)}</p>
                         </div>
                         {faq.lastUpdated && (
                           <p className="text-xs text-gray-500 mt-3">

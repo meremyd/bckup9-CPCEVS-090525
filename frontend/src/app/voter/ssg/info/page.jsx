@@ -518,17 +518,17 @@ export default function VoterSSGElectionInfoPage() {
           {/* Election Info Banner*/}
           <div className="rounded-2xl p-6 sm:p-8 mb-8">
             <div className="text-center">
-              <h2 className="text-2xl sm:text-3xl font-bold text-[#001f65] mb-4">{election?.title}</h2>
+              <h2 className="text-2xl sm:text-3xl font-bold text-white mb-4">{election?.title}</h2>
               <div className="inline-block">
                 <div className={`px-4 sm:px-6 py-2 sm:py-3 rounded-full text-base sm:text-lg font-bold mb-4 sm:mb-6 ${
-                  ballotStatus?.status === 'open' ? 'bg-green-500/20 text-green-700 border-2 border-green-500' :
-                  ballotStatus?.status === 'scheduled' ? 'bg-yellow-500/20 text-yellow-700 border-2 border-yellow-500' :
-                  'bg-gray-500/20 text-gray-700 border-2 border-gray-500'
+                  ballotStatus?.status === 'open' ? 'bg-green-500 text-white border-2 border-green-600' :
+                  ballotStatus?.status === 'scheduled' ? 'bg-yellow-500 text-white border-2 border-yellow-600' :
+                  'bg-gray-400 text-white border-2 border-gray-500'
                 }`}>
                   {election?.status}
                 </div>
               </div>
-              <div className="space-y-3 sm:space-y-4 text-[#001f65] text-sm sm:text-base">
+              <div className="space-y-3 sm:space-y-4 text-white text-sm sm:text-base">
                 <div className="flex items-center justify-center flex-wrap">
                   <span className="font-semibold mr-2">Election ID:</span>
                   <span>{election?.ssgElectionId}</span>

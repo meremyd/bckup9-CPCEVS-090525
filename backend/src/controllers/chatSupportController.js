@@ -1,4 +1,3 @@
-
 const mongoose = require("mongoose")
 const ChatSupport = require("../models/ChatSupport")
 const Department = require("../models/Department")
@@ -46,14 +45,13 @@ class ChatSupportController {
   // Submit chat support request
   static async submitRequest(req, res, next) {
     try {
-  const { schoolId, firstName, middleName, lastName, departmentId, email, message } = req.body
+      const { schoolId, firstName, middleName, lastName, departmentId, email, message } = req.body
 
-      // Enhanced validation
       const errors = []
       if (!schoolId) errors.push("School ID is required")
-  if (!firstName) errors.push("First name is required")
-  if (!lastName) errors.push("Last name is required")
-  if (!departmentId) errors.push("Department is required")
+      if (!firstName) errors.push("First name is required")
+      if (!lastName) errors.push("Last name is required")
+      if (!departmentId) errors.push("Department is required")
       if (!email) errors.push("Email is required")
       if (!message) errors.push("Message is required")
 
@@ -85,16 +83,20 @@ class ChatSupportController {
         return next(error)
       }
 
-      // Validate department exists. Accept either an ObjectId or a departmentCode string.
+      // Helper to escape regex special chars for safe case-insensitive matching
+      const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')
+
+      // Validate department exists. Accept either an ObjectId or a departmentCode/degreeProgram string (case-insensitive)
       let department = null
-      if (mongoose.Types.ObjectId.isValid(departmentId)) {
+      if (departmentId && mongoose.Types.ObjectId.isValid(departmentId)) {
         department = await Department.findById(departmentId)
-      } else {
+      } else if (departmentId) {
         // try lookup by departmentCode or degreeProgram
+        const depStr = String(departmentId).trim()
         department = await Department.findOne({
           $or: [
-            { departmentCode: departmentId },
-            { degreeProgram: departmentId }
+            { departmentCode: depStr.toUpperCase() },
+            { degreeProgram: { $regex: new RegExp('^' + escapeRegex(depStr) + '$', 'i') } }
           ]
         })
       }
@@ -112,10 +114,9 @@ class ChatSupportController {
         return next(error)
       }
 
-  // Ensure we use the resolved department ObjectId when saving
-  const resolvedDepartmentId = department._id
+      // Ensure we use the resolved department ObjectId when saving
+      const resolvedDepartmentId = department._id
 
-  // Enhanced email validation
       const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
       if (!emailRegex.test(email)) {
         await ChatSupportController.logAuditAction(
@@ -133,12 +134,9 @@ class ChatSupportController {
       // No birthday required anymore
 
       // Check if voter exists (optional linkage)
-      // Only auto-link to a Voter when the request is authenticated as a voter (voter dashboard).
-      // Do NOT auto-link when request is unauthenticated (public forms like voterlogin or chat widget).
       let voter = null
       try {
         if (req.user && req.user.userType === 'voter') {
-          // If middleware populated voterId (voterAuthMiddleware), prefer that
           if (req.user.voterId) {
             voter = await Voter.findById(req.user.voterId)
           } else if (req.user.schoolId) {
@@ -146,7 +144,6 @@ class ChatSupportController {
           }
         }
       } catch (e) {
-        // ignore lookup failures — proceed without linking
         console.error('Voter lookup during support submit failed:', e)
         voter = null
       }
@@ -158,7 +155,7 @@ class ChatSupportController {
           { email: email.toLowerCase() }
         ],
         submittedAt: { 
-          $gte: new Date(Date.now() - 5 * 60 * 1000) // 5 minutes ago
+          $gte: new Date(Date.now() - 1 * 60 * 1000) // 5 minutes ago
         }
       })
 
@@ -176,10 +173,7 @@ class ChatSupportController {
       }
 
       // Create support request
-      // If a file was uploaded by multer, attach its public URL/path
       const photoPath = req.file ? `/uploads/chat-support/${req.file.filename}` : null
-
-      // Generate a human-readable ticket id for tracking
       const ticketId = `CS-${Date.now().toString(36)}-${uuidv4().split('-')[0]}`
 
       const chatSupport = new ChatSupport({
@@ -197,10 +191,6 @@ class ChatSupportController {
       })
 
       // Mark whether this submission should be auto-linked to an existing Voter.
-      // We only allow auto-linking when the request is authenticated as a voter
-      // (voter dashboard). Public submissions from voterlogin should remain anonymous,
-      // so we explicitly set _autoLink to true only when `voter` was resolved above
-      // from an authenticated user.
       chatSupport._autoLink = !!voter
 
       await chatSupport.save()
@@ -228,7 +218,6 @@ class ChatSupportController {
         req
       )
       
-      // Handle validation errors
       if (error.name === 'ValidationError') {
         const validationErrors = Object.values(error.errors).map(err => err.message)
         const err = new Error(`Validation failed: ${validationErrors.join(', ')}`)
@@ -242,7 +231,6 @@ class ChatSupportController {
     }
   }
 
-  // Get all requests with enhanced filtering
   static async getAllRequests(req, res, next) {
     try {
       const { 
@@ -262,9 +250,10 @@ class ChatSupportController {
       if (status) filter.status = status
       if (departmentId) {
         ChatSupportController.validateObjectId(departmentId, 'department ID')
-        // ensure filter uses ObjectId (not plain string)
-        filter.departmentId = new mongoose.Types.ObjectId(departmentId)
+        filter.departmentId = departmentId
       }
+
+      // Date range filter
       if (dateFrom || dateTo) {
         filter.submittedAt = {}
         if (dateFrom) filter.submittedAt.$gte = new Date(dateFrom)
@@ -461,8 +450,10 @@ class ChatSupportController {
       const { id } = req.params
       const { status, response } = req.body
 
+  // Accept 'closed' as alias for 'archived' and include 'archived' in valid statuses
+  let newStatus = status === 'closed' ? 'archived' : status
   const validStatuses = ["pending", "in-progress", "resolved", "archived"]
-      if (!validStatuses.includes(status)) {
+      if (!validStatuses.includes(newStatus)) {
         await AuditLog.create({
           action: "UNAUTHORIZED_ACCESS_ATTEMPT",
           username: req.user?.username || "unknown",
@@ -470,14 +461,13 @@ class ChatSupportController {
           ipAddress: req.ip,
           userAgent: req.get("User-Agent"),
         })
-
         const error = new Error("Invalid status")
         error.statusCode = 400
         return next(error)
       }
 
       const updateData = {
-        status,
+        status: newStatus,
         updatedAt: new Date(),
       }
 
@@ -509,7 +499,7 @@ class ChatSupportController {
         action: "CHAT_SUPPORT_STATUS_UPDATE",
         username: req.user?.username || "system",
         userId: req.user?.userId,
-        details: `Chat support request ${id} status updated to ${status} by ${req.user?.username}${response ? ' - Response provided' : ''}`,
+        details: `Chat support request ${id} status updated to ${newStatus} by ${req.user?.username}${response ? ' - Response provided' : ''}`,
         ipAddress: req.ip,
         userAgent: req.get("User-Agent"),
       })
@@ -574,7 +564,7 @@ class ChatSupportController {
 
       // Update request record with the response and mark respondedAt/status first
       const baseText = response.trim()
-      const appended = `\n\nKindly check your email for upcoming response.`
+      const appended = `\n\nTicket ID: ${request.ticketId || request._id}\nKindly check your email for upcoming response.`
       const text = `${baseText}${appended}`
 
       request.response = text
@@ -822,7 +812,7 @@ class ChatSupportController {
         return next(error)
       }
 
-  const validStatuses = ["pending", "in-progress", "resolved", "archived"]
+  const validStatuses = ["pending", "in-progress", "resolved"]
       if (!validStatuses.includes(status)) {
         await AuditLog.create({
           action: "UNAUTHORIZED_ACCESS_ATTEMPT",
@@ -879,7 +869,7 @@ class ChatSupportController {
       // Build filter
       const filter = {}
       if (status) filter.status = status
-      if (departmentId) filter.departmentId = new mongoose.Types.ObjectId(departmentId)
+      if (departmentId) filter.departmentId = departmentId
       if (dateFrom || dateTo) {
         filter.submittedAt = {}
         if (dateFrom) filter.submittedAt.$gte = new Date(dateFrom)
@@ -967,8 +957,7 @@ class ChatSupportController {
       // Optional category filter by department
       if (category) {
         ChatSupportController.validateObjectId(category, 'category')
-        // ensure type matches Department ObjectId in documents
-        filter.departmentId = new mongoose.Types.ObjectId(category)
+        filter.departmentId = category
       }
 
       // Get frequently asked questions (most common messages)

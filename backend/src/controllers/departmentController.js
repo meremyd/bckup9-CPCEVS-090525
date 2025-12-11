@@ -54,7 +54,6 @@ class DepartmentController {
     }
   }
 
-  // UPDATED: Get departments by department code (handles multiple degree programs per code)
   static async getDepartmentByCode(req, res, next) {
     try {
       const { code } = req.params
@@ -541,7 +540,6 @@ class DepartmentController {
     }
   }
 
-  // UPDATED: Get unique colleges with additional info
   static async getColleges(req, res, next) {
     try {
       const { includeStats = false } = req.query

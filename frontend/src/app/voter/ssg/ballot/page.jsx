@@ -88,14 +88,12 @@ export default function SSGVoterBallotPage() {
     
     if (!isMounted.current) return
     
-    // ✅ If already voted, show receipt
     if (statusResponse.hasVoted) {
       isNavigating.current = true
       await showVotingReceipt()
       return
     }
 
-    // ✅ If can't vote (not eligible, wrong time, etc.) - but NOT because of expired ballot
     if (!statusResponse.canVote && !statusResponse.ballot?.isExpired && statusResponse.ballot?.ballotStatus !== 'expired') {
       isNavigating.current = true
       Swal.fire({
@@ -110,10 +108,6 @@ export default function SSGVoterBallotPage() {
       })
       return
     }
-
-    // ✅ REMOVED: The check for expired ballot here
-    // We now let the backend handle expired ballots by deleting them and creating new ones
-    // The startSSGBallot endpoint will handle this case
 
     let startResponse
     let retryCount = 0
@@ -468,7 +462,7 @@ export default function SSGVoterBallotPage() {
         if (result.isConfirmed) {
           router.push(`/voter/ssg/info?id=${electionId}`)
         } else {
-          router.push('/voter/ssg/elections')
+          router.push(`/voter/ssg/info?id=${electionId}`)
         }
       })
     } catch (error) {
@@ -652,7 +646,7 @@ export default function SSGVoterBallotPage() {
                     }`}>
                       
                       {/* Image Container */}
-                      <div className="relative w-full h-75 bg-gray-200 overflow-hidden flex-shrink-0">
+                      <div className="relative w-full h-78 bg-gray-200 overflow-hidden flex-shrink-0">
                         {candidate.hasCampaignPicture ? (
                           <img
                             src={getCampaignPictureUrl(candidate)}
@@ -677,7 +671,7 @@ export default function SSGVoterBallotPage() {
 
                       {/* Candidate Info */}
                       <div className="flex-1 p-5 text-center flex flex-col justify-end">
-                        <div className={`-mx-5 -mb-5 p-4 transition-all duration-300 ${
+                        <div className={`-mx-5 -my-5 p-4 transition-all duration-300 ${
                           selected
                             ? 'bg-[#001f65] text-white'
                             : 'bg-blue-600 text-white hover:bg-blue-700'

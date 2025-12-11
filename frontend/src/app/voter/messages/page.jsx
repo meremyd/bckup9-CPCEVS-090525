@@ -340,7 +340,7 @@ export default function VoterMessages() {
                   name="schoolId"
                   value={formData.schoolId}
                   onChange={handleInputChange}
-                  className={`w-full px-4 py-2 border ${formErrors.schoolId ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent bg-white/80`}
+                  className={`w-full text-gray-700 px-4 py-2 border ${formErrors.schoolId ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent bg-white/80`}
                   placeholder="Enter your school ID"
                   disabled={true}
                 />
@@ -359,7 +359,7 @@ export default function VoterMessages() {
                   name="fullName"
                   value={formData.fullName}
                   onChange={handleInputChange}
-                  className={`w-full px-4 py-2 border ${formErrors.fullName ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent bg-white/80`}
+                  className={`w-full text-gray-700 px-4 py-2 border ${formErrors.fullName ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent bg-white/80`}
                   placeholder="Enter your full name"
                   disabled={true}
                 />
@@ -375,7 +375,7 @@ export default function VoterMessages() {
                 </label>
                 <div>
                   <input type="hidden" name="departmentId" value={formData.departmentId || ''} />
-                  <p className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white/80 text-[#001f65]">{getDepartmentName(formData.departmentId) || 'N/A'}</p>
+                  <p className="w-full text-gray-700 px-4 py-2 border border-gray-300 rounded-lg bg-white/80 text-[#001f65]">{getDepartmentName(formData.departmentId) || 'N/A'}</p>
                 </div>
                 {formErrors.departmentId && (
                   <p className="mt-1 text-sm text-red-500">{formErrors.departmentId}</p>
@@ -392,7 +392,7 @@ export default function VoterMessages() {
                   name="email"
                   value={formData.email}
                   onChange={handleInputChange}
-                  className={`w-full px-4 py-2 border ${formErrors.email ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent bg-white/80`}
+                  className={`w-full text-gray-700 px-4 py-2 border ${formErrors.email ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent bg-white/80`}
                   placeholder="your.email@example.com"
                   disabled={submitting}
                 />
@@ -411,7 +411,7 @@ export default function VoterMessages() {
                   value={formData.message}
                   onChange={handleInputChange}
                   rows={6}
-                  className={`w-full px-4 py-2 border ${formErrors.message ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent bg-white/80 resize-none`}
+                  className={`w-full text-gray-700 px-4 py-2 border ${formErrors.message ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent bg-white/80 resize-none`}
                   placeholder="Describe your issue or question..."
                   disabled={submitting}
                   maxLength={1000}
@@ -436,7 +436,7 @@ export default function VoterMessages() {
                   accept="image/*"
                   name="photo"
                   onChange={handleFileChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white/80"
+                  className="w-full text-gray-700 px-4 py-2 border border-gray-300 rounded-lg bg-white/80"
                   disabled={submitting}
                 />
                 {photoFile && (

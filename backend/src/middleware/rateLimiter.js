@@ -31,9 +31,9 @@ const loginLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skipSuccessfulRequests: true, // Don't count successful login attempts
+  skipSuccessfulRequests: true, 
   keyGenerator: (req, res) => {
-    // Fixed: Properly handle IPv6 by using req.ip directly (express-rate-limit handles it)
+  
     const username = req.body?.username || req.body?.userId || 'unknown'
     return `${req.ip}-${username}`
   },
@@ -118,7 +118,7 @@ const votingLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req, res) => {
-    // Fixed: Use req.ip directly (express-rate-limit handles IPv6 properly)
+
     const voterId = req.user?.voterId || req.user?.userId || 'unknown-user'
     return `voting-${voterId}-${req.ip}`
   },

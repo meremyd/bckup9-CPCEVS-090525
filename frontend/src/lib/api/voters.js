@@ -56,10 +56,10 @@ export const votersAPI = {
     }
   },
   
-  // Create voter - UPDATED: Remove required fields validation
+  // Create voter
   create: async (voterData) => {
     try {
-      // Clean the data - only send fields that have values
+
       const cleanedData = {
         schoolId: voterData.schoolId,
         firstName: voterData.firstName,
@@ -96,7 +96,7 @@ export const votersAPI = {
     }
   },
   
-  // Bulk create voters - FIXED: Proper data structure
+  // Bulk create voters 
   bulkCreate: async (votersData) => {
     try {
       // Ensure we're sending the correct structure
@@ -147,10 +147,9 @@ export const votersAPI = {
     }
   },
   
-  // Update voter - UPDATED: Remove required fields validation
   update: async (id, voterData) => {
     try {
-      // Clean the data - only send fields that have values
+
       const cleanedData = {}
       
       if (voterData.schoolId) cleanedData.schoolId = voterData.schoolId
@@ -323,7 +322,7 @@ export const votersAPI = {
     }
   },
 
-  // Export voters - FIXED: Proper blob handling for PDF/DOCX
+  // Export voters 
   exportVoters: async (params = {}) => {
     try {
       const queryParams = new URLSearchParams()
@@ -354,7 +353,7 @@ export const votersAPI = {
     }
   },
 
-  // Export registered voters - FIXED: Proper blob handling for PDF/DOCX
+
   exportRegisteredVoters: async (params = {}) => {
     try {
       const queryParams = new URLSearchParams()
@@ -464,11 +463,10 @@ validateProfileUpdate: (profileData) => {
     }
   },
 
-  // Validate voter data before submission - UPDATED: Remove required validation for optional fields
+  // Validate voter data before submission
   validateVoterData: (voterData) => {
     const errors = []
-    
-    // Only validate truly required fields
+
     if (!voterData.schoolId) {
       errors.push('School ID is required')
     } else if (isNaN(Number(voterData.schoolId))) {
@@ -502,7 +500,6 @@ validateProfileUpdate: (profileData) => {
     }
   },
 
-  // Validate bulk voter data - UPDATED: Use new validation rules
   validateBulkVoterData: (votersData) => {
     if (!Array.isArray(votersData)) {
       return {

@@ -405,19 +405,19 @@ const getDepartmentChartData = () => {
     president: president?.candidates.map(c => ({
       name: getCandidateName(c),
       votes: c.departmentVoteCount || c.voteCount || 0,
-      percentage: Number(c.percentage) || 0, // FIX: Convert to number
+      percentage: Number(c.percentage) || 0, 
       partylist: c.partylistName || c.partylist || c.candidate?.partylistId?.partylistName || 'Independent'
     })) || [],
     vicePresident: vicePresident?.candidates.map(c => ({
       name: getCandidateName(c),
       votes: c.departmentVoteCount || c.voteCount || 0,
-      percentage: Number(c.percentage) || 0, // FIX: Convert to number
+      percentage: Number(c.percentage) || 0, 
       partylist: c.partylistName || c.partylist || c.candidate?.partylistId?.partylistName || 'Independent'
     })) || [],
     senators: senators?.candidates.map(c => ({
       name: getCandidateName(c),
       votes: c.departmentVoteCount || c.voteCount || 0,
-      percentage: Number(c.percentage) || 0, // FIX: Convert to number
+      percentage: Number(c.percentage) || 0, 
       partylist: c.partylistName || c.partylist || c.candidate?.partylistId?.partylistName || 'Independent'
     })) || []
   }
@@ -452,7 +452,7 @@ const getDepartmentChartData = () => {
             style={{ backgroundColor: colors[index % colors.length] }}
           />
           <span className="text-sm text-gray-700">
-            {/* FIX: Convert percentage to number and handle undefined */}
+
             {entry.name} - {entry.votes.toLocaleString()} votes ({(Number(entry.percentage) || 0).toFixed(1)}%)
           </span>
         </div>

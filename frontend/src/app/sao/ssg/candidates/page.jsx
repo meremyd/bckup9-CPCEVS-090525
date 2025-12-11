@@ -371,7 +371,6 @@ export default function SAOSSGCandidatesPage() {
     }
   }
 
-  // Enhanced filtering
   const filteredCandidates = ssgCandidates.filter(candidate => {
     const matchesSearch = searchTerm === '' || 
       candidate.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||

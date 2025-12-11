@@ -612,6 +612,22 @@ export default function DepartmentalCandidatesPage() {
       errors.push('Please select a position.')
     }
 
+    // Prevent selecting a position that is already full
+    if (formData.positionId) {
+      const selectedPos = deptPositions.find(p => (p._id === formData.positionId) || (p._id?.toString() === formData.positionId?.toString()))
+      if (selectedPos) {
+        const currentCount = typeof selectedPos.candidateCount === 'number' ? selectedPos.candidateCount : (candidateStats.byPosition[selectedPos._id]?.count || 0)
+        const maxAllowed = typeof selectedPos.maxCandidates === 'number' ? selectedPos.maxCandidates : (selectedPos.maxCandidates || 10)
+
+        const isFull = currentCount >= maxAllowed
+        const isCurrentPosition = editingCandidate && (editingCandidate.positionId === selectedPos._id || editingCandidate.positionId?._id === selectedPos._id)
+
+        if (isFull && !isCurrentPosition) {
+          errors.push(`Selected position \"${selectedPos.positionName}\" already has the maximum number of candidates (${currentCount}/${maxAllowed}).`)
+        }
+      }
+    }
+
     return errors
   }
 
@@ -915,11 +931,23 @@ export default function DepartmentalCandidatesPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option value="">Select a position</option>
-                      {deptPositions.map(position => (
-                        <option key={position._id} value={position._id}>
-                          {position.positionName}
-                        </option>
-                      ))}
+                      {deptPositions.map(position => {
+                        const candidateCount = typeof position.candidateCount === 'number' ? position.candidateCount : (candidateStats.byPosition[position._id]?.count || 0)
+                        const maxCandidates = typeof position.maxCandidates === 'number' ? position.maxCandidates : (position.maxCandidates || 10)
+                        const isFull = candidateCount >= maxCandidates
+                        const isCurrentPosition = editingCandidate && (editingCandidate.positionId === position._id || editingCandidate.positionId?._id === position._id)
+
+                        return (
+                          <option
+                            key={position._id}
+                            value={position._id}
+                            disabled={isFull && !isCurrentPosition}
+                            title={isFull && !isCurrentPosition ? `Full (${candidateCount}/${maxCandidates})` : ''}
+                          >
+                            {position.positionName} ({candidateCount}/{maxCandidates}){isFull && !isCurrentPosition ? ' - Full' : ''}
+                          </option>
+                        )
+                      })}
                     </select>
                   </div>
 

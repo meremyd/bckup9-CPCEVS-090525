@@ -340,7 +340,6 @@ export default function SAODepartmentalCandidatesPage() {
     )
   }
 
-  // Enhanced filtering
   const filteredCandidates = deptCandidates.filter(candidate => {
     // Search filter
     const matchesSearch = searchTerm === '' || 

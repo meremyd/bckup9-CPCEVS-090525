@@ -1,9 +1,7 @@
 import api from '../api'
 
 export const candidatesAPI = {
-  // ===== STAFF/ADMIN API METHODS =====
-  
-  // Get all candidates with enhanced filtering (Staff)
+
   getAll: async (params = {}) => {
     try {
       const { page = 1, limit = 10, type, electionId, positionId, status, search } = params

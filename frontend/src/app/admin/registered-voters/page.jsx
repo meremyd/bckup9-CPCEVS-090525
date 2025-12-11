@@ -11,6 +11,7 @@ export default function RegisteredVotersPage() {
   const [allRegisteredVoters, setAllRegisteredVoters] = useState([])
   const [departments, setDepartments] = useState([])
   const [loading, setLoading] = useState(true)
+  const [searchLoading, setSearchLoading] = useState(false)
   const [error, setError] = useState("")
   const [viewingVoter, setViewingVoter] = useState(null)
   const [showViewModal, setShowViewModal] = useState(false)
@@ -46,16 +47,18 @@ export default function RegisteredVotersPage() {
   }
 
   const debounceTimeout = useRef(null)
-  useEffect(() => {
-    if (debounceTimeout.current) clearTimeout(debounceTimeout.current)
-    debounceTimeout.current = setTimeout(() => {
-      setPagination(prev => ({ ...prev, currentPage: 1 }))
-    }, 400)
-    return () => {
-      if (debounceTimeout.current) clearTimeout(debounceTimeout.current)
-    }
-  }, [searchTerm])
 
+useEffect(() => {
+  if (debounceTimeout.current) clearTimeout(debounceTimeout.current)
+  debounceTimeout.current = setTimeout(() => {
+    if (departments.length > 0) {
+      fetchRegisteredVoters() 
+    }
+  }, 400)
+  return () => {
+    if (debounceTimeout.current) clearTimeout(debounceTimeout.current)
+  }
+}, [searchTerm, selectedDepartment])
   useEffect(() => {
     const loadInitialData = async () => {
       setLoading(true)
@@ -66,9 +69,11 @@ export default function RegisteredVotersPage() {
     loadInitialData()
   }, [])
 
-  useEffect(() => {
-    if (departments.length > 0) fetchRegisteredVoters()
-  }, [pagination.currentPage, selectedDepartment, searchTerm])
+ useEffect(() => {
+  if (departments.length > 0) {
+    fetchRegisteredVoters() 
+  }
+}, [pagination.currentPage])
 
   useEffect(() => {
     calculateDepartmentStats()
@@ -90,7 +95,7 @@ export default function RegisteredVotersPage() {
 
   const fetchRegisteredVoters = async () => {
     try {
-      setLoading(true)
+      setSearchLoading(true)
       setError("")
 
       const params = {
@@ -124,7 +129,7 @@ export default function RegisteredVotersPage() {
       setError(`Failed to fetch registered voters: ${error.message || 'Unknown error'}`)
       setVoters([])
     } finally {
-      setLoading(false)
+      setSearchLoading(false)
     }
   }
 
@@ -396,7 +401,7 @@ export default function RegisteredVotersPage() {
                 value={searchTerm}
                 onChange={handleSearch}
                 onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent w-full lg:w-96"
+                className="pl-10 text-gray-700 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#001f65] focus:border-transparent w-full lg:w-96"
               />
             </div>
             <div className="text-right">
@@ -432,14 +437,21 @@ export default function RegisteredVotersPage() {
                 </tr>
               </thead>
               <tbody className="bg-white/50 divide-y divide-gray-200/50">
-                {voters.length === 0 ? (
-                  <tr>
-                    <td colSpan="6" className="px-3 sm:px-6 py-12 text-center text-[#001f65]/60">
-                      <Users className="mx-auto h-12 w-12 text-[#001f65]/40 mb-4" />
-                      <p className="text-lg font-medium">No registered voters found</p>
-                    </td>
-                  </tr>
-                ) : (
+  {searchLoading ? (
+    <tr>
+      <td colSpan="6" className="px-3 sm:px-6 py-8 text-center text-[#001f65]/60">
+        <Loader2 className="mx-auto h-8 w-8 animate-spin text-[#001f65] mb-2" />
+        <p>Searching...</p>
+      </td>
+    </tr>
+  ) : voters.length === 0 ? (
+    <tr>
+      <td colSpan="6" className="px-3 sm:px-6 py-12 text-center text-[#001f65]/60">
+        <Users className="mx-auto h-12 w-12 text-[#001f65]/40 mb-4" />
+        <p className="text-lg font-medium">No registered voters found</p>
+      </td>
+    </tr>
+  ) : (
                   voters.map((voter) => (
                     <tr key={voter._id} className="hover:bg-[#b0c8fe]/10">
                       <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-[#001f65]">

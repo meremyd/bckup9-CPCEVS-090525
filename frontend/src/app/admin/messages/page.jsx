@@ -265,6 +265,38 @@ export default function MessagesPage() {
     }
   }
 
+  const handleRemoveFromFAQ = async (id) => {
+    try {
+      if (!id && !selectedMessage) return
+      const msgId = id || selectedMessage._id
+      const confirmed = await Swal.fire({
+        title: 'Remove from FAQs?',
+        text: 'This will mark the message as not resolved and it will no longer be eligible for FAQs.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, remove',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#b91c1c'
+      })
+      if (!confirmed.isConfirmed) return
+      const res = await chatSupportAPI.updateStatus(msgId, { status: 'in-progress' })
+      if (res && (res.success || res.request || res.message)) {
+        showAlert('success', 'Removed', 'Message status updated and removed from FAQ eligibility')
+        fetchMessages()
+        // if modal open, refresh selectedMessage or close it
+        if (selectedMessage) {
+          setShowMessageModal(false)
+          setSelectedMessage(null)
+        }
+      } else {
+        throw new Error(res.message || 'Failed to remove from FAQ')
+      }
+    } catch (err) {
+      console.error('Remove from FAQ error', err)
+      showAlert('error', 'Error', err.message || err || 'Failed to remove from FAQ')
+    }
+  }
+
   const openCreateForm = () => {
     if (!selectedMessage) return
     setAccountFormMode('create')
@@ -732,9 +764,7 @@ export default function MessagesPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
                     Email
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
-                    Source
-                  </th>
+                  {/* Source column removed per request */}
                   <th className="px-4 py-3 text-left text-xs font-medium text-[#001f65] uppercase tracking-wider">
                     Message Preview
                   </th>
@@ -789,13 +819,7 @@ export default function MessagesPage() {
                           )}
                         </div>
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-[#001f65]">
-                      {message.voterId ? (
-                        <span className="inline-block px-2 py-1 text-xs bg-green-100 text-green-800 rounded">Voter Dashboard</span>
-                      ) : (
-                        <span className="inline-block px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded">Anonymous</span>
-                      )}
-                    </td>
+                    {/* Source removed - no visual column */}
                     <td className="px-4 py-4 text-sm text-[#001f65]">
                       <div className="max-w-xs truncate">
                         {message.message || 'N/A'}
@@ -864,9 +888,21 @@ export default function MessagesPage() {
                             View
                           </button>
 
-                          {/* If message was submitted by a logged-in voter (has voterId), show Add to FAQ button in table row.
-                              Enabled only when a response exists for that message. */}
-                          {message.voterId && (
+                          {/* Allow Add/Remove FAQ for all messages (admin can mark any message resolved to be eligible for FAQs) */}
+                          {message.status === 'resolved' ? (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await handleRemoveFromFAQ(message._id)
+                                } catch (err) {
+                                  // handled in handler
+                                }
+                              }}
+                              className="px-3 py-1 rounded text-sm bg-red-600 text-white hover:bg-red-700"
+                            >
+                              Remove from FAQ
+                            </button>
+                          ) : (
                             <button
                               onClick={async () => {
                                 try {
@@ -1089,7 +1125,12 @@ export default function MessagesPage() {
                               </div>
                             )}
 
-                            {selectedMessage?.voterId && (
+                            {/* Allow admins to Add/Remove any message to/from FAQs */}
+                            {selectedMessage.status === 'resolved' ? (
+                              <div className="flex items-center gap-3">
+                                <button onClick={async () => { try { await handleRemoveFromFAQ() } catch (e) {} }} className="px-3 py-1 rounded-md text-sm bg-red-600 text-white hover:bg-red-700">Remove from FAQ</button>
+                              </div>
+                            ) : (
                               <div className="flex items-center gap-3">
                                 <button onClick={handleAddToFAQ} disabled={!(selectedMessage.response || selectedMessage.respondedAt)} className={`px-3 py-1 rounded-md text-sm ${selectedMessage.response || selectedMessage.respondedAt ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600 cursor-not-allowed'}`}>Add to FAQ</button>
                               </div>

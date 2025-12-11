@@ -1,18 +1,33 @@
 import api from '../api'
 
 export const chatSupportAPI = {
-  // Submit support request (public) - Enhanced with validation
+  // Submit support request (public)
   submit: async (data) => {
     try {
       // Normalize alternate frontend keys to the expected backend field names
       const payload = { ...data }
       if (!payload.schoolId && payload.idNumber) payload.schoolId = payload.idNumber
-      if (!payload.departmentId && payload.course) payload.departmentId = payload.course
-      // Map frontend course labels to backend-recognized department identifiers
-      if (payload.departmentId === 'BSED') {
-        payload.departmentId = 'Bachelor of Secondary Education'
-      } else if (payload.departmentId === 'BSED') {
-        payload.departmentId = 'Bachelor of Secondary Education'
+      if (!payload.departmentId && payload.course) {
+        // Normalize common course codes to departmentCode (uppercase)
+        const code = String(payload.course || '').trim().toUpperCase()
+        const courseToDegreeMap = {
+          'BSED': 'Bachelor of Secondary Education',
+          'BEED': 'Bachelor of Elementary Education',
+          // if you have other mappings for full degreeProgram names, add here
+        }
+
+        // Prefer sending departmentCode (short code) which the backend will match against departmentCode
+        if (code) {
+          // If we have a known full-degree mapping and the backend departments use degreeProgram strings,
+          // the backend will also match by degreeProgram. But sending departmentCode (e.g., BSIT) is most reliable.
+          payload.departmentId = code
+        }
+        // If a special mapping is desired (e.g., BSED -> full name), preserve mapping too (backend handles case-insensitive match)
+        if (courseToDegreeMap[code]) {
+          // allow backend to match either departmentCode or degreeProgram
+          // keep departmentId as the code (so departmentCode matches), but also attach a fallback field if needed
+          payload._degreeProgramFallback = courseToDegreeMap[code]
+        }
       }
       // keep photoFile on payload if present
       if (data.photoFile) payload.photoFile = data.photoFile
@@ -59,16 +74,11 @@ export const chatSupportAPI = {
       } else {
         response = await api.post('/chat-support', payload)
       }
-      // Map frontend course labels to department lookup keys the backend accepts
-      // (some departments are identified by their full degreeProgram string)
-      // NOTE: We map common BSED variants to the backend degreeProgram strings
-      // so the existing department lookup in the backend will match.
-      // This mapping is applied before sending when payload.departmentId comes from `course`.
+
       return response.data
     } catch (error) {
       console.error('Error submitting support request:', error)
-      
-      // Enhanced error handling for specific server responses
+
       if (error.response?.status === 429) {
         throw new Error('Please wait before submitting another support request')
       } else if (error.response?.status === 400) {
@@ -78,8 +88,7 @@ export const chatSupportAPI = {
       throw error
     }
   },
-  
-  // Get all support requests with enhanced filtering (admin only)
+
   getAll: async (params = {}) => {
     try {
       const response = await api.get('/chat-support', { params })
@@ -89,8 +98,7 @@ export const chatSupportAPI = {
       throw error
     }
   },
-  
-  // Get support request by ID (admin only)
+
   getById: async (id) => {
     try {
       if (!id) {

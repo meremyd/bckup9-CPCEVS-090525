@@ -75,14 +75,13 @@ export default function DepartmentalVoterBallotPage() {
   useEffect(() => {
     console.log('📋 Ballot Page - Query Params:', { electionId, positionId })
     
-    // ✅ ADD THIS CHECK to prevent double initialization
     if (hasInitializedRef.current) {
       console.log('⏭️ Already initialized, skipping...')
       return
     }
     
     if (electionId && positionId) {
-      // ✅ ADD THIS CHECK to prevent concurrent initialization
+
       if (initializingRef.current) {
         console.log('⏳ Already initializing, skipping...')
         return
@@ -95,7 +94,7 @@ export default function DepartmentalVoterBallotPage() {
         initializingRef.current = false
       })
     } else {
-      console.error('❌ Missing parameters:', { electionId, positionId })
+      console.error('Missing parameters:', { electionId, positionId })
       Swal.fire({
         icon: 'error',
         title: 'Invalid URL',
@@ -133,7 +132,7 @@ const initializeBallot = async () => {
       return
     }
 
-    const timingResponse = await ballotAPI.getDepartmentalPositionBallotTiming(positionId)
+    const timingResponse = await ballotAPI.voter.getPositionBallotTiming(positionId)
     const timing = timingResponse.data?.timing
     
     if (!timing?.isOpen) {
@@ -313,7 +312,7 @@ const initializeBallot = async () => {
         if (result.isConfirmed) {
           router.push(`/voter/departmental/info?id=${electionId}`)
         } else {
-          router.push('/voter/departmental/elections')
+          router.push(`/voter/departmental/info?id=${electionId}`)
         }
       })
     } catch (error) {
@@ -510,8 +509,8 @@ const initializeBallot = async () => {
                         )}
                       </div>
 
-                      <div className="flex-1 p-5 text-center flex flex-col justify-end">
-                        <div className={`-mx-5 -mb-5 p-4 transition-all duration-300 ${
+                      <div className="flex-1 p-5 text-center flex flex-col justify-center">
+                        <div className={`-mx-5 -my-5 p-4 transition-all duration-300 ${
                           selected
                             ? 'bg-[#001f65] text-white'
                             : 'bg-blue-600 text-white hover:bg-blue-700'

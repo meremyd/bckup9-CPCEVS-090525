@@ -122,7 +122,7 @@ export default function PreRegister() {
                   maxLength="8"
                   min="10000000"
                   max="99999999"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-lg bg-white text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full text-gray-700 px-4 py-3 border border-gray-200 rounded-lg bg-white text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                   disabled={loading}
                 />
@@ -131,15 +131,15 @@ export default function PreRegister() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
                 <div>
                   <label className="block text-sm font-medium text-[#123b7a] mb-1">First Name</label>
-                  <input type="text" name="firstName" placeholder="First Name" value={form.firstName} onChange={handleChange} className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-800" />
+                  <input type="text" name="firstName" placeholder="First Name" value={form.firstName} onChange={handleChange} className="w-full text-gray-700 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-800" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-[#123b7a] mb-1">Middle Name</label>
-                  <input type="text" name="middleName" placeholder="Middle Name" value={form.middleName} onChange={handleChange} className="w-full px-4 py-3 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg bg-white text-gray-800" />
+                  <input type="text" name="middleName" placeholder="Middle Name" value={form.middleName} onChange={handleChange} className="w-full text-gray-700 px-4 py-3 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg bg-white text-gray-800" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-[#123b7a] mb-1">Last Name</label>
-                  <input type="text" name="lastName" placeholder="Last Name" value={form.lastName} onChange={handleChange} className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-800" />
+                  <input type="text" name="lastName" placeholder="Last Name" value={form.lastName} onChange={handleChange} className="w-full text-gray-700 px-4 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-800" />
                 </div>
               </div>
 

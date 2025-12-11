@@ -11,6 +11,7 @@ export default function VotersPage() {
   const [allVoters, setAllVoters] = useState([])
   const [departments, setDepartments] = useState([])
   const [loading, setLoading] = useState(true)
+  const [searchLoading, setSearchLoading] = useState(false) 
   const [error, setError] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedDepartment, setSelectedDepartment] = useState("")
@@ -83,25 +84,24 @@ export default function VotersPage() {
   }, [])
 
   useEffect(() => {
-    if (departments.length > 0) fetchVoters();
+    if (departments.length > 0) {
+      fetchVoters();
+    }
   }, [pagination.currentPage, selectedDepartment, activeTab, searchTerm])
   
   const debounceTimeout = useRef(null)
 
-  useEffect(() => {
-    if (debounceTimeout.current) {
-      clearTimeout(debounceTimeout.current)
+useEffect(() => {
+  if (debounceTimeout.current) clearTimeout(debounceTimeout.current)
+  debounceTimeout.current = setTimeout(() => {
+    if (departments.length > 0) {
+      fetchVoters()
     }
-    debounceTimeout.current = setTimeout(() => {
-      setPagination(prev => ({
-        ...prev,
-        currentPage: 1
-      }))
-    }, 400)
-    return () => {
-      if (debounceTimeout.current) clearTimeout(debounceTimeout.current)
-    }
-  }, [searchTerm])
+  }, 400)
+  return () => {
+    if (debounceTimeout.current) clearTimeout(debounceTimeout.current)
+  }
+}, [searchTerm, selectedDepartment, activeTab]) 
 
   useEffect(() => {
     calculateDepartmentStats()
@@ -122,7 +122,7 @@ export default function VotersPage() {
 
   const fetchVoters = async () => {
     try {
-      setLoading(true)
+      setSearchLoading(true)
       setError("")
       const params = {
         page: pagination.currentPage,
@@ -155,7 +155,7 @@ export default function VotersPage() {
       setError(`Failed to fetch voters: ${error.message || 'Unknown error'}`)
       setVoters([])
     } finally {
-      setLoading(false)
+      setSearchLoading(false)
     }
   }
 
@@ -392,7 +392,6 @@ export default function VotersPage() {
     setShowEditModal(true)
   }
 
-  // FIXED: Use the new activate API endpoint
   const handleActivateVoter = async (voterId, voterName) => {
     const confirmed = await showConfirm(
       "Activate Voter?",
@@ -709,11 +708,18 @@ export default function VotersPage() {
                 </tr>
               </thead>
               <tbody className="bg-white/50 divide-y divide-gray-200/50">
-                {voters.length === 0 ? (
-                  <tr>
-                    <td colSpan="6" className="px-3 sm:px-6 py-8 text-center text-[#001f65]/60">
-                      <Users className="mx-auto h-12 w-12 text-[#001f65]/40 mb-4" />
-                      {searchTerm ? (
+  {searchLoading ? (
+    <tr>
+      <td colSpan="6" className="px-3 sm:px-6 py-8 text-center text-[#001f65]/60">
+        <Loader2 className="mx-auto h-8 w-8 animate-spin text-[#001f65] mb-2" />
+        <p>Searching...</p>
+      </td>
+    </tr>
+  ) : voters.length === 0 ? (
+    <tr>
+      <td colSpan="6" className="px-3 sm:px-6 py-8 text-center text-[#001f65]/60">
+        <Users className="mx-auto h-12 w-12 text-[#001f65]/40 mb-4" />
+        {searchTerm ? (
                         <>
                           No voters found matching "{searchTerm}".
                           <button
@@ -759,7 +765,7 @@ export default function VotersPage() {
                       </td>
                       <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex justify-end space-x-2">
-                          {/* FIXED: Conditional rendering - Edit button only in active tab */}
+                      
                           {activeTab === 'active' ? (
                             <>
                               <button
@@ -780,7 +786,7 @@ export default function VotersPage() {
                             </>
                           ) : (
                             <>
-                              {/* FIXED: No Edit button in inactive tab */}
+                      
                               <button
                                 onClick={() => handleActivateVoter(voter._id, `${voter.firstName} ${voter.lastName}`)}
                                 className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm flex items-center gap-1 transition-colors"

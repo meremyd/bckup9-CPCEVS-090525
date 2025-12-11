@@ -58,7 +58,7 @@ console.log("Loading routes...")
 
 try {
   console.log("Loading auth routes...")
-  // Auth routes with appropriate limiters
+
   app.use("/api/auth/login", loginLimiter)
   app.use("/api/auth/voter-login", loginLimiter)
   app.use("/api/auth/pre-register-step1", registrationLimiter)
@@ -207,7 +207,6 @@ try {
 
 console.log("All routes loaded successfully")
 
-// Debug endpoint to send a test email directly from the running server
 app.post('/api/debug/send-test-email', async (req, res) => {
   const { to, subject, text, html } = req.body || {}
   if (!to) return res.status(400).json({ message: 'Missing `to` in body' })

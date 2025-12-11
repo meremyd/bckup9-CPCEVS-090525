@@ -366,7 +366,6 @@ export default function SSGCandidatesPage() {
         voters: votersData.length
       })
 
-      // Process candidates data with enhanced normalization
       const processedCandidates = candidatesData.map((candidate, index) => {
         const processedCandidate = {
           _id: candidate._id ,
@@ -499,7 +498,6 @@ export default function SSGCandidatesPage() {
     }
   }
 
-  // Enhanced voter search with eligibility checking
   const searchVoters = async (searchValue) => {
     if (!searchValue.trim()) {
       setVoterSearchResults([])
@@ -580,7 +578,6 @@ export default function SSGCandidatesPage() {
     }
   }
 
-  // Enhanced Position Filter Dropdown with candidate counts and limits
   const PositionFilterDropdown = () => {
     return (
       <select
@@ -759,7 +756,6 @@ export default function SSGCandidatesPage() {
       errors.push('Please select a position.')
     }
 
-    // Enhanced position and partylist limit validation
     if (formData.positionId && formData.partylistId) {
       const positionLimit = positionLimits[formData.positionId]
       const partylistKey = formData.partylistId || 'independent'
@@ -816,13 +812,12 @@ export default function SSGCandidatesPage() {
   const handleFormSubmit = async (e) => {
   e.preventDefault();
 
-  // Enhanced validation
   const validationErrors = validateForm();
   if (validationErrors.length > 0) {
     Swal.fire({
       icon: 'error',
       title: 'Validation Error',
-      text: validationErrors[0], // Show first error
+      text: validationErrors[0], 
       confirmButtonColor: '#001f65'
     });
     return;
@@ -878,7 +873,6 @@ export default function SSGCandidatesPage() {
   }
 };
 
-  // Enhanced filtering with proper ID matching
   const filteredCandidates = ssgCandidates.filter(candidate => {
     // Search filter
     const matchesSearch = searchTerm === '' || 
@@ -1113,7 +1107,7 @@ export default function SSGCandidatesPage() {
 
               <form onSubmit={handleFormSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Enhanced Voter Search with Registration Status */}
+                  {/* Voter Search with Registration Status */}
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Search and Select Voter *
@@ -1144,7 +1138,7 @@ export default function SSGCandidatesPage() {
                         </div>
                       )}
                       
-                      {/* Enhanced Dropdown with eligibility indicators */}
+                      {/* Dropdown with eligibility indicators */}
                       {showVoterDropdown && voterSearchResults.length > 0 && (
                         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                           {voterSearchResults.map((voter) => {
@@ -1231,7 +1225,7 @@ export default function SSGCandidatesPage() {
                     )}
                   </div>
 
-                  {/* Enhanced Position Selection with Limits */}
+                  {/*Position Selection with Limits */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Position *
@@ -1256,7 +1250,7 @@ export default function SSGCandidatesPage() {
                     </select>
                   </div>
 
-                  {/* Enhanced Partylist Selection with Limits */}
+                  {/* Partylist Selection with Limits */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Partylist (Optional)
@@ -1547,7 +1541,7 @@ export default function SSGCandidatesPage() {
   </div>
 )}
 
-      {/* Enhanced Candidates Table */}
+      {/* Candidates Table */}
       <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 overflow-hidden">
         {/* Table Header */}
         <div className="p-6 border-b border-gray-200">
@@ -1748,7 +1742,7 @@ export default function SSGCandidatesPage() {
                         {candidate.candidateNumber}
                       </td>
 
-                      {/* Credentials Column - Enhanced like Platform */}
+                      {/* Credentials Column */}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center overflow-hidden">
                           {candidate.credentials ? (

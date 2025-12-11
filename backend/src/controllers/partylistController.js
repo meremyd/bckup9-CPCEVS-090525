@@ -191,7 +191,6 @@ static async getPartylist(req, res, next) {
       candidateCount: formattedCandidates.length
     }
 
-    // FIXED: Proper audit logging
     if (isVoterRoute && req.user?.voterId) {
       await AuditLog.logVoterAction(
         "SYSTEM_ACCESS",
@@ -272,12 +271,11 @@ static async getPartylist(req, res, next) {
       return next(error)
     }
 
-    // ✅ UPDATED: Set appropriate headers for IMAGE instead of PDF
     res.set({
-      'Content-Type': 'image/jpeg', // Changed from application/pdf
+      'Content-Type': 'image/jpeg', 
       'Content-Length': partylist.platform.length,
-      'Cache-Control': 'public, max-age=86400', // Cache for 1 day
-      'Content-Disposition': `inline; filename="${partylist.partylistId}-platform.jpg"` // Changed extension
+      'Cache-Control': 'public, max-age=86400', 
+      'Content-Disposition': `inline; filename="${partylist.partylistId}-platform.jpg"` 
     })
 
     // Log the access

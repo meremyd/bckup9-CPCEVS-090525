@@ -2,7 +2,7 @@ const mongoose = require("mongoose")
 const AuditLog = require("../models/AuditLog")
 
 class AuditLogController {
-  // Get all Audit Logs
+
   static async getAllAuditLogs(req, res, next) {
     try {
       const { page = 1, limit = 50, action, username, startDate, endDate, userType } = req.query
@@ -75,13 +75,11 @@ class AuditLogController {
           filter.action = action
         }
       }
-      
-      // Filter by username (partial match, case insensitive)
+
       if (username) {
         filter.username = new RegExp(username, "i")
       }
-      
-      // Filter by date range
+
       if (startDate || endDate) {
         filter.timestamp = {}
         if (startDate) {
@@ -96,7 +94,7 @@ class AuditLogController {
         if (endDate) {
           try {
             const endDateTime = new Date(endDate)
-            // Set to end of day if only date is provided
+
             if (endDate.length === 10) {
               endDateTime.setHours(23, 59, 59, 999)
             }
@@ -109,25 +107,21 @@ class AuditLogController {
         }
       }
 
-      // Pagination with limits
       const pageNum = Math.max(1, parseInt(page))
-      const limitNum = Math.min(Math.max(1, parseInt(limit)), 100) // Max 100 items per page
+      const limitNum = Math.min(Math.max(1, parseInt(limit)), 100) 
       const skip = (pageNum - 1) * limitNum
 
-      // Execute query with population for related data
       const logs = await AuditLog.find(filter)
         .populate('userId', 'username userType')
         .populate('voterId', 'schoolId firstName lastName')
         .sort({ timestamp: -1 })
         .limit(limitNum)
         .skip(skip)
-        .lean() // For better performance
+        .lean() 
 
-      // Get total count for pagination
       const total = await AuditLog.countDocuments(filter)
       const totalPages = Math.ceil(total / limitNum)
 
-      // Log the audit access
       await AuditLog.create({
         action: "SYSTEM_ACCESS",
         username: req.user?.username || "system",
@@ -159,12 +153,10 @@ class AuditLogController {
     }
   }
 
-  // Get Audit Log by id
   static async getAuditLog(req, res, next) {
     try {
       const { id } = req.params
 
-      // Validate ObjectId format
       if (!id.match(/^[0-9a-fA-F]{24}$/)) {
         const error = new Error("Invalid audit log ID format")
         error.statusCode = 400
@@ -181,7 +173,6 @@ class AuditLogController {
         return next(error)
       }
 
-      // Log the single log access
       await AuditLog.create({
         action: "SYSTEM_ACCESS",
         username: req.user?.username || "system",
@@ -197,13 +188,11 @@ class AuditLogController {
     }
   }
 
-  // Get audit log statistics
   static async getStatistics(req, res, next) {
     try {
-      // Total logs count
+
       const total = await AuditLog.countDocuments()
 
-      // Statistics by action type
       const byAction = await AuditLog.aggregate([
         {
           $group: {
@@ -217,7 +206,6 @@ class AuditLogController {
         },
       ])
 
-      // Statistics by user type (based on action patterns)
       const userTypeStats = await AuditLog.aggregate([
         {
           $addFields: {
@@ -247,7 +235,6 @@ class AuditLogController {
         }
       ])
 
-      // Recent activity (last 10 logs)
       const recentActivity = await AuditLog.find()
         .populate('userId', 'username userType')
         .populate('voterId', 'schoolId firstName lastName')
@@ -255,7 +242,6 @@ class AuditLogController {
         .limit(10)
         .lean()
 
-      // Daily activity for the past 7 days
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
       const dailyActivity = await AuditLog.aggregate([
         {
@@ -279,7 +265,6 @@ class AuditLogController {
         }
       ])
 
-      // Security-related events count
       const securityEvents = await AuditLog.countDocuments({
         action: {
           $in: [
@@ -291,7 +276,6 @@ class AuditLogController {
         }
       })
 
-      // Voting-related events count
       const votingEvents = await AuditLog.countDocuments({
         action: {
           $in: [
@@ -304,7 +288,6 @@ class AuditLogController {
         }
       })
 
-      // Log the statistics access
       await AuditLog.create({
         action: "SYSTEM_ACCESS",
         username: req.user?.username || "system",
@@ -332,7 +315,6 @@ class AuditLogController {
     }
   }
 
-  // Get audit logs for a specific user/voter
   static async getUserAuditLogs(req, res, next) {
     try {
       const { userId, voterId, schoolId } = req.query
@@ -362,7 +344,6 @@ class AuditLogController {
 
       const total = await AuditLog.countDocuments(filter)
 
-      // Log the user-specific audit access
       await AuditLog.create({
         action: "SYSTEM_ACCESS",
         username: req.user?.username || "system",
@@ -386,12 +367,10 @@ class AuditLogController {
     }
   }
 
-  // Get total visits (total LOGIN actions)
   static async getTotalVisits(req, res, next) {
     try {
       const totalVisits = await AuditLog.countDocuments({ action: "LOGIN" })
 
-      // Log the access
       await AuditLog.create({
         action: "SYSTEM_ACCESS",
         username: req.user?.username || "system",
@@ -412,19 +391,16 @@ class AuditLogController {
     }
   }
 
-  // Get active users (users who logged in recently without logout)
   static async getActiveUsers(req, res, next) {
     try {
-      // Define "active" as logged in within last 15 minutes without logout
+
       const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000)
 
-      // Get all recent logins
       const recentLogins = await AuditLog.find({
         action: "LOGIN",
         timestamp: { $gte: fifteenMinutesAgo }
       }).select('username userId voterId timestamp')
 
-      // For each login, check if there's a logout after it
       const activeUsers = []
       const processedUsers = new Set()
 
@@ -434,7 +410,6 @@ class AuditLogController {
         if (processedUsers.has(userKey)) continue
         processedUsers.add(userKey)
 
-        // Check if there's a logout after this login
         const logoutAfterLogin = await AuditLog.findOne({
           action: "LOGOUT",
           $or: [
@@ -445,7 +420,6 @@ class AuditLogController {
           timestamp: { $gt: login.timestamp }
         })
 
-        // If no logout found, user is still active
         if (!logoutAfterLogin) {
           activeUsers.push({
             username: login.username,
@@ -456,7 +430,6 @@ class AuditLogController {
         }
       }
 
-      // Log the access
       await AuditLog.create({
         action: "SYSTEM_ACCESS",
         username: req.user?.username || "system",
@@ -479,7 +452,6 @@ class AuditLogController {
     }
   }
 
-  // Export audit logs (for compliance/backup purposes)
   static async exportAuditLogs(req, res, next) {
     try {
       const { startDate, endDate, action, format = 'json' } = req.query
@@ -496,10 +468,9 @@ class AuditLogController {
         .populate('userId', 'username userType')
         .populate('voterId', 'schoolId firstName lastName')
         .sort({ timestamp: -1 })
-        .limit(10000) // Limit for performance
+        .limit(10000)
         .lean()
 
-      // Log the export action
       await AuditLog.create({
         action: "DATA_EXPORT",
         username: req.user?.username || "system",
@@ -510,7 +481,7 @@ class AuditLogController {
       })
 
       if (format === 'csv') {
-        // Convert to CSV format
+
         const csv = logs.map(log => ({
           timestamp: log.timestamp,
           action: log.action,
@@ -522,8 +493,7 @@ class AuditLogController {
         
         res.setHeader('Content-Type', 'text/csv')
         res.setHeader('Content-Disposition', 'attachment; filename=audit-logs.csv')
-        
-        // Simple CSV generation (in production, use a proper CSV library)
+
         const csvHeader = 'timestamp,action,username,details,ipAddress,userAgent\n'
         const csvRows = csv.map(row => 
           Object.values(row).map(val => `"${String(val).replace(/"/g, '""')}"`).join(',')

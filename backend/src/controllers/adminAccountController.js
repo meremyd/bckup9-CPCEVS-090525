@@ -3,25 +3,23 @@ const User = require('../models/User')
 const Department = require('../models/Department')
 const AuditLog = require('../models/AuditLog')
 
-// Lookup accounts by email or studentId
 exports.lookup = async (req, res, next) => {
   try {
     const { email, studentId } = req.query
     const accounts = []
-    // Prioritize lookup by studentId when provided
+
     if (studentId) {
       const sid = Number(studentId)
       if (!isNaN(sid)) {
         const voter = await Voter.findOne({ schoolId: sid }).lean()
         if (voter) {
-          // indicate which field matched
+
           voter.matchedBy = 'studentId'
           return res.status(200).json({ found: true, accounts: [{ type: 'voter', ...voter }] })
         }
       }
     }
 
-    // If not found by studentId, try email lookup
     if (email) {
       const e = String(email).toLowerCase()
       const voter = await Voter.findOne({ email: e }).lean()
@@ -42,7 +40,6 @@ exports.lookup = async (req, res, next) => {
   }
 }
 
-// Create account (defaults to voter)
 exports.create = async (req, res, next) => {
   try {
     const { type = 'voter' } = req.body
@@ -53,14 +50,12 @@ exports.create = async (req, res, next) => {
         return res.status(400).json({ success: false, message: 'schoolId, firstName, lastName and department are required' })
       }
 
-      // attempt to find department
       let deptDoc = null
       if (department) {
         deptDoc = await Department.findOne({ $or: [{ departmentCode: department }, { degreeProgram: department }] })
       }
       if (!deptDoc) return res.status(400).json({ success: false, message: 'Department not found' })
 
-      // Determine yearLevel: accept provided value (1-4), otherwise default to 1
       let yl = 1
       if (typeof yearLevel !== 'undefined' && yearLevel !== null && yearLevel !== '') {
         const maybe = Number(yearLevel)
@@ -70,7 +65,6 @@ exports.create = async (req, res, next) => {
         yl = Math.floor(maybe)
       }
 
-      // Build payload WITHOUT email for created accounts per admin request
       const payload = {
         schoolId: Number(schoolId),
         firstName,
@@ -86,32 +80,36 @@ exports.create = async (req, res, next) => {
 
       const created = await Voter.create(payload)
 
-      // audit
       try { await AuditLog.create({ adminId: req.user?._id, action: 'create_account', targetId: created._id, details: { fromMessage: req.body.fromMessageId || null } }) } catch (e) { }
 
       return res.status(201).json({ success: true, account: created, activationSent: false })
     }
 
-    // user creation not implemented in this helper
     return res.status(400).json({ success: false, message: 'Only voter account creation is supported via this endpoint' })
   } catch (error) {
     next(error)
   }
 }
 
-// Update account (voter)
 exports.update = async (req, res, next) => {
   try {
     const { id } = req.params
     const { firstName, middleName, lastName, email, schoolId, department, yearLevel } = req.body
 
-    // try voter first
     const voter = await Voter.findById(id)
     if (voter) {
       if (firstName) voter.firstName = firstName
       if (middleName !== undefined) voter.middleName = middleName
       if (lastName) voter.lastName = lastName
-      if (email) voter.email = String(email).toLowerCase()
+      if (email) {
+        const e = String(email).toLowerCase()
+
+        const existing = await Voter.findOne({ email: e })
+        if (existing && String(existing._id) !== String(id)) {
+          return res.status(400).json({ success: false, message: 'Email already in use by another voter' })
+        }
+        voter.email = e
+      }
       if (schoolId) voter.schoolId = Number(schoolId)
       if (typeof yearLevel !== 'undefined' && yearLevel !== null && yearLevel !== '') {
         const maybe = Number(yearLevel)
@@ -126,10 +124,17 @@ exports.update = async (req, res, next) => {
       return res.status(200).json({ success: true, account: voter })
     }
 
-    // try user
     const user = await User.findById(id)
     if (user) {
-      if (email) user.username = email
+      if (email) {
+        const e = String(email).toLowerCase()
+
+        const conflictingVoter = await Voter.findOne({ email: e })
+        if (conflictingVoter) {
+          return res.status(400).json({ success: false, message: 'Email already in use by a voter' })
+        }
+        user.username = e
+      }
       if (typeof req.body.isActive !== 'undefined') user.isActive = !!req.body.isActive
       await user.save()
       try { await AuditLog.create({ adminId: req.user?._id, action: 'update_account', targetId: user._id, details: {} }) } catch (e) {}

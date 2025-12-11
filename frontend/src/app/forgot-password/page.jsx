@@ -47,11 +47,11 @@ export default function ForgotPassword() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="schoolId" className="block text-sm font-medium text-[#123b7a] mb-1">School ID</label>
-              <input maxLength={8} id="schoolId" name="schoolId" value={form.schoolId} onChange={handleChange} placeholder="e.g. 20250001" className="w-full p-3 md:p-4 border border-gray-200 rounded-lg  focus:outline-blue-500" required />
+              <input maxLength={8} id="schoolId" name="schoolId" value={form.schoolId} onChange={handleChange} placeholder="e.g. 20250001" className="w-full text-gray-700 p-3 md:p-4 border border-gray-200 rounded-lg  focus:outline-blue-500" required />
             </div>
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-[#123b7a] mb-1">Registered Email</label>
-              <input id="email" name="email" value={form.email} onChange={handleChange} placeholder="you@example.com" type="email" className="w-full p-3 md:p-4 border border-gray-200 rounded-lg focus:outline-blue-500" required />
+              <input id="email" name="email" value={form.email} onChange={handleChange} placeholder="you@example.com" type="email" className="w-full text-gray-700 p-3 md:p-4 border border-gray-200 rounded-lg focus:outline-blue-500" required />
             </div>
 
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

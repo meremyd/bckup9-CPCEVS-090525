@@ -358,7 +358,6 @@ class AuthController {
         const storedMiddle = normalize(voter.middleName)
         const storedLast = normalize(voter.lastName)
 
-        // Require first and last name to match; if middle provided then it must match as well
         if (providedFirst && providedFirst !== storedFirst) {
           await AuditLog.create({
             action: "VOTER_REGISTRATION",

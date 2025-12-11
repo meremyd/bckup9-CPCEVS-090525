@@ -45,6 +45,7 @@ router.use('/voter/departmental', voterAuthMiddleware)
 router.get("/voter/departmental/:electionId/available-positions", BallotController.getAvailablePositionsForVoting)
 router.get("/voter/departmental/:electionId/:positionId/voter-status", BallotController.getVoterDepartmentalBallotStatus)
 router.get("/voter/departmental/:electionId/:positionId/preview", BallotController.previewDepartmentalBallot)
+router.get("/voter/departmental/position/:positionId/timing", BallotController.getDepartmentalPositionBallotTiming)
 router.post("/voter/departmental/start", BallotController.startDepartmentalBallot)
 router.post("/voter/departmental/:ballotId/submit", BallotController.submitDepartmentalBallot)
 

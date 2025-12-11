@@ -128,16 +128,15 @@ export default function DepartmentalBallotPreviewPage() {
     setBallotTiming(timing)
     setActiveBallots(timing?.activeBallots || 0)
     
-    // ✅ FIX: Use time strings directly - NO parsing/conversion
     if (timing?.ballotOpenTime) {
-      setBallotOpenTime(timing.ballotOpenTime) // Already in HH:mm format
+      setBallotOpenTime(timing.ballotOpenTime) 
       console.log('📅 Open Time - Direct:', timing.ballotOpenTime)
     } else {
       setBallotOpenTime('')
     }
 
     if (timing?.ballotCloseTime) {
-      setBallotCloseTime(timing.ballotCloseTime) // Already in HH:mm format
+      setBallotCloseTime(timing.ballotCloseTime) 
       console.log('📅 Close Time - Direct:', timing.ballotCloseTime)
     } else {
       setBallotCloseTime('')
@@ -208,7 +207,6 @@ const handleSaveBallotTiming = async () => {
     return
   }
 
-  // ✅ FIX: Simple time validation (no timezone conversion)
   if (ballotOpenTime && ballotCloseTime) {
     const openMinutes = parseInt(ballotOpenTime.split(':')[0]) * 60 + parseInt(ballotOpenTime.split(':')[1])
     const closeMinutes = parseInt(ballotCloseTime.split(':')[0]) * 60 + parseInt(ballotCloseTime.split(':')[1])
@@ -226,8 +224,7 @@ const handleSaveBallotTiming = async () => {
 
   try {
     setSavingTiming(true)
-    
-    // ✅ FIX: Send time strings directly (HH:mm format)
+
     const timingData = {}
     if (ballotOpenTime) timingData.ballotOpenTime = ballotOpenTime
     if (ballotCloseTime) timingData.ballotCloseTime = ballotCloseTime
@@ -376,7 +373,6 @@ const handleSaveBallotTiming = async () => {
     } catch (error) {
       console.error('Error opening ballot:', error)
       
-      // ✅ FIX #4: Handle conflict error specifically
       if (error.response?.data?.conflictingPosition) {
         const conflicting = error.response.data.conflictingPosition
         await Swal.fire({
@@ -675,9 +671,9 @@ const handleSaveBallotTiming = async () => {
           {/* Header Controls */}
           <div className="mb-6 space-y-4">
             <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-              <div className="bg-blue-100/90 backdrop-blur-md text-blue-800 px-4 py-2 rounded-full text-sm flex items-center border border-blue-200">
-                <Shield className="w-4 h-4 mr-2" />
-                Testing Mode - Position-Based Control
+              <div className="px-4 py-2 rounded-full text-sm flex items-center ">
+                {/* <Shield className="w-4 h-4 mr-2" />
+                Testing Mode - Position-Based Control */}
               </div>
               
               <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
@@ -732,7 +728,7 @@ const handleSaveBallotTiming = async () => {
                   <span className="hidden xl:inline text-sm">Preview</span>
                 </button>
 
-                <button
+                {/* <button
                   onClick={openBallotForPosition}
                   disabled={ballotStatus === 'open'}
                   className="p-2 bg-green-600/90 hover:bg-green-700 disabled:bg-gray-400 backdrop-blur-md text-white rounded-lg transition-colors border border-green-500 flex items-center gap-2"
@@ -750,7 +746,7 @@ const handleSaveBallotTiming = async () => {
                 >
                   <Square className="w-5 h-5" />
                   <span className="hidden xl:inline text-sm">Close</span>
-                </button>
+                </button> */}
               </div>
             </div>
 
@@ -895,12 +891,11 @@ const handleSaveBallotTiming = async () => {
       </button>
     </div>
 
-    {/* UPDATED: Help text */}
-    <div className="mt-4 text-xs md:text-sm text-orange-800">
+    {/* <div className="mt-4 text-xs md:text-sm text-orange-800">
       <p>• Set open and close times to control when voting is available</p>
       <p>• Use "Open Ballot" button for immediate opening with current time</p>
       <p>• Times are based on server time (Philippine Time)</p>
-    </div>
+    </div> */}
   </div>
 )}
           </div>
@@ -1006,7 +1001,7 @@ const handleSaveBallotTiming = async () => {
                       </div>
 
                       <div className="flex-1 p-5 text-center flex flex-col justify-end">
-                        <div className={`-mx-5 -mb-5 p-4 transition-all duration-300 ${
+                        <div className={`-mx-5 -my-5 p-4 transition-all duration-300 ${
                           selected
                             ? 'bg-[#001f65] text-white'
                             : 'bg-blue-600 text-white hover:bg-blue-700'

@@ -84,7 +84,7 @@ export default function PreRegisterStep2() {
               <form className="w-full" onSubmit={sendOtp}>
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-[#123b7a] mb-2">Email *</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-blue-500" />
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full text-gray-700 px-4 py-3 border border-gray-200 rounded-lg focus:outline-blue-500" />
                 </div>
                 <div className="flex space-x-2">
                   <button type="submit" disabled={loading} className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-700 text-white rounded-lg font-semibold">{loading ? 'Sending...' : 'Send OTP'}</button>
@@ -95,7 +95,7 @@ export default function PreRegisterStep2() {
               <form className="w-full" onSubmit={verify}>
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-[#123b7a] mb-2">Enter OTP *</label>
-                  <input type="text" value={otp} onChange={(e) => setOtp(e.target.value)} required className="w-full px-4 py-3 border border-gray-200  focus:outline-blue-500 rounded-lg text-lg tracking-widest text-center" />
+                  <input type="text" value={otp} onChange={(e) => setOtp(e.target.value)} required className="w-full text-gray-700 px-4 py-3 border border-gray-200  focus:outline-blue-500 rounded-lg text-lg tracking-widest text-center" />
                 </div>
                 <div className="flex space-x-2">
                   <button type="submit" disabled={loading} className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-700 text-white rounded-lg font-semibold">{loading ? 'Verifying...' : 'Verify OTP'}</button>

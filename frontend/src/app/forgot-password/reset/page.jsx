@@ -66,11 +66,11 @@ export default function ResetPassword() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-[#123b7a] mb-1">New password</label>
-              <input id="password" type="password" name="password" value={form.password} onChange={handleChange} placeholder="New password" className="w-full p-3 md:p-4 border border-gray-200 rounded-lg focus:outline-blue-500 " required />
+              <input id="password" type="password" name="password" value={form.password} onChange={handleChange} placeholder="New password" className="w-full text-gray-700 p-3 md:p-4 border border-gray-200 rounded-lg focus:outline-blue-500 " required />
             </div>
             <div>
               <label htmlFor="confirmPassword" className="block text-sm font-medium text-[#123b7a] mb-1">Confirm password</label>
-              <input id="confirmPassword" type="password" name="confirmPassword" value={form.confirmPassword} onChange={handleChange} placeholder="Confirm password" className="w-full p-3 md:p-4 border border-gray-200 rounded-lg focus:outline-blue-500" required />
+              <input id="confirmPassword" type="password" name="confirmPassword" value={form.confirmPassword} onChange={handleChange} placeholder="Confirm password" className="w-full text-gray-700 p-3 md:p-4 border border-gray-200 rounded-lg focus:outline-blue-500" required />
             </div>
 
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

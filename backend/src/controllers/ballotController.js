@@ -11,7 +11,7 @@ const SSGElectionController = require("./ssgElectionController")
 const crypto = require("crypto")
 
 class BallotController {
-  // ==================== SSG BALLOT FUNCTIONS ====================
+  // SSG BALLOT FUNCTIONS 
 
   // Get all SSG ballots for selected election (Election Committee)
   static async getSelectedSSGElectionBallots(req, res, next) {
@@ -295,14 +295,10 @@ static async submitSelectedSSGBallot(req, res, next) {
       return res.status(400).json({ message: "No votes provided" })
     }
 
-    // CHECK: If votes already exist for this ballot, check if we can just mark as submitted
     const existingVotes = await Vote.find({ ballotId: ballot._id })
     
     if (existingVotes.length > 0) {
-      // Votes already exist - this is a retry after partial failure
-      // Option 1: Just mark ballot as submitted if votes exist
-      // Option 2: Delete existing votes and re-process (chosen for data consistency)
-      
+
       console.log(`Found ${existingVotes.length} existing votes for ballot ${ballotId}, clearing for re-submission`)
       
       // Delete existing votes to allow clean re-submission
@@ -430,7 +426,7 @@ static async submitSelectedSSGBallot(req, res, next) {
       election: {
         _id: election._id,
         title: election.title,
-        status: election.status, // ✅ Direct status, no computation
+        status: election.status, 
         ballotOpenTime: election.ballotOpenTime,
         ballotCloseTime: election.ballotCloseTime,
         ballotDuration: election.ballotDuration || 10,
@@ -623,7 +619,7 @@ static async submitSelectedSSGBallot(req, res, next) {
     }
   }
 
-  // ==================== DEPARTMENTAL BALLOT FUNCTIONS ====================
+  // DEPARTMENTAL BALLOT FUNCTIONS
 
   // Get departmental ballots for selected election and position
   static async getDepartmentalBallots(req, res, next) {
@@ -961,7 +957,6 @@ static async openDepartmentalPositionBallot(req, res, next) {
       })
     }
 
-    // ✅ Check for conflicting open ballots
     const now = new Date()
     
     const existingOpenPosition = await Position.findOne({
@@ -1154,7 +1149,7 @@ static async getAllowedYearLevels(positionId) {
   try {
     const position = await Position.findById(positionId)
     if (!position || !position.description) {
-      return [1, 2, 3, 4] // Default: all year levels
+      return [1, 2, 3, 4] 
     }
 
     const yearLevelMatch = position.description.match(/Year levels?: (.*?)(?:\n|$)/)
@@ -1324,10 +1319,10 @@ for (const position of positions) {
         positionOrder: position.positionOrder,
         maxVotes: position.maxVotes,
         description: position.description,
-        ballotOpenTime: position.ballotOpenTime, // Return as Date object (frontend will convert)
-        ballotCloseTime: position.ballotCloseTime, // Return as Date object (frontend will convert)
+        ballotOpenTime: position.ballotOpenTime, 
+        ballotCloseTime: position.ballotCloseTime, 
         ballotDuration: position.ballotDuration,
-        isCurrentlyOpen, // ✅ Correctly calculated
+        isCurrentlyOpen,
         isCurrentActive: currentActivePosition?._id.toString() === position._id.toString()
       })
     }
@@ -1522,7 +1517,7 @@ static async getVoterDepartmentalBallotStatus(req, res, next) {
         isCurrentlyOpen 
       },
       hasVoted: ballot ? ballot.isSubmitted : false,
-      canVote: canVoteForPosition && !ballot?.isSubmitted && isCurrentlyOpen, // ✅ Must be open to vote
+      canVote: canVoteForPosition && !ballot?.isSubmitted && isCurrentlyOpen, 
       ballot: ballot ? {
         _id: ballot._id,
         currentPositionId: ballot.currentPositionId,
@@ -1556,7 +1551,7 @@ static async getVoterDepartmentalBallotStatus(req, res, next) {
   static async updateYearLevelRestriction(req, res, next) {
     try {
       const { positionId } = req.params
-      const { allowedYearLevels } = req.body // Array of year levels [1, 2, 3, 4]
+      const { allowedYearLevels } = req.body
 
       const position = await Position.findById(positionId)
         .populate('deptElectionId', 'title departmentId')
@@ -1607,17 +1602,13 @@ static async getVoterDepartmentalBallotStatus(req, res, next) {
     }
   }
 
-  // ==================== HELPER FUNCTIONS ====================
-
-  // Helper function to check year level restriction
   static async checkYearLevelRestriction(voterYearLevel, positionId) {
     try {
       const position = await Position.findById(positionId)
       if (!position || !position.description) {
-        return true // No restrictions if no description
+        return true 
       }
 
-      // Parse year level restrictions from description
       const yearLevelMatch = position.description.match(/Year levels?: (.*?)(?:\n|$)/)
       if (!yearLevelMatch) {
         return true // No restrictions found
@@ -1638,7 +1629,7 @@ static async getVoterDepartmentalBallotStatus(req, res, next) {
       return allowedLevels.includes(voterYearLevel)
     } catch (error) {
       console.error('Error checking year level restriction:', error)
-      return true // Default to allowing if error occurs
+      return true 
     }
   }
 
@@ -1666,7 +1657,6 @@ static async startDepartmentalBallot(req, res, next) {
       return res.status(404).json({ message: "Position not found or not active" })
     }
 
-    // CHECK IF POSITION BALLOT IS OPEN
     const now = new Date()
     const isPositionOpen = position.ballotOpenTime && position.ballotCloseTime &&
                           now >= position.ballotOpenTime && now <= position.ballotCloseTime
@@ -1679,7 +1669,6 @@ static async startDepartmentalBallot(req, res, next) {
       })
     }
 
-    // ✅ IMPROVED: Check for existing ballot BEFORE attempting to create
     let existingBallot = await Ballot.findOne({ 
       deptElectionId: electionId, 
       voterId,
@@ -1690,15 +1679,14 @@ static async startDepartmentalBallot(req, res, next) {
       if (existingBallot.isSubmitted) {
         return res.status(400).json({ message: `You have already voted for ${position.positionName}` })
       }
-      // Return existing ballot WITHOUT starting timer
-      console.log(`✅ Returning existing ballot ${existingBallot._id} for voter ${voterId}`)
+
+      console.log(`Returning existing ballot ${existingBallot._id} for voter ${voterId}`)
       return res.json({ 
         message: `Continuing existing ballot for ${position.positionName}`,
         ballot: existingBallot 
       })
     }
 
-    // Verify voter eligibility
     const voter = await Voter.findById(voterId).populate('departmentId')
     if (!voter || !voter.isRegistered || !voter.isPasswordActive) {
       return res.status(400).json({ message: "Only registered voters can participate in departmental elections" })
@@ -1734,10 +1722,9 @@ static async startDepartmentalBallot(req, res, next) {
       timerStartedAt: new Date()
     })
 
-    // ✅ ADD TRY-CATCH FOR DUPLICATE KEY ERROR
     try {
       await ballot.save()
-      console.log(`✅ Created new ballot ${ballot._id} for voter ${voterId}`)
+      console.log(`Created new ballot ${ballot._id} for voter ${voterId}`)
     } catch (saveError) {
       // If duplicate key error (E11000), fetch and return existing ballot
       if (saveError.code === 11000) {
@@ -1751,15 +1738,14 @@ static async startDepartmentalBallot(req, res, next) {
         })
         
         if (existingBallot) {
-          console.log(`✅ Found existing ballot ${existingBallot._id}, returning it`)
+          console.log(`Found existing ballot ${existingBallot._id}, returning it`)
           return res.json({
             message: `Continuing existing ballot for ${position.positionName}`,
             ballot: existingBallot
           })
         }
-        
-        // If still can't find it, something's wrong
-        console.error('❌ Duplicate error but no existing ballot found!')
+
+        console.error('Duplicate error but no existing ballot found!')
         return res.status(500).json({ message: "Error creating ballot. Please try again." })
       }
       
@@ -1787,7 +1773,7 @@ static async startDepartmentalBallot(req, res, next) {
       }
     })
   } catch (error) {
-    console.error('❌ Error in startDepartmentalBallot:', error)
+    console.error('Error in startDepartmentalBallot:', error)
     next(error)
   }
 }
@@ -1814,7 +1800,6 @@ static async submitDepartmentalBallot(req, res, next) {
       return res.status(400).json({ message: "Ballot has already been submitted for this position" })
     }
 
-    // ✅ CHECK: Has any vote already been cast for this ballot?
     const existingVoteCount = await Vote.countDocuments({ ballotId: ballot._id })
     if (existingVoteCount > 0) {
       return res.status(400).json({ 
@@ -1844,7 +1829,6 @@ static async submitDepartmentalBallot(req, res, next) {
       })
     }
 
-    // ✅ CHECK: Ensure no duplicate candidates in the submission
     const candidateIds = votes.map(v => v.candidateId)
     const uniqueCandidateIds = new Set(candidateIds)
     if (candidateIds.length !== uniqueCandidateIds.size) {
@@ -1854,8 +1838,7 @@ static async submitDepartmentalBallot(req, res, next) {
     }
 
     const processedVotes = []
-    
-    // ✅ IMPROVED: Use insertMany with ordered:false for better error handling
+
     const voteDocuments = votes.map(vote => ({
       ballotId: ballot._id,
       candidateId: vote.candidateId,
@@ -1864,7 +1847,7 @@ static async submitDepartmentalBallot(req, res, next) {
     }))
 
     try {
-      // ✅ Insert all votes at once
+
       const insertedVotes = await Vote.insertMany(voteDocuments, { ordered: false })
       processedVotes.push(...insertedVotes)
 
@@ -1918,7 +1901,7 @@ static async submitDepartmentalBallot(req, res, next) {
       voteCount: processedVotes.length
     })
   } catch (error) {
-    console.error('❌ Error in submitDepartmentalBallot:', error)
+    console.error('Error in submitDepartmentalBallot:', error)
     
     // Generic duplicate key error (shouldn't reach here if handled above)
     if (error.code === 11000) {
@@ -1942,7 +1925,6 @@ static async startSSGBallot(req, res, next) {
       return res.status(404).json({ message: "SSG Election not found" })
     }
 
-    // ✅ Use manual status directly
     if (election.status !== 'active') {
       return res.status(400).json({ 
         message: `SSG Election is ${election.status}, not active. Voting is not available at this time.`,
@@ -1960,26 +1942,22 @@ static async startSSGBallot(req, res, next) {
 
     const now = new Date()
 
-    // ✅ STEP 1: Check for ANY existing ballot (submitted, active, or expired)
     let existingBallot = await Ballot.findOne({
       ssgElectionId: electionId,
       voterId
     })
 
     if (existingBallot) {
-      // Case 1: Already submitted - cannot vote again
+
       if (existingBallot.isSubmitted) {
         return res.status(400).json({ message: "You have already voted in this SSG election" })
       }
 
-      // Case 2: Ballot is expired - DELETE it and create a new one
       if (existingBallot.timerStarted && existingBallot.ballotCloseTime && existingBallot.ballotCloseTime < now) {
         console.log(`[BALLOT] Deleting expired ballot ${existingBallot._id} for voter ${voterId}`)
-        
-        // Delete any votes associated with the expired ballot
+
         await Vote.deleteMany({ ballotId: existingBallot._id })
-        
-        // Delete the expired ballot
+
         await Ballot.findByIdAndDelete(existingBallot._id)
         
         await AuditLog.logVoterAction(
@@ -1988,11 +1966,10 @@ static async startSSGBallot(req, res, next) {
           `Expired SSG ballot deleted, allowing new ballot for election: ${election.title}`,
           req
         )
-        
-        // Clear the reference so we create a new ballot below
+
         existingBallot = null
       }
-      // Case 3: Active ballot exists - return it
+
       else if (existingBallot.timerStarted && existingBallot.ballotCloseTime && existingBallot.ballotCloseTime >= now) {
         console.log(`[BALLOT] Found active ballot ${existingBallot._id}, returning it`)
         return res.json({ 
@@ -2000,7 +1977,7 @@ static async startSSGBallot(req, res, next) {
           ballot: existingBallot 
         })
       }
-      // Case 4: Ballot exists but timer not started - start the timer
+
       else if (!existingBallot.timerStarted) {
         console.log(`[BALLOT] Starting timer for existing ballot ${existingBallot._id}`)
         const ballotDuration = election.ballotDuration || 10
@@ -2013,13 +1990,11 @@ static async startSSGBallot(req, res, next) {
       }
     }
 
-    // ✅ STEP 2: Verify voter eligibility
     const voter = await Voter.findById(voterId).populate('departmentId')
     if (!voter || !voter.isRegistered || !voter.isPasswordActive) {
       return res.status(400).json({ message: "Only registered voters can participate in SSG elections" })
     }
 
-    // ✅ STEP 3: Create new ballot
     console.log(`[BALLOT] Creating new SSG ballot for voter ${voterId}`)
 
     const ballotToken = crypto.randomBytes(32).toString('hex')
@@ -2060,8 +2035,7 @@ static async startSSGBallot(req, res, next) {
             // Delete and retry - recursive call with a flag to prevent infinite loop
             await Vote.deleteMany({ ballotId: existingBallot._id })
             await Ballot.findByIdAndDelete(existingBallot._id)
-            
-            // Try creating again
+
             const newBallot = new Ballot({
               ssgElectionId: electionId,
               voterId,
@@ -2141,7 +2115,7 @@ static async startSSGBallot(req, res, next) {
   }
 }
 
-// Get current active position for departmental election (enhanced)
+// Get current active position for departmental election
   static async getCurrentActivePositionEnhanced(deptElectionId) {
     try {
       const now = new Date()

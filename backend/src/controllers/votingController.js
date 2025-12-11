@@ -1499,10 +1499,8 @@ static async getDepartmentalElectionLiveResults(req, res, next) {
           })
         )
 
-        // ✅ UPDATED: Calculate total votes for THIS position
         const totalVotes = candidatesWithVotes.reduce((sum, candidate) => sum + candidate.voteCount, 0)
         
-        // ✅ UPDATED: Calculate percentage based on TOTAL VOTES (like SSG)
         candidatesWithVotes.forEach(candidate => {
           candidate.percentage = totalVotes > 0 ? 
             Math.round((candidate.voteCount / totalVotes) * 100) : 0
@@ -1838,10 +1836,8 @@ static async getDepartmentalElectionLiveResultsForVoter(req, res, next) {
           })
         )
 
-        // ✅ UPDATED: Calculate total votes for THIS position
         const totalVotes = candidatesWithVotes.reduce((sum, candidate) => sum + candidate.voteCount, 0)
-        
-        // ✅ UPDATED: Calculate percentage based on TOTAL VOTES (like SSG)
+
         candidatesWithVotes.forEach(candidate => {
           candidate.percentage = totalVotes > 0 ? 
             Math.round((candidate.voteCount / totalVotes) * 100) : 0
@@ -1973,7 +1969,6 @@ static async getSSGElectionResultsByDepartment(req, res, next) {
               ssgElectionId: id
             })
 
-            // ✅ FIX: Return candidate name and partylist properly
             const candidateName = candidate.voterId ? 
               `${candidate.voterId.firstName} ${candidate.voterId.middleName || ''} ${candidate.voterId.lastName}`.replace(/\s+/g, ' ').trim() : 
               'Unknown Candidate'
@@ -1981,12 +1976,12 @@ static async getSSGElectionResultsByDepartment(req, res, next) {
             return {
               _id: candidate._id,
               candidateNumber: candidate.candidateNumber,
-              name: candidateName, // ✅ Add name field
-              partylist: candidate.partylistId?.partylistName || 'Independent', // ✅ Add partylist field
+              name: candidateName, 
+              partylist: candidate.partylistId?.partylistName || 'Independent', 
               departmentVoteCount: deptVoteCount,
-              voteCount: deptVoteCount, // ✅ Also set as voteCount for frontend compatibility
+              voteCount: deptVoteCount, 
               totalVoteCount: totalVoteCount,
-              percentage: 0 // Will calculate after
+              percentage: 0 
             }
           })
         )
@@ -2013,8 +2008,8 @@ static async getSSGElectionResultsByDepartment(req, res, next) {
             maxVotes: position.maxVotes
           },
           candidates: candidatesWithDeptVotes,
-          totalDepartmentVotes: totalDeptVotes, // ✅ Keep for backend reference
-          totalVotes: totalDeptVotes, // ✅ Add for frontend compatibility
+          totalDepartmentVotes: totalDeptVotes,
+          totalVotes: totalDeptVotes, 
           leading: candidatesWithDeptVotes[0] || null
         }
       })
@@ -2042,7 +2037,7 @@ static async getSSGElectionResultsByDepartment(req, res, next) {
         election: {
           _id: election._id,
           title: election.title,
-          status: election.status, // ✅ Include status for frontend
+          status: election.status,
           electionDate: election.electionDate
         },
         department: {
@@ -2422,7 +2417,7 @@ static async exportDepartmentalElectionResults(req, res, next) {
     }
 
     // Get participants for reference
-    const ElectionParticipation = require('../models/ElectionParticipation')
+      
     
     const participantsByYearLevel = await ElectionParticipation.aggregate([
       { 
@@ -2518,10 +2513,9 @@ static async exportDepartmentalElectionResults(req, res, next) {
           })
         )
 
-        // ✅ UPDATED: Calculate total votes for this position
+
         const totalVotes = candidatesWithVotes.reduce((sum, c) => sum + c.voteCount, 0)
 
-        // ✅ UPDATED: Calculate percentage based on TOTAL VOTES (like SSG)
         candidatesWithVotes.forEach(candidate => {
           candidate.percentage = totalVotes > 0 ? 
             ((candidate.voteCount / totalVotes) * 100).toFixed(1) : '0.0'
@@ -2702,7 +2696,6 @@ static async exportDepartmentalElectionResults(req, res, next) {
         currentPageNumber++
       }
 
-      // ✅ UPDATED: Position header without max possible votes
       doc.fontSize(13).font('Helvetica-Bold').fillColor('#000000')
       doc.text(`${position.positionOrder}. ${position.positionName}`, 50, doc.y)
       doc.fontSize(10).font('Helvetica')
@@ -2762,8 +2755,7 @@ static async exportDepartmentalElectionResults(req, res, next) {
         })
         currentX += columnWidths.votes
         doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke()
-        
-        // ✅ Percentage now based on total votes
+
         doc.text(`${candidate.percentage}%`, currentX + 5, currentY + 8, { 
           width: columnWidths.percentage - 10,
           align: 'center'

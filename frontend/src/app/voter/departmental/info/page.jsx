@@ -623,13 +623,13 @@ export default function VoterDepartmentalElectionInfoPage() {
           {/* Election Info Banner */}
           <div className="rounded-2xl p-4 sm:p-6 mb-6">
             <div className="text-center">
-              <h2 className="text-xl sm:text-2xl font-bold text-[#001f65] mb-3">{election?.title}</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-white mb-3">{election?.title}</h2>
               <div className="inline-block">
-                <div className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-sm sm:text-base font-bold mb-3 sm:mb-4 bg-blue-500/20 text-blue-700 border border-blue-500">
+                <div className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-sm sm:text-base font-bold mb-3 sm:mb-4 bg-green-500 text-white border border-green-600">
                   {election?.status}
                 </div>
               </div>
-              <div className="space-y-2 text-[#001f65] text-sm">
+              <div className="space-y-2 text-white text-sm">
                 <div className="flex items-center justify-center flex-wrap gap-1">
                   <span className="font-semibold">Election ID:</span>
                   <span>{election?.deptElectionId}</span>
