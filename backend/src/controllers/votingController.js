@@ -2417,7 +2417,7 @@ static async exportDepartmentalElectionResults(req, res, next) {
     }
 
     // Get participants for reference
-      
+    const ElectionParticipation = require('../models/ElectionParticipation')
     
     const participantsByYearLevel = await ElectionParticipation.aggregate([
       { 
